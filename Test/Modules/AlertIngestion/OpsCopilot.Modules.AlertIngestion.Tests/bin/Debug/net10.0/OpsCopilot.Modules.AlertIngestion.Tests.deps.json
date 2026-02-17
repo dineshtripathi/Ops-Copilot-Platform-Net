@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "OpsCopilot.Modules.AlertIngestion.Tests/1.0.0": {
+        "runtime": {
+          "OpsCopilot.Modules.AlertIngestion.Tests.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "OpsCopilot.Modules.AlertIngestion.Tests/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus"
+    },
+    "workspaceName": {
+      "value": "ops-sbx-law"
+    },
+    "tags": {
+      "value": {
+        "env": "sandbox",
+        "owner": "enterprise-eng",
+        "costCenter": "innovation"
+      }
+    },
+    "budgetName": {
+      "value": "ops-sbx-budget"
+    },
+    "budgetAmount": {
+      "value": 1500
+    },
+    "budgetStartDate": {
+      "value": "2026-02-01T00:00:00Z"
+    },
+    "budgetEndDate": {
+      "value": "2027-02-01T00:00:00Z"
+    },
+    "budgetContactEmails": {
+      "value": [
+        "finops@example.com",
+        "enterprise-eng@example.com"
+      ]
+    },
+    "enableFoundry": {
+      "value": true
+    },
+    "foundryName": {
+      "value": "ops-sbx-foundry"
+    },
+    "foundryProjectName": {
+      "value": "enterprise-engineering-sbx"
+    },
+    "modelProvider": {
+      "value": {
+        "endpointName": "sbx-default-endpoint",
+        "modelName": "gpt-4o-mini"
+      }
+    }
+  }
+}

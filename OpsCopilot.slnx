@@ -1,0 +1,58 @@
+﻿<Solution>
+	<Folder Name="/Hosts/">
+		<Project Path="Hosts/OpsCopilot.McpHost/OpsCopilot.McpHost.csproj" />
+		<Project Path="Hosts/OpsCopilot.WorkerHost/OpsCopilot.WorkerHost.csproj" />
+	</Folder>
+	<Folder Name="/Modules/AgentRuns/Application/">
+		<Project Path="Modules/AgentRuns/Application/OpsCopilot.AgentRuns.Application/OpsCopilot.AgentRuns.Application.csproj" />
+	</Folder>
+	<Folder Name="/Modules/AgentRuns/Domain/">
+		<Project Path="Modules/AgentRuns/Domain/OpsCopilot.AgentRuns.Domain/OpsCopilot.AgentRuns.Domain.csproj" />
+	</Folder>
+	<Folder Name="/Modules/AgentRuns/Presentation/">
+		<Project Path="Modules/AgentRuns/Presentation/OpsCopilot.AgentRuns.Presentation/OpsCopilot.AgentRuns.Presentation.csproj" />
+	</Folder>
+	<Folder Name="/Modules/AlertIngestion/Presentation/">
+		<Project Path="Modules/AlertIngestion/Presentation/OpsCopilot.AlertIngestion.Presentation/OpsCopilot.AlertIngestion.Presentation.csproj" />
+	</Folder>
+	<Folder Name="/Test/Evaluation/">
+		<Project Path="Test/Evaluation/OpsCopilot.EvalRunner/OpsCopilot.EvalRunner.csproj" />
+		<Project Path="Test/Evaluation/OpsCopilot.GoldenSets/OpsCopilot.GoldenSets.csproj" />
+	</Folder>
+	<Folder Name="/Test/Integration/">
+		<Project Path="Test/Integration/OpsCopilot.Integration.Tests/OpsCopilot.Integration.Tests.csproj" />
+	</Folder>
+	<Folder Name="/Test/McpContractTests/">
+		<Project Path="Test/McpContractTests/OpsCopilot.Mcp.ContractTests/OpsCopilot.Mcp.ContractTests.csproj" />
+	</Folder>
+	<Folder Name="/Test/Modules/AgentRuns/">
+		<Project Path="Test/Modules/AgentRuns/OpsCopilot.Modules.AgentRuns.Tests/OpsCopilot.Modules.AgentRuns.Tests.csproj" />
+	</Folder>
+	<Folder Name="/Test/Modules/AlertIngestion/">
+		<Project Path="Test/Modules/AlertIngestion/OpsCopilot.Modules.AlertIngestion.Tests/OpsCopilot.Modules.AlertIngestion.Tests.csproj" />
+	</Folder>
+	<Folder Name="/Test/Modules/Connectors/">
+		<Project Path="Test/Modules/Connectors/OpsCopilot.Modules.Connectors.Tests/OpsCopilot.Modules.Connectors.Tests.csproj" />
+	</Folder>
+	<Folder Name="/Test/Modules/Evaluation/">
+		<Project Path="Test/Modules/Evaluation/OpsCopilot.Modules.Evaluation.Tests/OpsCopilot.Modules.Evaluation.Tests.csproj" />
+	</Folder>
+	<Folder Name="/Test/Modules/Governance/">
+		<Project Path="Test/Modules/Governance/OpsCopilot.Modules.Governance.Tests/OpsCopilot.Modules.Governance.Tests.csproj" />
+	</Folder>
+	<Folder Name="/Test/Modules/Prompting/">
+		<Project Path="Test/Modules/Prompting/OpsCopilot.Modules.Prompting.Tests/OpsCopilot.Modules.Prompting.Tests.csproj" />
+	</Folder>
+	<Folder Name="/Test/Modules/Rag/">
+		<Project Path="Test/Modules/Rag/OpsCopilot.Modules.Rag.Tests/OpsCopilot.Modules.Rag.Tests.csproj" />
+	</Folder>
+	<Folder Name="/Test/Modules/Reporting/">
+		<Project Path="Test/Modules/Reporting/OpsCopilot.Modules.Reporting.Tests/OpsCopilot.Modules.Reporting.Tests.csproj" />
+	</Folder>
+	<Folder Name="/Test/Modules/SafeActions/">
+		<Project Path="Test/Modules/SafeActions/OpsCopilot.Modules.SafeActions.Tests/OpsCopilot.Modules.SafeActions.Tests.csproj" />
+	</Folder>
+	<Folder Name="/Test/Modules/Tenancy/">
+		<Project Path="Test/Modules/Tenancy/OpsCopilot.Modules.Tenancy.Tests/OpsCopilot.Modules.Tenancy.Tests.csproj" />
+	</Folder>
+</Solution>

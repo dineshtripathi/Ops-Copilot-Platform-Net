@@ -1,0 +1,1 @@
+Console.WriteLine("OpsCopilot MCP host scaffolding running.");

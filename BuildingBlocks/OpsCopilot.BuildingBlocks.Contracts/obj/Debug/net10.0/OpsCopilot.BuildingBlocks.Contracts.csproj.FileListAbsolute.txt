@@ -1,0 +1,11 @@
+G:\ops-copilot-platform\BuildingBlocks\OpsCopilot.BuildingBlocks.Contracts\bin\Debug\net10.0\OpsCopilot.BuildingBlocks.Contracts.deps.json
+G:\ops-copilot-platform\BuildingBlocks\OpsCopilot.BuildingBlocks.Contracts\bin\Debug\net10.0\OpsCopilot.BuildingBlocks.Contracts.dll
+G:\ops-copilot-platform\BuildingBlocks\OpsCopilot.BuildingBlocks.Contracts\bin\Debug\net10.0\OpsCopilot.BuildingBlocks.Contracts.pdb
+G:\ops-copilot-platform\BuildingBlocks\OpsCopilot.BuildingBlocks.Contracts\obj\Debug\net10.0\OpsCopilot.BuildingBlocks.Contracts.GeneratedMSBuildEditorConfig.editorconfig
+G:\ops-copilot-platform\BuildingBlocks\OpsCopilot.BuildingBlocks.Contracts\obj\Debug\net10.0\OpsCopilot.BuildingBlocks.Contracts.AssemblyInfoInputs.cache
+G:\ops-copilot-platform\BuildingBlocks\OpsCopilot.BuildingBlocks.Contracts\obj\Debug\net10.0\OpsCopilot.BuildingBlocks.Contracts.AssemblyInfo.cs
+G:\ops-copilot-platform\BuildingBlocks\OpsCopilot.BuildingBlocks.Contracts\obj\Debug\net10.0\OpsCopilot.BuildingBlocks.Contracts.csproj.CoreCompileInputs.cache
+G:\ops-copilot-platform\BuildingBlocks\OpsCopilot.BuildingBlocks.Contracts\obj\Debug\net10.0\OpsCopilot.BuildingBlocks.Contracts.dll
+G:\ops-copilot-platform\BuildingBlocks\OpsCopilot.BuildingBlocks.Contracts\obj\Debug\net10.0\refint\OpsCopilot.BuildingBlocks.Contracts.dll
+G:\ops-copilot-platform\BuildingBlocks\OpsCopilot.BuildingBlocks.Contracts\obj\Debug\net10.0\OpsCopilot.BuildingBlocks.Contracts.pdb
+G:\ops-copilot-platform\BuildingBlocks\OpsCopilot.BuildingBlocks.Contracts\obj\Debug\net10.0\ref\OpsCopilot.BuildingBlocks.Contracts.dll

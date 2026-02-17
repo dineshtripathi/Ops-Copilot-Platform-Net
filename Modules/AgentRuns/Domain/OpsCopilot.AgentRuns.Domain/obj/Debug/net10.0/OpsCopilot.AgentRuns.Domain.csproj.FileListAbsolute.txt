@@ -1,0 +1,15 @@
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\obj\Debug\net10.0\OpsCopilot.AgentRuns.Domain.GeneratedMSBuildEditorConfig.editorconfig
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\obj\Debug\net10.0\OpsCopilot.AgentRuns.Domain.AssemblyInfoInputs.cache
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\obj\Debug\net10.0\OpsCopilot.AgentRuns.Domain.AssemblyInfo.cs
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\obj\Debug\net10.0\OpsCopilot.AgentRuns.Domain.csproj.CoreCompileInputs.cache
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\bin\Debug\net10.0\OpsCopilot.AgentRuns.Domain.deps.json
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\bin\Debug\net10.0\OpsCopilot.AgentRuns.Domain.dll
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\bin\Debug\net10.0\OpsCopilot.AgentRuns.Domain.pdb
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\bin\Debug\net10.0\OpsCopilot.BuildingBlocks.Contracts.dll
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\bin\Debug\net10.0\OpsCopilot.BuildingBlocks.Contracts.pdb
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\obj\Debug\net10.0\OpsCopilot.AgentRuns.Domain.csproj.AssemblyReference.cache
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\obj\Debug\net10.0\OpsCopil.E38C3593.Up2Date
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\obj\Debug\net10.0\OpsCopilot.AgentRuns.Domain.dll
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\obj\Debug\net10.0\refint\OpsCopilot.AgentRuns.Domain.dll
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\obj\Debug\net10.0\OpsCopilot.AgentRuns.Domain.pdb
+G:\ops-copilot-platform\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\obj\Debug\net10.0\ref\OpsCopilot.AgentRuns.Domain.dll

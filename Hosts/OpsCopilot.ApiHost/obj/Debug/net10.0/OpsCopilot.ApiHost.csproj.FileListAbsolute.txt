@@ -1,0 +1,7 @@
+G:\ops-copilot-platform\Hosts\OpsCopilot.ApiHost\obj\Debug\net10.0\OpsCopilot.ApiHost.csproj.AssemblyReference.cache
+G:\ops-copilot-platform\Hosts\OpsCopilot.ApiHost\obj\Debug\net10.0\rpswa.dswa.cache.json
+G:\ops-copilot-platform\Hosts\OpsCopilot.ApiHost\obj\Debug\net10.0\OpsCopilot.ApiHost.GeneratedMSBuildEditorConfig.editorconfig
+G:\ops-copilot-platform\Hosts\OpsCopilot.ApiHost\obj\Debug\net10.0\OpsCopilot.ApiHost.AssemblyInfoInputs.cache
+G:\ops-copilot-platform\Hosts\OpsCopilot.ApiHost\obj\Debug\net10.0\OpsCopilot.ApiHost.AssemblyInfo.cs
+G:\ops-copilot-platform\Hosts\OpsCopilot.ApiHost\obj\Debug\net10.0\OpsCopilot.ApiHost.csproj.CoreCompileInputs.cache
+G:\ops-copilot-platform\Hosts\OpsCopilot.ApiHost\obj\Debug\net10.0\OpsCopilot.ApiHost.MvcApplicationPartsAssemblyInfo.cache

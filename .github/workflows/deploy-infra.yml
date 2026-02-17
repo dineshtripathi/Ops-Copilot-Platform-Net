@@ -1,0 +1,189 @@
+name: Deploy Azure Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infrastructure/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment (dev or sandbox)'
+        required: false
+        default: dev
+        type: choice
+        options:
+          - dev
+          - sandbox
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  AZURE_RG_DEV: ${{ vars.AZURE_RG_DEV }}
+  AZURE_RG_SANDBOX: ${{ vars.AZURE_RG_SANDBOX }}
+
+jobs:
+  deploy-base:
+    runs-on: ubuntu-latest
+    outputs:
+      enableFoundry: ${{ steps.parse.outputs.enableFoundry }}
+      foundryName: ${{ steps.parse.outputs.foundryName }}
+      foundryProjectName: ${{ steps.parse.outputs.foundryProjectName }}
+      modelEndpoint: ${{ steps.parse.outputs.modelEndpoint }}
+      modelName: ${{ steps.parse.outputs.modelName }}
+      location: ${{ steps.parse.outputs.location }}
+      resourceGroup: ${{ steps.resolve_rg.outputs.resourceGroup }}
+    steps:
+      - name: Checkout infra repo
+        uses: actions/checkout@v4
+
+      - name: Determine environment
+        id: determine
+        run: |
+          if [ -n "${{ github.event.inputs.environment }}" ]; then
+            envName='${{ github.event.inputs.environment }}'
+          elif [ -n "${{ github.ref_name }}" ] && [ "${{ github.event_name }}" = 'push' ]; then
+            envName='dev'
+          else
+            envName='dev'
+          fi
+          echo "deployEnv=$envName" >> $GITHUB_OUTPUT
+          echo "DEPLOY_ENV=$envName" >> $GITHUB_ENV
+
+      - name: Resolve resource group
+        id: resolve_rg
+        run: |
+          if [ "$DEPLOY_ENV" = 'sandbox' ]; then
+            rg='${{ env.AZURE_RG_SANDBOX }}'
+          else
+            rg='${{ env.AZURE_RG_DEV }}'
+          fi
+          if [ -z "$rg" ]; then
+            echo 'Resource group environment variable is not set.' >&2
+            exit 1
+          fi
+          echo "resourceGroup=$rg" >> $GITHUB_OUTPUT
+          echo "RESOURCE_GROUP=$rg" >> $GITHUB_ENV
+
+      - name: Resolve parameter file
+        id: params
+        run: |
+          paramFile="infrastructure/bicep/env/$DEPLOY_ENV.parameters.json"
+          if [ ! -f "$paramFile" ]; then
+            echo "Parameter file $paramFile not found" >&2
+            exit 1
+          fi
+          echo "paramFile=$paramFile" >> $GITHUB_OUTPUT
+          echo "PARAM_FILE=$paramFile" >> $GITHUB_ENV
+
+      - name: Parse Foundry settings
+        id: parse
+        run: |
+          config=$(jq '.parameters' "$PARAM_FILE")
+          enableFoundry=$(echo "$config" | jq -r '.enableFoundry.value // false' | tr 'A-Z' 'a-z')
+          foundryName=$(echo "$config" | jq -r '.foundryName.value // ""')
+          foundryProject=$(echo "$config" | jq -r '.foundryProjectName.value // ""')
+          modelEndpoint=$(echo "$config" | jq -r '.modelProvider.value.endpointName // ""')
+          modelName=$(echo "$config" | jq -r '.modelProvider.value.modelName // ""')
+          location=$(echo "$config" | jq -r '.location.value // ""')
+          echo "enableFoundry=$enableFoundry" >> $GITHUB_OUTPUT
+          echo "foundryName=$foundryName" >> $GITHUB_OUTPUT
+          echo "foundryProjectName=$foundryProject" >> $GITHUB_OUTPUT
+          echo "modelEndpoint=$modelEndpoint" >> $GITHUB_OUTPUT
+          echo "modelName=$modelName" >> $GITHUB_OUTPUT
+          echo "location=$location" >> $GITHUB_OUTPUT
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy baseline Bicep
+        run: |
+          az deployment group create \
+            --subscription "$AZURE_SUBSCRIPTION_ID" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infrastructure/bicep/main.bicep \
+            --parameters @"$PARAM_FILE" \
+            --query '{status:properties.provisioningState}'
+
+  foundry:
+    runs-on: ubuntu-latest
+    needs: deploy-base
+    if: needs.deploy-base.outputs.enableFoundry == 'true'
+    steps:
+      - name: Checkout infra repo
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Provision Azure AI Foundry (preview)
+        env:
+          RESOURCE_GROUP: ${{ needs.deploy-base.outputs.resourceGroup }}
+          LOCATION: ${{ needs.deploy-base.outputs.location }}
+          FOUNDRY_NAME: ${{ needs.deploy-base.outputs.foundryName }}
+          FOUNDRY_PROJECT: ${{ needs.deploy-base.outputs.foundryProjectName }}
+          MODEL_ENDPOINT: ${{ needs.deploy-base.outputs.modelEndpoint }}
+          MODEL_NAME: ${{ needs.deploy-base.outputs.modelName }}
+        run: |
+          set -euo pipefail
+          if [ -z "$FOUNDRY_NAME" ] || [ -z "$FOUNDRY_PROJECT" ]; then
+            echo 'Foundry configuration missing name/project; aborting.' >&2
+            exit 1
+          fi
+          az extension add --name ml --only-show-errors
+          scope="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}"
+          accountUrl="https://management.azure.com${scope}/providers/Microsoft.ProjectBabylon/accounts/${FOUNDRY_NAME}?api-version=2024-10-01-preview"
+          projectUrl="${accountUrl}/projects/${FOUNDRY_PROJECT}?api-version=2024-10-01-preview"
+
+          cat <<JSON > account.json
+          {
+            "location": "${LOCATION}",
+            "properties": {
+              "publicNetworkAccess": "Enabled"
+            }
+          }
+JSON
+          az rest --method PUT --url "$accountUrl" --body @account.json --only-show-errors
+
+          cat <<JSON > project.json
+          {
+            "location": "${LOCATION}",
+            "properties": {
+              "description": "Enterprise engineering MVP project",
+              "projectKind": "Default"
+            }
+          }
+JSON
+          az rest --method PUT --url "$projectUrl" --body @project.json --only-show-errors
+
+          if [ -n "$MODEL_ENDPOINT" ] && [ -n "$MODEL_NAME" ]; then
+            connectionUrl="https://management.azure.com${scope}/providers/Microsoft.ProjectBabylon/accounts/${FOUNDRY_NAME}/projects/${FOUNDRY_PROJECT}/connections/${MODEL_ENDPOINT}?api-version=2024-10-01-preview"
+            cat <<JSON > connection.json
+            {
+              "properties": {
+                "connectionType": "AzureOpenAI",
+                "metadata": {
+                  "endpointName": "${MODEL_ENDPOINT}",
+                  "modelName": "${MODEL_NAME}"
+                }
+              }
+            }
+JSON
+            az rest --method PUT --url "$connectionUrl" --body @connection.json --only-show-errors
+          else
+            echo 'Model provider details missing; skipping endpoint wiring.'
+          fi

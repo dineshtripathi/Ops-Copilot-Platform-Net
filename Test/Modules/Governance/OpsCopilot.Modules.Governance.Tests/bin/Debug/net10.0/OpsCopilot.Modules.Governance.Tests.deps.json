@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "OpsCopilot.Modules.Governance.Tests/1.0.0": {
+        "runtime": {
+          "OpsCopilot.Modules.Governance.Tests.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "OpsCopilot.Modules.Governance.Tests/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

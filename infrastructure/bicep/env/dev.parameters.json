@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus2"
+    },
+    "workspaceName": {
+      "value": "ops-dev-law"
+    },
+    "tags": {
+      "value": {
+        "env": "dev",
+        "owner": "platform",
+        "costCenter": "ops"
+      }
+    },
+    "budgetName": {
+      "value": "ops-dev-budget"
+    },
+    "budgetAmount": {
+      "value": 500
+    },
+    "budgetStartDate": {
+      "value": "2026-02-01T00:00:00Z"
+    },
+    "budgetEndDate": {
+      "value": "2027-02-01T00:00:00Z"
+    },
+    "budgetContactEmails": {
+      "value": [
+        "finops@example.com",
+        "platform-alerts@example.com"
+      ]
+    },
+    "enableFoundry": {
+      "value": false
+    },
+    "foundryName": {
+      "value": "ops-dev-foundry"
+    },
+    "foundryProjectName": {
+      "value": "ops-dev-engineering"
+    },
+    "modelProvider": {
+      "value": {
+        "endpointName": "dev-default-endpoint",
+        "modelName": "gpt-4o"
+      }
+    }
+  }
+}
