@@ -4,13 +4,13 @@ Ops Copilot is a modular .NET platform for operations triage, alert ingestion, g
 
 ## Solution Layout
 
-- `BuildingBlocks/` – Shared cross-cutting libraries (Application, Contracts, Domain, Infrastructure)
-- `Hosts/`
+- `src/BuildingBlocks/` – Shared cross-cutting libraries (Application, Contracts, Domain, Infrastructure)
+- `src/Hosts/`
   - `OpsCopilot.ApiHost/` – Main API host
   - `OpsCopilot.McpHost/` – MCP host and operational tools
   - `OpsCopilot.WorkerHost/` – Background processing host
-- `Modules/` – Bounded modules (AgentRuns, AlertIngestion, Connectors, Evaluation, Governance, Prompting, Rag, Reporting, SafeActions, Tenancy)
-- `Test/` – Integration, module, MCP contract, and evaluation test projects
+- `src/Modules/` – Bounded modules (AgentRuns, AlertIngestion, Connectors, Evaluation, Governance, Prompting, Rag, Reporting, SafeActions, Tenancy)
+- `tests/` – Integration, module, and MCP contract test projects
 - `infrastructure/` – Azure deployment artifacts (Bicep)
 - `.github/workflows/` – CI/CD workflows, including infra deployment
 - `Doc/PROJECT_VISION.md` – Product vision and target architecture
@@ -25,19 +25,19 @@ Ops Copilot is a modular .NET platform for operations triage, alert ingestion, g
 
 ```powershell
 # Restore and build full solution
-dotnet build OpsCopilot.slnx
+dotnet build OpsCopilot.sln
 
 # Run API host
-dotnet run --project Hosts/OpsCopilot.ApiHost/OpsCopilot.ApiHost.csproj
+dotnet run --project src/Hosts/OpsCopilot.ApiHost/OpsCopilot.ApiHost.csproj
 
 # Run MCP host
-dotnet run --project Hosts/OpsCopilot.McpHost/OpsCopilot.McpHost.csproj
+dotnet run --project src/Hosts/OpsCopilot.McpHost/OpsCopilot.McpHost.csproj
 ```
 
 ## Testing
 
 ```powershell
-dotnet test OpsCopilot.slnx
+dotnet test OpsCopilot.sln
 ```
 
 ## Infrastructure
