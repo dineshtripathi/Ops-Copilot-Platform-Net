@@ -1,189 +1,252 @@
-name: Deploy Azure Infrastructure
+name: Deploy OpsCopilot Infrastructure
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'infrastructure/**'
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Target environment (dev or sandbox)'
-        required: false
-        default: dev
+      ENV:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
         type: choice
         options:
           - dev
           - sandbox
+          - prod
+      REGION:
+        description: 'Azure region (e.g. uksouth)'
+        required: true
+        default: 'uksouth'
+        type: string
+
+# Limit concurrency per environment to prevent parallel conflicting deployments
+concurrency:
+  group: deploy-infra-${{ inputs.ENV }}
+  cancel-in-progress: false
 
 permissions:
-  id-token: write
+  id-token: write   # Required for OIDC
   contents: read
 
-env:
-  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-  AZURE_RG_DEV: ${{ vars.AZURE_RG_DEV }}
-  AZURE_RG_SANDBOX: ${{ vars.AZURE_RG_SANDBOX }}
-
 jobs:
-  deploy-base:
+  # ─────────────────────────────────────────────────────────
+  # WHAT-IF — dry run for both tenants in parallel
+  # ─────────────────────────────────────────────────────────
+  what-if:
+    name: What-If [${{ matrix.tenantLabel }}]
     runs-on: ubuntu-latest
-    outputs:
-      enableFoundry: ${{ steps.parse.outputs.enableFoundry }}
-      foundryName: ${{ steps.parse.outputs.foundryName }}
-      foundryProjectName: ${{ steps.parse.outputs.foundryProjectName }}
-      modelEndpoint: ${{ steps.parse.outputs.modelEndpoint }}
-      modelName: ${{ steps.parse.outputs.modelName }}
-      location: ${{ steps.parse.outputs.location }}
-      resourceGroup: ${{ steps.resolve_rg.outputs.resourceGroup }}
+    # Require manual approval for prod (configure "prod" as a GitHub environment with required reviewers)
+    environment: ${{ inputs.ENV == 'prod' && 'prod' || '' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tenantLabel: TenantA
+            clientId: AZURE_CLIENT_ID_TENA
+            subscriptionId: AZURE_SUBSCRIPTION_ID_TENA
+          - tenantLabel: TenantB
+            clientId: AZURE_CLIENT_ID_TENB
+            subscriptionId: AZURE_SUBSCRIPTION_ID_TENB
+
     steps:
-      - name: Checkout infra repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Determine environment
-        id: determine
-        run: |
-          if [ -n "${{ github.event.inputs.environment }}" ]; then
-            envName='${{ github.event.inputs.environment }}'
-          elif [ -n "${{ github.ref_name }}" ] && [ "${{ github.event_name }}" = 'push' ]; then
-            envName='dev'
-          else
-            envName='dev'
-          fi
-          echo "deployEnv=$envName" >> $GITHUB_OUTPUT
-          echo "DEPLOY_ENV=$envName" >> $GITHUB_ENV
-
-      - name: Resolve resource group
-        id: resolve_rg
-        run: |
-          if [ "$DEPLOY_ENV" = 'sandbox' ]; then
-            rg='${{ env.AZURE_RG_SANDBOX }}'
-          else
-            rg='${{ env.AZURE_RG_DEV }}'
-          fi
-          if [ -z "$rg" ]; then
-            echo 'Resource group environment variable is not set.' >&2
-            exit 1
-          fi
-          echo "resourceGroup=$rg" >> $GITHUB_OUTPUT
-          echo "RESOURCE_GROUP=$rg" >> $GITHUB_ENV
-
-      - name: Resolve parameter file
-        id: params
-        run: |
-          paramFile="infrastructure/bicep/env/$DEPLOY_ENV.parameters.json"
-          if [ ! -f "$paramFile" ]; then
-            echo "Parameter file $paramFile not found" >&2
-            exit 1
-          fi
-          echo "paramFile=$paramFile" >> $GITHUB_OUTPUT
-          echo "PARAM_FILE=$paramFile" >> $GITHUB_ENV
-
-      - name: Parse Foundry settings
-        id: parse
-        run: |
-          config=$(jq '.parameters' "$PARAM_FILE")
-          enableFoundry=$(echo "$config" | jq -r '.enableFoundry.value // false' | tr 'A-Z' 'a-z')
-          foundryName=$(echo "$config" | jq -r '.foundryName.value // ""')
-          foundryProject=$(echo "$config" | jq -r '.foundryProjectName.value // ""')
-          modelEndpoint=$(echo "$config" | jq -r '.modelProvider.value.endpointName // ""')
-          modelName=$(echo "$config" | jq -r '.modelProvider.value.modelName // ""')
-          location=$(echo "$config" | jq -r '.location.value // ""')
-          echo "enableFoundry=$enableFoundry" >> $GITHUB_OUTPUT
-          echo "foundryName=$foundryName" >> $GITHUB_OUTPUT
-          echo "foundryProjectName=$foundryProject" >> $GITHUB_OUTPUT
-          echo "modelEndpoint=$modelEndpoint" >> $GITHUB_OUTPUT
-          echo "modelName=$modelName" >> $GITHUB_OUTPUT
-          echo "location=$location" >> $GITHUB_OUTPUT
-
-      - name: Azure login (OIDC)
+      - name: Azure Login (OIDC) — ${{ matrix.tenantLabel }}
         uses: azure/login@v2
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets[matrix.clientId] }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets[matrix.subscriptionId] }}
 
-      - name: Deploy baseline Bicep
+      - name: Install Bicep CLI
+        run: az bicep install
+
+      - name: Bicep Build (lint check)
+        run: az bicep build --file azure-infra/bicep/main.bicep
+
+      - name: What-If — ${{ matrix.tenantLabel }}
         run: |
-          az deployment group create \
-            --subscription "$AZURE_SUBSCRIPTION_ID" \
-            --resource-group "$RESOURCE_GROUP" \
-            --template-file infrastructure/bicep/main.bicep \
-            --parameters @"$PARAM_FILE" \
-            --query '{status:properties.provisioningState}'
+          LABEL_LOWER=$(echo "${{ matrix.tenantLabel }}" | sed 's/TenantA/tenantA/;s/TenantB/tenantB/;s/TenantC/tenantC/')
+          PARAM_FILE="azure-infra/bicep/env/${{ inputs.ENV }}/${LABEL_LOWER}.parameters.json"
 
-  foundry:
+          echo "Using parameter file: $PARAM_FILE"
+
+          az deployment sub what-if \
+            --subscription ${{ secrets[matrix.subscriptionId] }} \
+            --location ${{ inputs.REGION }} \
+            --template-file azure-infra/bicep/main.bicep \
+            --parameters @${PARAM_FILE} \
+            --parameters location=${{ inputs.REGION }} environment=${{ inputs.ENV }} \
+            --no-prompt
+
+  # ─────────────────────────────────────────────────────────
+  # DEPLOY — deploys both tenants in parallel (after what-if)
+  # ─────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy [${{ matrix.tenantLabel }}]
     runs-on: ubuntu-latest
-    needs: deploy-base
-    if: needs.deploy-base.outputs.enableFoundry == 'true'
+    needs: what-if
+    environment: ${{ inputs.ENV == 'prod' && 'prod' || '' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tenantLabel: TenantA
+            clientId: AZURE_CLIENT_ID_TENA
+            subscriptionId: AZURE_SUBSCRIPTION_ID_TENA
+          - tenantLabel: TenantB
+            clientId: AZURE_CLIENT_ID_TENB
+            subscriptionId: AZURE_SUBSCRIPTION_ID_TENB
+
     steps:
-      - name: Checkout infra repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure login (OIDC)
+      - name: Azure Login (OIDC) — ${{ matrix.tenantLabel }}
         uses: azure/login@v2
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets[matrix.clientId] }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets[matrix.subscriptionId] }}
 
-      - name: Provision Azure AI Foundry (preview)
-        env:
-          RESOURCE_GROUP: ${{ needs.deploy-base.outputs.resourceGroup }}
-          LOCATION: ${{ needs.deploy-base.outputs.location }}
-          FOUNDRY_NAME: ${{ needs.deploy-base.outputs.foundryName }}
-          FOUNDRY_PROJECT: ${{ needs.deploy-base.outputs.foundryProjectName }}
-          MODEL_ENDPOINT: ${{ needs.deploy-base.outputs.modelEndpoint }}
-          MODEL_NAME: ${{ needs.deploy-base.outputs.modelName }}
+      - name: Install Bicep CLI
+        run: az bicep install
+
+      - name: Deploy Bicep — ${{ matrix.tenantLabel }}
+        id: deploy
         run: |
-          set -euo pipefail
-          if [ -z "$FOUNDRY_NAME" ] || [ -z "$FOUNDRY_PROJECT" ]; then
-            echo 'Foundry configuration missing name/project; aborting.' >&2
-            exit 1
-          fi
-          az extension add --name ml --only-show-errors
-          scope="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}"
-          accountUrl="https://management.azure.com${scope}/providers/Microsoft.ProjectBabylon/accounts/${FOUNDRY_NAME}?api-version=2024-10-01-preview"
-          projectUrl="${accountUrl}/projects/${FOUNDRY_PROJECT}?api-version=2024-10-01-preview"
+          LABEL_LOWER=$(echo "${{ matrix.tenantLabel }}" | sed 's/TenantA/tenantA/;s/TenantB/tenantB/;s/TenantC/tenantC/')
+          PARAM_FILE="azure-infra/bicep/env/${{ inputs.ENV }}/${LABEL_LOWER}.parameters.json"
+          DEPLOYMENT_NAME="opscopilot-${{ matrix.tenantLabel }}-${{ inputs.ENV }}-$(date +%Y%m%d%H%M%S)"
 
-          cat <<JSON > account.json
-          {
-            "location": "${LOCATION}",
-            "properties": {
-              "publicNetworkAccess": "Enabled"
-            }
-          }
-JSON
-          az rest --method PUT --url "$accountUrl" --body @account.json --only-show-errors
+          echo "Deploying with parameter file: $PARAM_FILE"
+          echo "Deployment name: $DEPLOYMENT_NAME"
 
-          cat <<JSON > project.json
-          {
-            "location": "${LOCATION}",
-            "properties": {
-              "description": "Enterprise engineering MVP project",
-              "projectKind": "Default"
-            }
-          }
-JSON
-          az rest --method PUT --url "$projectUrl" --body @project.json --only-show-errors
+          RESULT=$(az deployment sub create \
+            --subscription ${{ secrets[matrix.subscriptionId] }} \
+            --location ${{ inputs.REGION }} \
+            --name "$DEPLOYMENT_NAME" \
+            --template-file azure-infra/bicep/main.bicep \
+            --parameters @${PARAM_FILE} \
+            --parameters location=${{ inputs.REGION }} environment=${{ inputs.ENV }} \
+            --query 'properties.outputs' \
+            --output json)
 
-          if [ -n "$MODEL_ENDPOINT" ] && [ -n "$MODEL_NAME" ]; then
-            connectionUrl="https://management.azure.com${scope}/providers/Microsoft.ProjectBabylon/accounts/${FOUNDRY_NAME}/projects/${FOUNDRY_PROJECT}/connections/${MODEL_ENDPOINT}?api-version=2024-10-01-preview"
-            cat <<JSON > connection.json
-            {
-              "properties": {
-                "connectionType": "AzureOpenAI",
-                "metadata": {
-                  "endpointName": "${MODEL_ENDPOINT}",
-                  "modelName": "${MODEL_NAME}"
-                }
-              }
-            }
-JSON
-            az rest --method PUT --url "$connectionUrl" --body @connection.json --only-show-errors
+          echo "Deployment outputs: $RESULT"
+
+          FOUNDRY_ENDPOINT=$(echo "$RESULT" | jq -r '.foundryEndpoint.value // ""')
+          FOUNDRY_ACCOUNT_NAME=$(echo "$RESULT" | jq -r '.foundryAccountName.value // ""')
+          FOUNDRY_ENABLED=$(echo "$RESULT" | jq -r '.foundryEnabled.value // "false"')
+          FOUNDRY_PROVISION=$(echo "$RESULT" | jq -r '.foundryProvision.value // "false"' 2>/dev/null || echo "false")
+          RG_NAME=$(echo "$RESULT" | jq -r '.rgName.value // ""')
+          FOUNDRY_PROJECT_NAME=$(echo "$RESULT" | jq -r '.foundryProjectName.value // ""')
+
+          echo "foundryEndpoint=$FOUNDRY_ENDPOINT"        >> $GITHUB_OUTPUT
+          echo "foundryAccountName=$FOUNDRY_ACCOUNT_NAME" >> $GITHUB_OUTPUT
+          echo "foundryEnabled=$FOUNDRY_ENABLED"           >> $GITHUB_OUTPUT
+          echo "foundryProvision=$FOUNDRY_PROVISION"       >> $GITHUB_OUTPUT
+          echo "rgName=$RG_NAME"                           >> $GITHUB_OUTPUT
+          echo "foundryProjectName=$FOUNDRY_PROJECT_NAME"  >> $GITHUB_OUTPUT
+
+      # ─────────────────────────────────────────────
+      # FOUNDRY CLI STEPS
+      # Runs only when foundryProvision=true (account exists)
+      # Model deployment + RBAC only when foundryEnabled=true
+      # ─────────────────────────────────────────────
+
+      - name: Foundry — Register Cognitive Services provider (idempotent)
+        if: steps.deploy.outputs.foundryProvision == 'true'
+        run: |
+          az provider register --namespace Microsoft.CognitiveServices --wait || true
+
+      - name: Foundry — Create model deployment (gpt-4o-mini)
+        if: >
+          steps.deploy.outputs.foundryProvision == 'true' &&
+          steps.deploy.outputs.foundryEnabled == 'true'
+        run: |
+          ACCOUNT="${{ steps.deploy.outputs.foundryAccountName }}"
+          RG="${{ steps.deploy.outputs.rgName }}"
+          DEPLOYMENT_NAME="gpt-4o-mini"
+          MODEL_NAME="gpt-4o-mini"
+          MODEL_VERSION="2024-07-18"
+          SKU_CAPACITY=1    # Minimum capacity — keep token throughput minimal
+
+          echo "Creating model deployment '$DEPLOYMENT_NAME' in account '$ACCOUNT' (rg: $RG)"
+
+          # Idempotent — skip if already exists
+          EXISTING=$(az cognitiveservices account deployment show \
+            --name "$ACCOUNT" \
+            --resource-group "$RG" \
+            --deployment-name "$DEPLOYMENT_NAME" \
+            --query 'name' --output tsv 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING" ]; then
+            echo "Model deployment '$DEPLOYMENT_NAME' already exists — skipping."
           else
-            echo 'Model provider details missing; skipping endpoint wiring.'
+            az cognitiveservices account deployment create \
+              --name "$ACCOUNT" \
+              --resource-group "$RG" \
+              --deployment-name "$DEPLOYMENT_NAME" \
+              --model-name "$MODEL_NAME" \
+              --model-version "$MODEL_VERSION" \
+              --model-format "OpenAI" \
+              --sku-capacity "$SKU_CAPACITY" \
+              --sku-name "Standard"
+            echo "Model deployment created."
           fi
+
+      - name: Foundry — Grant app identity Cognitive Services OpenAI User role
+        if: >
+          steps.deploy.outputs.foundryProvision == 'true' &&
+          steps.deploy.outputs.foundryEnabled == 'true'
+        run: |
+          APP_IDENTITY="${{ secrets.FOUNDRY_APP_IDENTITY_OBJECT_ID }}"
+
+          if [ -z "$APP_IDENTITY" ]; then
+            echo "::warning::FOUNDRY_APP_IDENTITY_OBJECT_ID secret not set. Skipping RBAC assignment."
+            echo "Set this secret to the Managed Identity or SP Object ID of the OpsCopilot application."
+            exit 0
+          fi
+
+          ACCOUNT_ID=$(az cognitiveservices account show \
+            --name "${{ steps.deploy.outputs.foundryAccountName }}" \
+            --resource-group "${{ steps.deploy.outputs.rgName }}" \
+            --query 'id' --output tsv)
+
+          echo "Assigning 'Cognitive Services OpenAI User' to $APP_IDENTITY on $ACCOUNT_ID"
+
+          az role assignment create \
+            --assignee-object-id "$APP_IDENTITY" \
+            --assignee-principal-type "ServicePrincipal" \
+            --role "Cognitive Services OpenAI User" \
+            --scope "$ACCOUNT_ID" || echo "Role assignment may already exist — continuing."
+
+      - name: Foundry — Log guardrail notice (foundryEnabled=false)
+        if: >
+          steps.deploy.outputs.foundryProvision == 'true' &&
+          steps.deploy.outputs.foundryEnabled != 'true'
+        run: |
+          echo "=========================================="
+          echo "GUARDRAIL ACTIVE: foundryEnabled=false"
+          echo "Tenant: ${{ matrix.tenantLabel }}"
+          echo "Foundry account is provisioned but:"
+          echo "  - No model deployment was created."
+          echo "  - No RBAC role was granted to the application identity."
+          echo "  - The application CANNOT call Foundry APIs."
+          echo "To enable: set foundryEnabled=true in the parameter file and re-run."
+          echo "=========================================="
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "## Deployment Summary — ${{ matrix.tenantLabel }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ inputs.ENV }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Region | ${{ inputs.REGION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tenant | ${{ matrix.tenantLabel }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Foundry Endpoint | ${{ steps.deploy.outputs.foundryEndpoint }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Foundry Enabled | ${{ steps.deploy.outputs.foundryEnabled }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource Group | ${{ steps.deploy.outputs.rgName }} |" >> $GITHUB_STEP_SUMMARY

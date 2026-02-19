@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": { "value": "sandbox" },
+    "tenantLabel": { "value": "TenantA" },
+
+    "rgName":       { "value": "rg-opscopilot-a-sbx-uks" },
+
+    "lawName":          { "value": "law-opscopilot-a-sbx-uks" },
+    "retentionInDays":  { "value": 30 },
+    "dailyQuotaGb":     { "value": 0 },
+
+    "enableAppInsights": { "value": true },
+    "appInsightsName":   { "value": "appi-opscopilot-a-sbx-uks" },
+
+    "enableKeyVault": { "value": true },
+    "keyVaultName":   { "value": "kv-opscopilot-a-sbx-uks" },
+
+    "enableStorage":     { "value": false },
+    "storageNamePrefix": { "value": "stopscopilota" },
+    "storageSku":        { "value": "Standard_LRS" },
+
+    "budgetAmount": { "value": 80 },
+    "budgetEmails": { "value": ["platform-team@example.com"] },
+
+    "foundryProvision":   { "value": true },
+    "foundryEnabled":     { "value": true },
+    "foundryName":        { "value": "aoai-opscopilot-a-sbx-uks" },
+    "foundryProjectName": { "value": "opscopilot-a-sbx" },
+
+    "commonTags": {
+      "value": {
+        "owner": "platform-team",
+        "costCenter": "opscopilot-sandbox"
+      }
+    }
+  }
+}
