@@ -57,10 +57,6 @@ jobs:
       id-token: write
       contents: read
 
-    env:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_PLATFORM }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID_PLATFORM }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -138,10 +134,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-
-    env:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_AI }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID_AI }}
 
     steps:
       - name: Checkout
