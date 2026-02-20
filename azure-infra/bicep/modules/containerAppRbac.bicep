@@ -1,3 +1,7 @@
+// Resource-group scope is declared explicitly so this module can be called from
+// the subscription-scoped main.platform.bicep using `scope: platformRg`.
+targetScope = 'resourceGroup'
+
 /*
   containerAppRbac.bicep
   =====================================================================

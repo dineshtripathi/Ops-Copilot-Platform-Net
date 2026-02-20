@@ -110,6 +110,13 @@ module rg 'modules/rg.bicep' = {
   }
 }
 
+// Typed existing reference to the platform RG — used as the explicit scope for
+// the containerAppRbac module below. The `dependsOn: [rg]` on downstream modules
+// already ensures the RG exists before any resource-scoped deployment runs.
+resource platformRg 'Microsoft.Resources/resourceGroups@2022-09-01' existing = {
+  name: rgName
+}
+
 // ── Log Analytics Workspace ───────────────────────────────────────────────────
 module law 'modules/logAnalytics.bicep' = {
   name: 'deploy-law-platform'
@@ -266,7 +273,7 @@ module qdrant 'modules/qdrant.bicep' = if (enableStorage) {
 // Uses deterministic GUID names → safe to re-run (idempotent).
 module caRbac 'modules/containerAppRbac.bicep' = {
   name: 'deploy-ca-rbac-platform'
-  scope: resourceGroup(rgName)
+  scope: platformRg
   params: {
     kvResourceId: kv.outputs.keyVaultId
     lawResourceId: law.outputs.workspaceId
