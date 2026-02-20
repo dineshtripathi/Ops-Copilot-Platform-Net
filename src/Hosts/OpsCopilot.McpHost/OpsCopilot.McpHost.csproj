@@ -1,16 +1,25 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!--
+      McpHost is a stdio-transport MCP server.
+      stdout is owned by the MCP protocol; all application output must go to stderr.
+      This is NOT a web host — no Kestrel, no HTTP endpoints.
+    -->
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Azure Monitor Query for real KQL execution against Log Analytics -->
+    <!-- Official C# MCP SDK — stdio server + attribute-based tool registration -->
+    <PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.1" />
+    <!-- Generic host for DI / logging / lifetime management -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.2" />
+    <!-- KQL execution against Azure Log Analytics -->
     <PackageReference Include="Azure.Monitor.Query" Version="1.4.0" />
-    <!-- DefaultAzureCredential — system-assigned MI in Container Apps -->
+    <!-- DefaultAzureCredential: MI (Container Apps) / az login (local dev) -->
     <PackageReference Include="Azure.Identity" Version="1.13.2" />
   </ItemGroup>
 
