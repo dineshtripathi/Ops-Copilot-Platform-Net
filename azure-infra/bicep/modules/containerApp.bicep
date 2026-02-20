@@ -55,6 +55,12 @@ resource containerApp 'Microsoft.App/containerApps@2023-11-02-preview' = {
   name: appName
   location: location
   tags: tags
+  // System-assigned identity is always enabled so the app can authenticate to
+  // Azure services (Key Vault, AOAI, LAW) without secrets. RBAC assignments are
+  // created separately in containerAppRbac.bicep via main.platform.bicep.
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     managedEnvironmentId: caeId
     configuration: {
@@ -96,3 +102,6 @@ output containerAppId string = containerApp.id
 output containerAppName string = containerApp.name
 output containerAppFqdn string = enableIngress ? containerApp.properties.configuration.ingress.fqdn : ''
 output latestRevisionName string = containerApp.properties.latestRevisionName
+// principalId of the system-assigned managed identity — used by main.platform.bicep
+// to create KV Secrets User and Log Analytics Reader role assignments.
+output principalId string = containerApp.identity.principalId

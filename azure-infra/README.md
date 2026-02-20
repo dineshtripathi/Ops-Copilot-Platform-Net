@@ -30,7 +30,8 @@ azure-infra/
       budget.bicep                 # Subscription budget + alerts
       sql.bicep                    # Azure SQL Server + Database (Basic 5 DTU)
       containerAppsEnv.bicep       # Container Apps Managed Environment (Consumption)
-      containerApp.bicep           # Generic Container App
+      containerApp.bicep           # Generic Container App (SystemAssigned identity included)
+      containerAppRbac.bicep       # Role assignments: KV Secrets User + LAW Reader for CAs
       qdrant.bicep                 # Qdrant vector DB as Container App + Azure Files
       aoai.bicep                   # Azure OpenAI account (NO model deployments in Bicep)
       search.bicep                 # Azure AI Search (optional — default OFF)
@@ -310,14 +311,108 @@ The deployed AOAI key and endpoint are stored in the AI Key Vault automatically.
 | `InvalidTemplateDeployment` scope | main.*.bicep used with wrong scope command | Use `az deployment sub create`, never `deployment group create` |
 | LAW daily quota reached | 0.1 GB/day is very tight | Temporarily raise `dailyQuotaGb` in parameter file |
 | Qdrant fails to mount volume | Storage account not yet provisioned | Ensure `enableStorage: true` and re-run |
+| `ForbiddenByRbac` writing KV secret | Deploying SP has no KV role | Ensure `deployerObjectId` is passed (workflow resolves automatically) |
+| `MissingSubscriptionRegistration` | Resource provider not registered | Re-run workflow — provider registration step runs before deploy |
+| Role assignment already exists | Re-deploy hit existing RBAC assignment | Harmless — deterministic GUID names make assignments idempotent |
 
 
 ---
 
-## Folder Structure
+## Managed Identities & RBAC
 
+### Container App identities
+
+All three platform Container Apps (`apihost`, `workerhost`, `mcphost`) are deployed with
+**system-assigned managed identities** baked into the Bicep definition:
+
+```bicep
+identity: {
+  type: 'SystemAssigned'
+}
 ```
-azure-infra/
+
+This means:
+- Azure creates the identity automatically on first deploy.
+- Re-deploying **never** reverts the identity back to `None`.
+- The `principalId` is available as a Bicep output (`caApiHost.outputs.principalId`, etc.)
+  and as deployment outputs (`apiHostPrincipalId`, `workerHostPrincipalId`, `mcpHostPrincipalId`).
+
+### RBAC assignments (IaC-managed)
+
+Role assignments are created by **`modules/containerAppRbac.bicep`**, called from
+`main.platform.bicep` after all Container Apps and the Key Vault / LAW are provisioned.
+
+| App | Scope | Role | Role ID |
+|---|---|---|---|
+| apihost | Key Vault | Key Vault Secrets User | `4633458b-17de-408a-b874-0445c86b69e0` |
+| workerhost | Key Vault | Key Vault Secrets User | `4633458b-17de-408a-b874-0445c86b69e0` |
+| mcphost | Key Vault | Key Vault Secrets User | `4633458b-17de-408a-b874-0445c86b69e0` |
+| apihost | Log Analytics Workspace | Log Analytics Reader | `73c42c96-874c-492b-b04d-ab87d138a893` |
+| mcphost | Log Analytics Workspace | Log Analytics Reader | `73c42c96-874c-492b-b04d-ab87d138a893` |
+
+> `workerhost` does not receive Log Analytics Reader because it is a background processing
+> app that writes to LAW via telemetry SDKs but does not query it directly.
+
+**Why Key Vault RBAC (not access policies)?**  
+The Key Vault is deployed with `enableRbacAuthorization: true`. Azure RBAC is the recommended
+model — role assignments are auditable, governed by Azure Policy, and consistent with the
+rest of the platform. Access policies are legacy and are not used anywhere in this codebase.
+
+**Idempotency**  
+Role assignment names are deterministic GUIDs computed as:
+```
+guid(scopeResourceId, principalId, roleDefinitionId)
+```
+Re-running the deployment will not fail if the assignment already exists — ARM will simply
+leave it untouched.
+
+### Deploying-SP Key Vault access
+
+The CI service principal also receives **Key Vault Secrets Officer** during deployment
+(granted by `keyVault.bicep` via the `deployerObjectId` parameter). This allows the
+pipeline to write secrets (SQL connection string, AOAI key/endpoint) immediately after
+provisioning without a separate manual step.
+
+---
+
+## Provider Registration
+
+The pipeline pre-registers all required Azure resource providers in both subscriptions
+**before** running `az deployment sub create`. This prevents `MissingSubscriptionRegistration`
+errors on clean subscriptions or after subscription transfers.
+
+### Platform (SubA) providers
+
+| Provider | Reason |
+|---|---|
+| `Microsoft.App` | Container Apps |
+| `Microsoft.OperationalInsights` | Log Analytics Workspace |
+| `Microsoft.Insights` | Application Insights |
+| `Microsoft.KeyVault` | Key Vault |
+| `Microsoft.Storage` | Storage Account (Qdrant volume) |
+| `Microsoft.Sql` | Azure SQL Server + Database |
+| `Microsoft.ManagedIdentity` | System-assigned identities on Container Apps |
+| `Microsoft.Authorization` | Role assignments (RBAC) |
+
+### AI (SubB) providers
+
+| Provider | Reason |
+|---|---|
+| `Microsoft.CognitiveServices` | Azure OpenAI account |
+| `Microsoft.Search` | Azure AI Search (optional) |
+| `Microsoft.OperationalInsights` | Log Analytics Workspace |
+| `Microsoft.Insights` | Application Insights |
+| `Microsoft.KeyVault` | Key Vault |
+| `Microsoft.ManagedIdentity` | Future MI use in AI sub |
+| `Microsoft.Authorization` | Role assignments (RBAC) |
+
+The `az provider register --wait` flag blocks until the provider reaches `Registered` state.
+For already-registered providers this takes < 5 seconds. Only on brand-new subscriptions
+will this add meaningful time (~30–90 seconds per provider).
+
+---
+
+
   README.md
   bicep/
     main.bicep                   # Subscription-scope orchestrator

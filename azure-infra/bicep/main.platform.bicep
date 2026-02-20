@@ -259,6 +259,23 @@ module qdrant 'modules/qdrant.bicep' = if (enableStorage) {
   }
 }
 
+// ── Container App RBAC ───────────────────────────────────────────────────────
+// Grants system-assigned managed identities the minimum roles they need:
+//   Key Vault Secrets User  — apihost, workerhost, mcphost
+//   Log Analytics Reader    — apihost, mcphost
+// Uses deterministic GUID names → safe to re-run (idempotent).
+module caRbac 'modules/containerAppRbac.bicep' = {
+  name: 'deploy-ca-rbac-platform'
+  scope: resourceGroup(rgName)
+  params: {
+    kvResourceId: kv.outputs.keyVaultId
+    lawResourceId: law.outputs.workspaceId
+    apiHostPrincipalId: caApiHost.outputs.principalId
+    workerHostPrincipalId: caWorkerHost.outputs.principalId
+    mcpHostPrincipalId: caMcpHost.outputs.principalId
+  }
+}
+
 // ── Budget ────────────────────────────────────────────────────────────────────
 module budget 'modules/budget.bicep' = {
   name: 'deploy-budget-platform'
@@ -290,3 +307,8 @@ output qdrantFqdn string = enableStorage ? qdrant.outputs.qdrantFqdn : ''
 
 #disable-next-line BCP318
 output qdrantHttpUrl string = enableStorage ? qdrant.outputs.qdrantHttpUrl : ''
+
+// Managed identity principal IDs (useful for cross-subscription RBAC scripts)
+output apiHostPrincipalId string = caApiHost.outputs.principalId
+output workerHostPrincipalId string = caWorkerHost.outputs.principalId
+output mcpHostPrincipalId string = caMcpHost.outputs.principalId

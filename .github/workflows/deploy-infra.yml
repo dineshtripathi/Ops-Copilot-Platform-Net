@@ -73,6 +73,25 @@ jobs:
           SP_OID=$(az ad sp show --id "${{ secrets.AZURE_CLIENT_ID_PLATFORM }}" --query id -o tsv)
           echo "DEPLOYER_OID=$SP_OID" >> $GITHUB_ENV
 
+      - name: Register required resource providers (Platform)
+        # Pre-registers providers so the deployment never fails with
+        # "MissingSubscriptionRegistration". The --wait flag blocks until each
+        # provider reaches Registered state (typically <30 s if already registered).
+        run: |
+          for provider in \
+            Microsoft.App \
+            Microsoft.OperationalInsights \
+            Microsoft.Insights \
+            Microsoft.KeyVault \
+            Microsoft.Storage \
+            Microsoft.Sql \
+            Microsoft.ManagedIdentity \
+            Microsoft.Authorization; do
+            echo "Registering $provider ..."
+            az provider register -n "$provider" --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID_PLATFORM }}" --wait
+          done
+          echo "All providers registered."
+
       - name: Cleanup old Platform RG (SubA)
         if: ${{ inputs.cleanupEnabled == 'true' }}
         run: |
@@ -157,6 +176,21 @@ jobs:
         run: |
           SP_OID=$(az ad sp show --id "${{ secrets.AZURE_CLIENT_ID_AI }}" --query id -o tsv)
           echo "DEPLOYER_OID=$SP_OID" >> $GITHUB_ENV
+
+      - name: Register required resource providers (AI)
+        run: |
+          for provider in \
+            Microsoft.CognitiveServices \
+            Microsoft.Search \
+            Microsoft.OperationalInsights \
+            Microsoft.Insights \
+            Microsoft.KeyVault \
+            Microsoft.ManagedIdentity \
+            Microsoft.Authorization; do
+            echo "Registering $provider ..."
+            az provider register -n "$provider" --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID_AI }}" --wait
+          done
+          echo "All providers registered."
 
       - name: Cleanup old AI RG (SubB)
         if: ${{ inputs.cleanupEnabled == 'true' }}
