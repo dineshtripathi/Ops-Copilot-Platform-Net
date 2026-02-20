@@ -48,7 +48,9 @@ public static class AgentRunsInfrastructureExtensions
                    ?? throw new InvalidOperationException(
                        "SQL connection string is not configured. " +
                        "Set 'ConnectionStrings:Sql' via User Secrets or Key Vault, " +
-                       "or set the 'SQL_CONNECTION_STRING' environment variable.");
+                       "or set the 'SQL_CONNECTION_STRING' environment variable. " +
+                       "For local development, ensure ASPNETCORE_ENVIRONMENT=Development " +
+                       "so User Secrets are loaded.");
 
         services.AddDbContext<AgentRunsDbContext>(options =>
             options.UseSqlServer(connStr, sql =>
