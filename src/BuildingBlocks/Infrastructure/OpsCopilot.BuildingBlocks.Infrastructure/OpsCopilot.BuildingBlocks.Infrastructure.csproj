@@ -6,4 +6,13 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Azure Key Vault as a configuration source (IConfigurationBuilder extension) -->
+    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.3.2" />
+    <!-- DefaultAzureCredential: MI (Container Apps) / az login (local dev) -->
+    <PackageReference Include="Azure.Identity" Version="1.13.2" />
+    <!-- ILogger / ILoggerFactory abstractions (no Console sink) -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.2" />
+  </ItemGroup>
+
 </Project>

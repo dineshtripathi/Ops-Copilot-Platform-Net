@@ -3,6 +3,23 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+# ── OpsCopilot: secret/local config overrides ─────────────────────────────────
+# These patterns prevent accidental secret commits.
+#
+# Allowed in repo  : appsettings.json, appsettings.Development.json
+# Never in repo    : any file matching the patterns below
+#
+# Local dev secrets are managed via 'dotnet user-secrets' (stored in AppData,
+# never in the repo).  See docs/local-dev-secrets.md.
+appsettings.*.Local.json
+appsettings.Local.json
+appsettings.Secrets.json
+*.secrets.json
+secrets.json
+# dotenv files with secrets
+.env.local
+.env.*.local
+
 # dotenv files
 .env
 

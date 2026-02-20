@@ -5,7 +5,20 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!--
+      User Secrets ID — links this project to the encrypted local secrets store.
+      Secrets are stored outside the repo at:
+        %APPDATA%\Microsoft\UserSecrets\<UserSecretsId>\secrets.json (Windows)
+        ~/.microsoft/usersecrets/<UserSecretsId>/secrets.json         (Linux/macOS)
+      See docs/local-dev-secrets.md for the list of required secrets.
+    -->
+    <UserSecretsId>3f8d1a2e-9c4b-4e77-b8f3-d0c5e6a7f901</UserSecretsId>
   </PropertyGroup>
+
+  <!-- Shared configuration helpers (Key Vault, User Secrets bootstrap) -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\BuildingBlocks\Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure.csproj" />
+  </ItemGroup>
 
   <!-- AgentRuns module -->
   <ItemGroup>

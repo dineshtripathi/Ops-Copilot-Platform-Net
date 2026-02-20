@@ -15,29 +15,40 @@ public static class AgentRunsInfrastructureExtensions
     /// Registers EF Core (SQL Server), IAgentRunRepository, and the
     /// MCP stdio client for IKqlToolClient (→ McpHost child process).
     ///
-    /// Required configuration keys:
-    ///   SQL_CONNECTION_STRING — Azure SQL connection string.
-    ///     In Container Apps: injected via Key Vault reference app setting.
-    ///     For local dev: set as environment variable.
+    /// ── SQL connection string ───────────────────────────────────────────────
+    /// Resolved from (first non-empty wins):
+    ///   ConnectionStrings:Sql  — standard dotnet config section / User Secret
+    ///   SQL_CONNECTION_STRING  — legacy flat env var (backward compat)
     ///
-    /// Optional configuration keys:
-    ///   MCP_KQL_SERVER_COMMAND  — Full command to start McpHost. Parsed as
-    ///     "executable arg1 arg2 …". Defaults to:
-    ///       "dotnet run --project src/Hosts/OpsCopilot.McpHost/OpsCopilot.McpHost.csproj"
-    ///     For production Container Apps override to:
-    ///       "dotnet /app/OpsCopilot.McpHost.dll"
-    ///   MCP_KQL_SERVER_WORKDIR  — Working directory for the child process.
-    ///     Auto-discovered from solution root when omitted in dev.
-    ///   MCP_KQL_TIMEOUT_SECONDS — Per-call timeout in seconds. Default: 30.
+    /// ── MCP KQL server ─────────────────────────────────────────────────────
+    /// Resolved from (first non-empty wins):
+    ///   McpKql:ServerCommand   — config section (appsettings / User Secrets / Key Vault)
+    ///                            Double-underscore env var: McpKql__ServerCommand
+    ///   MCP_KQL_SERVER_COMMAND — legacy flat env var (backward compat)
+    ///
+    ///   McpKql:TimeoutSeconds  — config section
+    ///   MCP_KQL_TIMEOUT_SECONDS— legacy flat env var
+    ///
+    ///   McpKql:WorkDir         — override working directory for child process
+    ///   MCP_KQL_SERVER_WORKDIR — legacy flat env var
+    ///
+    /// Default ServerCommand (when none of the above are set):
+    ///   "dotnet run --project src/Hosts/OpsCopilot.McpHost/OpsCopilot.McpHost.csproj"
+    ///
+    /// Production override example (Container Apps app setting):
+    ///   McpKql__ServerCommand=dotnet /app/OpsCopilot.McpHost.dll
     /// </summary>
     public static IServiceCollection AddAgentRunsInfrastructure(
         this IServiceCollection services, IConfiguration configuration)
     {
         // ── SQL / EF Core ─────────────────────────────────────────────────────
-        var connStr = configuration["SQL_CONNECTION_STRING"]
-            ?? throw new InvalidOperationException(
-                "SQL_CONNECTION_STRING is not configured. " +
-                "Set it as an environment variable or Key Vault reference.");
+        // Accept both the standard section key and the legacy flat env var.
+        var connStr = configuration["ConnectionStrings:Sql"]
+                   ?? configuration["SQL_CONNECTION_STRING"]
+                   ?? throw new InvalidOperationException(
+                       "SQL connection string is not configured. " +
+                       "Set 'ConnectionStrings:Sql' via User Secrets or Key Vault, " +
+                       "or set the 'SQL_CONNECTION_STRING' environment variable.");
 
         services.AddDbContext<AgentRunsDbContext>(options =>
             options.UseSqlServer(connStr, sql =>
@@ -62,22 +73,37 @@ public static class AgentRunsInfrastructureExtensions
 
     /// <summary>
     /// Builds <see cref="McpKqlServerOptions"/> from configuration.
-    /// Supports a flat command string via <c>MCP_KQL_SERVER_COMMAND</c>:
-    ///   first token → Executable, remaining tokens → Arguments.
-    /// Paths with spaces are not supported in the flat command string;
-    /// use the default and override <c>WorkingDirectory</c> instead.
+    ///
+    /// Priority for each value (first non-empty wins):
+    ///   ServerCommand : McpKql:ServerCommand → MCP_KQL_SERVER_COMMAND → built-in default
+    ///   TimeoutSeconds: McpKql:TimeoutSeconds → MCP_KQL_TIMEOUT_SECONDS → 30
+    ///   WorkingDir    : McpKql:WorkDir        → MCP_KQL_SERVER_WORKDIR  → auto-discover
+    ///
+    /// Flat command strings are parsed into Executable + Arguments by splitting
+    /// on whitespace.  Paths containing spaces are not supported in the flat
+    /// command string; use the built-in default and override only WorkingDir.
     /// </summary>
     private static McpKqlServerOptions BuildMcpKqlServerOptions(IConfiguration configuration)
     {
-        var cmdStr     = configuration["MCP_KQL_SERVER_COMMAND"];
-        var workDir    = configuration["MCP_KQL_SERVER_WORKDIR"];
-        var timeoutStr = configuration["MCP_KQL_TIMEOUT_SECONDS"];
-        var timeout    = int.TryParse(timeoutStr, out var t) ? t : 30;
+        // ── ServerCommand ───────────────────────────────────────────────────
+        // Section key first (double-underscore env var: McpKql__ServerCommand),
+        // then legacy flat key (MCP_KQL_SERVER_COMMAND), then built-in default.
+        var cmdStr = configuration["McpKql:ServerCommand"]
+                  ?? configuration["MCP_KQL_SERVER_COMMAND"];
+
+        // ── WorkingDirectory ────────────────────────────────────────────────
+        var workDir = configuration["McpKql:WorkDir"]
+                   ?? configuration["MCP_KQL_SERVER_WORKDIR"];
+
+        // ── TimeoutSeconds ──────────────────────────────────────────────────
+        var timeoutStr = configuration["McpKql:TimeoutSeconds"]
+                      ?? configuration["MCP_KQL_TIMEOUT_SECONDS"];
+        var timeout = int.TryParse(timeoutStr, out var t) ? t : 30;
 
         if (!string.IsNullOrWhiteSpace(cmdStr))
         {
-            // Parse flat command string: "dotnet run --project foo" →
-            //   Executable = "dotnet", Arguments = ["run", "--project", "foo"]
+            // Parse flat command string: "dotnet /app/McpHost.dll" →
+            //   Executable = "dotnet", Arguments = ["/app/McpHost.dll"]
             var tokens = cmdStr.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
             return new McpKqlServerOptions
             {
