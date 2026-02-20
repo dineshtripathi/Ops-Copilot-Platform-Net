@@ -2,15 +2,315 @@
 
 ## Overview
 
-This folder provisions **enterprise-ready Azure infrastructure** for OpsCopilot across **two Azure subscriptions**, each representing a logical tenant boundary within a single Entra tenant.
+Infrastructure is split across **two Azure subscriptions** by function:
 
-| Logical Tenant | Azure Subscription | Subscription ID |
+| Subscription | Label | ID | Purpose |
+|---|---|---|---|
+| SubA | Platform | `b20a7294-6951-4107-88df-d7d320218670` | Compute, databases, networking |
+| SubB | AI | `bd27a79c-de25-4097-a874-3bb35f2b926a` | AI services, embeddings, vector search |
+
+Both subscriptions share the same **Entra tenant**: `4a72b866-99a4-4388-b881-cef9c8480b1c`.
+
+---
+
+## Folder Structure
+
+```
+azure-infra/
+  README.md
+  bicep/
+    main.platform.bicep            # SubA orchestrator — Platform resources
+    main.ai.bicep                  # SubB orchestrator — AI resources
+    modules/
+      rg.bicep                     # Resource group
+      logAnalytics.bicep           # Log Analytics Workspace
+      appInsights.bicep            # Application Insights (workspace-based)
+      keyVault.bicep               # Key Vault (Standard, RBAC)
+      storage.bicep                # Storage Account (Standard_LRS)
+      budget.bicep                 # Subscription budget + alerts
+      sql.bicep                    # Azure SQL Server + Database (Basic 5 DTU)
+      containerAppsEnv.bicep       # Container Apps Managed Environment (Consumption)
+      containerApp.bicep           # Generic Container App
+      qdrant.bicep                 # Qdrant vector DB as Container App + Azure Files
+      aoai.bicep                   # Azure OpenAI account (NO model deployments in Bicep)
+      search.bicep                 # Azure AI Search (optional — default OFF)
+      tags.bicep                   # Tag schema reference (tags inlined in main files)
+    env/
+      dev/
+        platform.parameters.json
+        ai.parameters.json
+      sandbox/
+        platform.parameters.json
+        ai.parameters.json
+      prod/
+        platform.parameters.json
+        ai.parameters.json
+  scripts/
+    cleanup.sh                     # Bash — delete old TenantA/TenantB RGs
+    cleanup.ps1                    # PowerShell — same, for local Windows use
+```
+
+---
+
+## Resource Inventory
+
+### SubA — Platform (`rg-opscopilot-platform-{env}-uks`)
+
+| Resource | Module | SKU | Est. Cost |
+|---|---|---|---|
+| Log Analytics Workspace | `logAnalytics.bicep` | PerGB2018, 0.1 GB/day quota | ~£0.23/mo |
+| Application Insights | `appInsights.bicep` | Workspace-based | ~£0 (5 GB free) |
+| Key Vault | `keyVault.bicep` | Standard | ~£0.03/10k ops |
+| Storage Account | `storage.bicep` | Standard_LRS | ~£0.016/GB |
+| Azure SQL Server | `sql.bicep` | — | — |
+| Azure SQL Database | `sql.bicep` | Basic (5 DTU, 2 GB) | ~£4.20/mo |
+| Container Apps Env | `containerAppsEnv.bicep` | Consumption | £0 (idle) |
+| Container App: apihost | `containerApp.bicep` | Scale-to-zero | £0 (idle) |
+| Container App: workerhost | `containerApp.bicep` | Scale-to-zero | £0 (idle) |
+| Container App: mcphost | `containerApp.bicep` | Scale-to-zero | £0 (idle) |
+| Container App: qdrant | `qdrant.bicep` | Scale-to-zero + Azure Files | ~£0.50/mo storage |
+| Budget | `budget.bicep` | — | £0 |
+
+**SubA total estimated dev spend: ~£6–10/month** (plus traffic-driven Container Apps costs).
+
+### SubB — AI (`rg-opscopilot-ai-{env}-uks`)
+
+| Resource | Module | SKU | Est. Cost |
+|---|---|---|---|
+| Log Analytics Workspace | `logAnalytics.bicep` | PerGB2018, 0.1 GB/day quota | ~£0.23/mo |
+| Application Insights | `appInsights.bicep` | Workspace-based | ~£0 (5 GB free) |
+| Key Vault | `keyVault.bicep` | Standard | ~£0.03/10k ops |
+| Azure OpenAI account | `aoai.bicep` | S0 | token pay-per-use |
+| Azure AI Search | `search.bicep` | Free (default OFF) | £0 / ~£65 (basic) |
+| Budget | `budget.bicep` | — | £0 |
+
+**SubB total estimated dev spend: ~£1–5/month + token consumption** (AOAI model deployments NOT created by default).
+
+---
+
+## Toggles Reference
+
+### Platform toggles (`main.platform.bicep` / `platform.parameters.json`)
+
+| Parameter | Default | Effect |
 |---|---|---|
-| TenantA | SubA | `b20a7294-6951-4107-88df-d7d320218670` |
-| TenantB | SubB | `bd27a79c-de25-4097-a874-3bb35f2b926a` |
+| `enableStorage` | `true` | `false` skips storage account and Qdrant |
+| `budgetEmails` | `[]` | Add email addresses to receive budget alerts |
+| `bootstrapImage` | hello-world | Placeholder image; overridden by app deployment pipeline |
 
-Subscription IDs are stored only in parameter files — **never in Bicep**.  
-The pipeline uses a matrix to deploy to both subscriptions in parallel.
+### AI toggles (`main.ai.bicep` / `ai.parameters.json`)
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `enableLaw` | `true` | `false` skips Log Analytics Workspace |
+| `enableAppInsights` | `true` | `false` (or `enableLaw=false`) skips App Insights |
+| `deploymentsEnabled` | `false` | `true` instructs pipeline to create AOAI model deployments via CLI |
+| `searchProvision` | `false` | `true` creates Azure AI Search (`searchSku` applies) |
+| `searchSku` | `free` | `basic` (~£65/mo) for prod; `free` for dev/sandbox |
+
+### Cleanup toggle (`deploy-infra.yml`)
+
+| Input | Default | Effect |
+|---|---|---|
+| `cleanupEnabled` | `true` | `true` deletes old `rg-opscopilot-a-*` (SubA) and `rg-opscopilot-b-*` (SubB) before deploying |
+
+---
+
+## OIDC Setup (GitHub Actions)
+
+Two service principals are required — one per subscription.
+
+### 1. Create App Registrations
+
+```bash
+# Platform (SubA)
+az ad app create --display-name "sp-opscopilot-deploy-platform"
+# Note appId → AZURE_CLIENT_ID_PLATFORM
+
+# AI (SubB)
+az ad app create --display-name "sp-opscopilot-deploy-ai"
+# Note appId → AZURE_CLIENT_ID_AI
+```
+
+### 2. Create Service Principals
+
+```bash
+az ad sp create --id <APP_ID_PLATFORM>
+az ad sp create --id <APP_ID_AI>
+```
+
+### 3. Add Federated Credentials (OIDC)
+
+```bash
+# For main branch (dev/sandbox)
+az ad app federated-credential create --id <APP_ID> --parameters '{
+  "name": "github-main",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:<owner>/<repo>:ref:refs/heads/main",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+
+# For production environment approval gate
+az ad app federated-credential create --id <APP_ID> --parameters '{
+  "name": "github-prod-env",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:<owner>/<repo>:environment:prod",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+```
+
+### 4. Assign Roles
+
+```bash
+# Platform SP on SubA
+az role assignment create --assignee <APP_ID_PLATFORM> \
+  --role Contributor \
+  --scope /subscriptions/b20a7294-6951-4107-88df-d7d320218670
+
+az role assignment create --assignee <APP_ID_PLATFORM> \
+  --role "Cost Management Contributor" \
+  --scope /subscriptions/b20a7294-6951-4107-88df-d7d320218670
+
+# AI SP on SubB
+az role assignment create --assignee <APP_ID_AI> \
+  --role Contributor \
+  --scope /subscriptions/bd27a79c-de25-4097-a874-3bb35f2b926a
+
+az role assignment create --assignee <APP_ID_AI> \
+  --role "Cost Management Contributor" \
+  --scope /subscriptions/bd27a79c-de25-4097-a874-3bb35f2b926a
+```
+
+### 5. Required GitHub Secrets
+
+| Secret | Value |
+|---|---|
+| `AZURE_TENANT_ID` | `4a72b866-99a4-4388-b881-cef9c8480b1c` |
+| `AZURE_CLIENT_ID_PLATFORM` | App Registration `appId` for SubA |
+| `AZURE_SUBSCRIPTION_ID_PLATFORM` | `b20a7294-6951-4107-88df-d7d320218670` |
+| `AZURE_CLIENT_ID_AI` | App Registration `appId` for SubB |
+| `AZURE_SUBSCRIPTION_ID_AI` | `bd27a79c-de25-4097-a874-3bb35f2b926a` |
+| `SQL_ADMIN_PASSWORD_PLATFORM` | Strong password for SQL admin (min 12 chars, mixed) |
+
+---
+
+## Running Locally
+
+### Prerequisites
+- Azure CLI ≥ 2.56
+- Bicep CLI: `az bicep install`
+- Contributor + Cost Management Contributor on both subscriptions
+
+### What-If (Platform — SubA)
+
+```bash
+az login
+az account set --subscription b20a7294-6951-4107-88df-d7d320218670
+
+az deployment sub what-if \
+  --location uksouth \
+  --template-file azure-infra/bicep/main.platform.bicep \
+  --parameters azure-infra/bicep/env/dev/platform.parameters.json \
+  --parameters sqlAdminPassword="<your-password>"
+```
+
+### Deploy (Platform — SubA)
+
+```bash
+az deployment sub create \
+  --location uksouth \
+  --template-file azure-infra/bicep/main.platform.bicep \
+  --parameters azure-infra/bicep/env/dev/platform.parameters.json \
+  --parameters sqlAdminPassword="<your-password>"
+```
+
+### What-If (AI — SubB)
+
+```bash
+az account set --subscription bd27a79c-de25-4097-a874-3bb35f2b926a
+
+az deployment sub what-if \
+  --location uksouth \
+  --template-file azure-infra/bicep/main.ai.bicep \
+  --parameters azure-infra/bicep/env/dev/ai.parameters.json
+```
+
+### Deploy (AI — SubB)
+
+```bash
+az deployment sub create \
+  --location uksouth \
+  --template-file azure-infra/bicep/main.ai.bicep \
+  --parameters azure-infra/bicep/env/dev/ai.parameters.json
+```
+
+### Cleanup old RGs (local)
+
+```bash
+# PowerShell
+.\azure-infra\scripts\cleanup.ps1 `
+  -Env dev `
+  -SubscriptionA b20a7294-6951-4107-88df-d7d320218670 `
+  -SubscriptionB bd27a79c-de25-4097-a874-3bb35f2b926a `
+  -Target both `
+  -DryRun
+
+# Bash
+chmod +x azure-infra/scripts/cleanup.sh
+azure-infra/scripts/cleanup.sh \
+  --env dev \
+  --subscription-a b20a7294-6951-4107-88df-d7d320218670 \
+  --subscription-b bd27a79c-de25-4097-a874-3bb35f2b926a \
+  --target both \
+  --dry-run
+```
+
+Remove `--dry-run` / `-DryRun` to execute deletions.
+
+---
+
+## AOAI Model Deployments
+
+Model deployments are **intentionally excluded from Bicep**. This avoids:
+- Quota/capacity errors during `what-if`
+- Bicep idempotency failures on model version skew
+- Accidental deployment in dev
+
+To enable in a given environment, set `deploymentsEnabled: true` in the parameter file.  
+The pipeline will then run `az cognitiveservices account deployment create` for:
+- `gpt-4o-mini` (30k tokens/min)
+- `text-embedding-3-small` (120k tokens/min)
+
+The deployed AOAI key and endpoint are stored in the AI Key Vault automatically.
+
+---
+
+## Prod Differences
+
+| Setting | Dev/Sandbox | Prod |
+|---|---|---|
+| LAW retention | 30 days | 90 days |
+| LAW daily quota | 0.1 GB | Unlimited (-1) |
+| Budget | £80/mo | £100/mo |
+| AI Search | OFF / free SKU | ON / basic SKU |
+| Container App replicas | max 1–2 | max 3–5 |
+| GitHub environment gate | None | `prod` (requires reviewer approval) |
+
+---
+
+## Troubleshooting
+
+| Error | Cause | Fix |
+|---|---|---|
+| `AuthorizationFailed` on budget | Missing Cost Management Contributor | Assign role to SP |
+| `kvName already exists` | Key Vault names are globally unique | Change `keyVaultName` in parameter file |
+| `StorageAccountAlreadyExists` | Storage account names globally unique | Change `storageNamePrefix` |
+| `QuotaExceeded` on AOAI | Model deployment quota not available | Request quota or change region |
+| OIDC login `short-lived token` | Subject mismatch in federated credential | Verify branch/environment subject exactly |
+| `InvalidTemplateDeployment` scope | main.*.bicep used with wrong scope command | Use `az deployment sub create`, never `deployment group create` |
+| LAW daily quota reached | 0.1 GB/day is very tight | Temporarily raise `dailyQuotaGb` in parameter file |
+| Qdrant fails to mount volume | Storage account not yet provisioned | Ensure `enableStorage: true` and re-run |
+
 
 ---
 

@@ -18,8 +18,8 @@ param location string
 @maxValue(730)
 param retentionInDays int = 30
 
-@description('Daily ingestion quota in GB. Use -1 to disable. Default 0.1 GB for cost control.')
-param dailyQuotaGb int = 0
+@description('Daily ingestion quota in GB as a string. Use "-1" to disable the cap. Default "0.1" GB (~£0.23/month) for cost control.')
+param dailyQuotaGb string = '0.1'
 
 @description('Tags to apply')
 param tags object
@@ -33,13 +33,9 @@ resource law 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
       name: 'PerGB2018'
     }
     retentionInDays: retentionInDays
-    workspaceCapping: dailyQuotaGb == -1
-      ? {
-          dailyQuotaGb: json('-1')
-        }
-      : {
-          dailyQuotaGb: json('0.1')
-        }
+    workspaceCapping: {
+      dailyQuotaGb: json(dailyQuotaGb)
+    }
     features: {
       enableLogAccessUsingOnlyResourcePermissions: true
     }

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": { "value": "dev" },
+    "location": { "value": "uksouth" },
+    "rgName": { "value": "rg-opscopilot-platform-dev-uks" },
+    "lawName": { "value": "law-opscopilot-platform-dev-uks" },
+    "appInsightsName": { "value": "appi-opscopilot-platform-dev-uks" },
+    "keyVaultName": { "value": "kv-opsctpltfdev" },
+    "storageNamePrefix": { "value": "stopscopilotpltf" },
+    "enableStorage": { "value": true },
+    "sqlServerName": { "value": "sql-opscopilot-platform-dev-uks" },
+    "sqlDbName": { "value": "sqldb-opscopilot-platform-dev" },
+    "sqlAdminLogin": { "value": "opsadmin" },
+    "caeName": { "value": "cae-opscopilot-platform-dev-uks" },
+    "bootstrapImage": { "value": "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest" },
+    "budgetAmount": { "value": 80 },
+    "budgetEmails": { "value": [] }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": { "value": "dev" },
+    "location": { "value": "uksouth" },
+    "rgName": { "value": "rg-opscopilot-ai-dev-uks" },
+    "enableLaw": { "value": true },
+    "lawName": { "value": "law-opscopilot-ai-dev-uks" },
+    "enableAppInsights": { "value": true },
+    "appInsightsName": { "value": "appi-opscopilot-ai-dev-uks" },
+    "keyVaultName": { "value": "kv-opsctaidev" },
+    "aoaiName": { "value": "aoai-opscopilot-ai-dev-uks" },
+    "deploymentsEnabled": { "value": false },
+    "searchProvision": { "value": false },
+    "searchName": { "value": "srch-opscopilot-ai-dev-uks" },
+    "searchSku": { "value": "free" },
+    "budgetAmount": { "value": 80 },
+    "budgetEmails": { "value": [] }
+  }
+}
