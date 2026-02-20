@@ -13,8 +13,8 @@ Ops Copilot is a modular .NET platform for operations triage, alert ingestion, g
 - `tests/` – Integration, module, and MCP contract test projects
 - `infrastructure/` – Azure deployment artifacts (Bicep)
 - `.github/workflows/` – CI/CD workflows, including infra deployment
-- `Doc/PROJECT_VISION.md` – Product vision and target architecture
-- `Doc/pdd/` – Product/design decision documentation
+- `docs/PROJECT_VISION.md` – Product vision and target architecture
+- `docs/pdd/` – Product/design decision documentation
 
 ## Prerequisites
 
@@ -47,7 +47,7 @@ See `infrastructure/README.md` for deployment details, cost guardrails, and opti
 
 ## Module Ownership & Status
 
-Use this table as a living ownership and maturity tracker. Keep dependency direction aligned with `Doc/pdd/DEPENDENCY_RULES.md`.
+Use this table as a living ownership and maturity tracker. Keep dependency direction aligned with `docs/pdd/DEPENDENCY_RULES.md`.
 
 | Module | Owning Team | Tech Lead | Status | Notes |
 | --- | --- | --- | --- | --- |

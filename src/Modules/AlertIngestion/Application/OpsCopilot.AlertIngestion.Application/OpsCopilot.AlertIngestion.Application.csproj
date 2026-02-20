@@ -6,4 +6,14 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Domain\OpsCopilot.AlertIngestion.Domain\OpsCopilot.AlertIngestion.Domain.csproj" />
+    <!-- cross-module: AlertIngestion.Application initiates AgentRun records -->
+    <ProjectReference Include="..\..\..\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -1,0 +1,159 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.40.2.10011",
+      "templateHash": "621242482164562231"
+    }
+  },
+  "parameters": {
+    "appName": {
+      "type": "string",
+      "metadata": {
+        "description": "Container App name (must be globally unique within the CAE domain)"
+      }
+    },
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region"
+      }
+    },
+    "caeId": {
+      "type": "string",
+      "metadata": {
+        "description": "Container Apps Environment resource ID"
+      }
+    },
+    "image": {
+      "type": "string",
+      "defaultValue": "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest",
+      "metadata": {
+        "description": "Container image. Use a public placeholder for initial provisioning."
+      }
+    },
+    "targetPort": {
+      "type": "int",
+      "defaultValue": 80,
+      "metadata": {
+        "description": "Port the container listens on"
+      }
+    },
+    "isExternalIngress": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Expose as external (internet-facing) ingress. Set false for background workers."
+      }
+    },
+    "enableIngress": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable ingress at all. Set false for pure background workers with no HTTP endpoint."
+      }
+    },
+    "cpu": {
+      "type": "string",
+      "defaultValue": "0.25",
+      "metadata": {
+        "description": "CPU allocation per replica (vCPU). 0.25 = minimum for Consumption plan."
+      }
+    },
+    "memory": {
+      "type": "string",
+      "defaultValue": "0.5Gi",
+      "metadata": {
+        "description": "Memory allocation per replica. Must match allowed pairs for cpu value."
+      }
+    },
+    "minReplicas": {
+      "type": "int",
+      "defaultValue": 0,
+      "minValue": 0,
+      "metadata": {
+        "description": "Minimum replicas. 0 = scale-to-zero (cost-safe default)."
+      }
+    },
+    "maxReplicas": {
+      "type": "int",
+      "defaultValue": 3,
+      "minValue": 1,
+      "metadata": {
+        "description": "Maximum replicas. Keep low in dev to cap costs."
+      }
+    },
+    "envVars": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Environment variables to inject into the container."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "metadata": {
+        "description": "Tags to apply"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-11-02-preview",
+      "name": "[parameters('appName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "managedEnvironmentId": "[parameters('caeId')]",
+        "configuration": {
+          "ingress": "[if(parameters('enableIngress'), createObject('external', parameters('isExternalIngress'), 'targetPort', parameters('targetPort'), 'allowInsecure', false(), 'traffic', createArray(createObject('weight', 100, 'latestRevision', true()))), null())]"
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "[parameters('appName')]",
+              "image": "[parameters('image')]",
+              "resources": {
+                "cpu": "[json(parameters('cpu'))]",
+                "memory": "[parameters('memory')]"
+              },
+              "env": "[parameters('envVars')]"
+            }
+          ],
+          "scale": {
+            "minReplicas": "[parameters('minReplicas')]",
+            "maxReplicas": "[parameters('maxReplicas')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "containerAppId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.App/containerApps', parameters('appName'))]"
+    },
+    "containerAppName": {
+      "type": "string",
+      "value": "[parameters('appName')]"
+    },
+    "containerAppFqdn": {
+      "type": "string",
+      "value": "[if(parameters('enableIngress'), reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2023-11-02-preview').configuration.ingress.fqdn, '')]"
+    },
+    "latestRevisionName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2023-11-02-preview').latestRevisionName]"
+    },
+    "principalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2023-11-02-preview', 'full').identity.principalId]"
+    }
+  }
+}

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -6,5 +6,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Azure Monitor Query for real KQL execution against Log Analytics -->
+    <PackageReference Include="Azure.Monitor.Query" Version="1.4.0" />
+    <!-- DefaultAzureCredential — system-assigned MI in Container Apps -->
+    <PackageReference Include="Azure.Identity" Version="1.13.2" />
+  </ItemGroup>
 
 </Project>

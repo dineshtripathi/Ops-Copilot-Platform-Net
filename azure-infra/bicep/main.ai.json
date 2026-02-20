@@ -1,0 +1,961 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.40.2.10011",
+      "templateHash": "10093768500322818719"
+    }
+  },
+  "parameters": {
+    "environment": {
+      "type": "string",
+      "defaultValue": "dev",
+      "allowedValues": [
+        "dev",
+        "sandbox",
+        "prod"
+      ],
+      "metadata": {
+        "description": "Deployment environment."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "uksouth",
+      "metadata": {
+        "description": "Primary Azure region."
+      }
+    },
+    "rgName": {
+      "type": "string",
+      "defaultValue": "[format('rg-opscopilot-ai-{0}-uks', parameters('environment'))]",
+      "metadata": {
+        "description": "Name of the AI resource group."
+      }
+    },
+    "enableLaw": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy a Log Analytics Workspace in the AI subscription."
+      }
+    },
+    "lawName": {
+      "type": "string",
+      "defaultValue": "[format('law-opscopilot-ai-{0}-uks', parameters('environment'))]",
+      "metadata": {
+        "description": "Log Analytics Workspace name."
+      }
+    },
+    "enableAppInsights": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy Application Insights (requires enableLaw=true)."
+      }
+    },
+    "appInsightsName": {
+      "type": "string",
+      "defaultValue": "[format('appi-opscopilot-ai-{0}-uks', parameters('environment'))]",
+      "metadata": {
+        "description": "Application Insights name."
+      }
+    },
+    "keyVaultName": {
+      "type": "string",
+      "defaultValue": "[format('kv-opsctai{0}', parameters('environment'))]",
+      "metadata": {
+        "description": "Key Vault name (3–24 chars, globally unique)."
+      }
+    },
+    "aoaiName": {
+      "type": "string",
+      "defaultValue": "[format('aoai-opscopilot-ai-{0}-uks', parameters('environment'))]",
+      "metadata": {
+        "description": "Azure OpenAI account name."
+      }
+    },
+    "deploymentsEnabled": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "  When true the pipeline will run az cognitiveservices account deployment create\nafter this Bicep template. Has no effect on the Bicep itself — surfaced here\npurely as a discoverable output for the workflow to branch on.\n"
+      }
+    },
+    "searchProvision": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Set to true to provision an Azure AI Search instance. Default false (cost gate)."
+      }
+    },
+    "searchName": {
+      "type": "string",
+      "defaultValue": "[format('srch-opscopilot-ai-{0}-uks', parameters('environment'))]",
+      "metadata": {
+        "description": "Azure AI Search resource name."
+      }
+    },
+    "searchSku": {
+      "type": "string",
+      "defaultValue": "free",
+      "allowedValues": [
+        "free",
+        "basic",
+        "standard",
+        "standard2",
+        "standard3"
+      ],
+      "metadata": {
+        "description": "AI Search SKU. free = £0 (1 index, 50MB); basic = ~£65/month."
+      }
+    },
+    "budgetAmount": {
+      "type": "int",
+      "defaultValue": 80,
+      "metadata": {
+        "description": "Monthly budget amount in GBP."
+      }
+    },
+    "budgetEmails": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Email addresses that receive budget alerts."
+      }
+    },
+    "deployerObjectId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Object ID of the service principal that runs this deployment.\nUsed to grant Key Vault Secrets Officer so the pipeline can write secrets.\nResolved in CI via: az ad sp show --id $CLIENT_ID --query id -o tsv\n"
+      }
+    },
+    "extraTags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Extra tags to merge onto all resources."
+      }
+    }
+  },
+  "variables": {
+    "baseTags": "[union(createObject('environment', parameters('environment'), 'platform', 'opscopilot', 'subscription', 'ai', 'managedBy', 'bicep'), parameters('extraTags'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-rg-ai",
+      "location": "[deployment().location]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "rgName": {
+            "value": "[parameters('rgName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('baseTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "10632931293748932311"
+            }
+          },
+          "parameters": {
+            "rgName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the resource group to create"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the resource group"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply to the resource group"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Resources/resourceGroups",
+              "apiVersion": "2023-07-01",
+              "name": "[parameters('rgName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]"
+            }
+          ],
+          "outputs": {
+            "resourceGroupId": {
+              "type": "string",
+              "value": "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('rgName'))]"
+            },
+            "resourceGroupName": {
+              "type": "string",
+              "value": "[parameters('rgName')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "condition": "[parameters('enableLaw')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-law-ai",
+      "resourceGroup": "[parameters('rgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "lawName": {
+            "value": "[parameters('lawName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "retentionInDays": "[if(equals(parameters('environment'), 'prod'), createObject('value', 90), createObject('value', 30))]",
+          "dailyQuotaGb": "[if(equals(parameters('environment'), 'prod'), createObject('value', '-1'), createObject('value', '0.1'))]",
+          "tags": {
+            "value": "[variables('baseTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "5305769064257336489"
+            }
+          },
+          "parameters": {
+            "lawName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Log Analytics Workspace"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "retentionInDays": {
+              "type": "int",
+              "defaultValue": 30,
+              "minValue": 30,
+              "maxValue": 730,
+              "metadata": {
+                "description": "Retention in days (30–730). Default 30 for cost saving."
+              }
+            },
+            "dailyQuotaGb": {
+              "type": "string",
+              "defaultValue": "0.1",
+              "metadata": {
+                "description": "Daily ingestion quota in GB as a string. Use \"-1\" to disable the cap. Default \"0.1\" GB (~£0.23/month) for cost control."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2022-10-01",
+              "name": "[parameters('lawName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": "[parameters('retentionInDays')]",
+                "workspaceCapping": {
+                  "dailyQuotaGb": "[json(parameters('dailyQuotaGb'))]"
+                },
+                "features": {
+                  "enableLogAccessUsingOnlyResourcePermissions": true
+                },
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled"
+              }
+            }
+          ],
+          "outputs": {
+            "workspaceId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('lawName'))]"
+            },
+            "customerId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', parameters('lawName')), '2022-10-01').customerId]"
+            },
+            "workspaceName": {
+              "type": "string",
+              "value": "[parameters('lawName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/deployments', 'deploy-rg-ai')]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('enableLaw'), parameters('enableAppInsights'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-appi-ai",
+      "resourceGroup": "[parameters('rgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "appInsightsName": {
+            "value": "[parameters('appInsightsName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "lawResourceId": "[if(parameters('enableLaw'), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-ai'), '2025-04-01').outputs.workspaceId.value), createObject('value', ''))]",
+          "tags": {
+            "value": "[variables('baseTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "6439975535222652856"
+            }
+          },
+          "parameters": {
+            "appInsightsName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Application Insights resource"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "lawResourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics Workspace to link"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[parameters('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "kind": "web",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[parameters('lawResourceId')]",
+                "IngestionMode": "LogAnalytics",
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled",
+                "DisableLocalAuth": false
+              }
+            }
+          ],
+          "outputs": {
+            "appInsightsId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]"
+            },
+            "instrumentationKey": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').InstrumentationKey]"
+            },
+            "connectionString": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-ai')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-kv-ai",
+      "resourceGroup": "[parameters('rgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "keyVaultName": {
+            "value": "[parameters('keyVaultName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('baseTags')]"
+          },
+          "deployerObjectId": {
+            "value": "[parameters('deployerObjectId')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "16463900608320542855"
+            }
+          },
+          "parameters": {
+            "keyVaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Key Vault (3–24 chars, globally unique)"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply"
+              }
+            },
+            "deployerObjectId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "  Object ID of the deploying service principal.\nWhen provided, grants Key Vault Secrets Officer on the vault so the pipeline\ncan write secrets (e.g. SQL connection string) immediately after deployment.\nLeave empty to skip the role assignment (managed elsewhere).\n"
+              }
+            }
+          },
+          "variables": {
+            "kvSku": {
+              "family": "A",
+              "name": "standard"
+            },
+            "kvSecretsOfficerRoleId": "b86a8fe4-44ce-4948-aee5-eccb2c155cd7"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2023-07-01",
+              "name": "[parameters('keyVaultName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": "[variables('kvSku')]",
+                "tenantId": "[subscription().tenantId]",
+                "enableRbacAuthorization": true,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 7,
+                "enabledForDeployment": false,
+                "enabledForDiskEncryption": false,
+                "enabledForTemplateDeployment": true,
+                "publicNetworkAccess": "Enabled",
+                "networkAcls": {
+                  "bypass": "AzureServices",
+                  "defaultAction": "Allow"
+                }
+              }
+            },
+            {
+              "condition": "[not(empty(parameters('deployerObjectId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), parameters('deployerObjectId'), variables('kvSecretsOfficerRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('kvSecretsOfficerRoleId'))]",
+                "principalId": "[parameters('deployerObjectId')]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "keyVaultId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+            },
+            "keyVaultUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2023-07-01').vaultUri]"
+            },
+            "keyVaultName": {
+              "type": "string",
+              "value": "[parameters('keyVaultName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/deployments', 'deploy-rg-ai')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-aoai",
+      "resourceGroup": "[parameters('rgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "aoaiName": {
+            "value": "[parameters('aoaiName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('baseTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "13719708015132962946"
+            }
+          },
+          "parameters": {
+            "aoaiName": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure OpenAI account name (globally unique, 2–64 chars)"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region. Note: uksouth has limited Azure OpenAI quota."
+              }
+            },
+            "customSubDomainName": {
+              "type": "string",
+              "defaultValue": "[parameters('aoaiName')]",
+              "metadata": {
+                "description": "Custom subdomain for the endpoint (lowercase alphanumeric + hyphens, globally unique)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2023-10-01-preview",
+              "name": "[parameters('aoaiName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "OpenAI",
+              "sku": {
+                "name": "S0"
+              },
+              "properties": {
+                "customSubDomainName": "[parameters('customSubDomainName')]",
+                "publicNetworkAccess": "Enabled",
+                "networkAcls": {
+                  "defaultAction": "Allow"
+                },
+                "disableLocalAuth": false,
+                "restore": false
+              }
+            }
+          ],
+          "outputs": {
+            "aoaiAccountId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiName'))]"
+            },
+            "aoaiEndpoint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiName')), '2023-10-01-preview').endpoint]"
+            },
+            "aoaiAccountName": {
+              "type": "string",
+              "value": "[parameters('aoaiName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/deployments', 'deploy-rg-ai')]"
+      ]
+    },
+    {
+      "condition": "[parameters('searchProvision')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-search",
+      "resourceGroup": "[parameters('rgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "searchName": {
+            "value": "[parameters('searchName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "searchSku": {
+            "value": "[parameters('searchSku')]"
+          },
+          "tags": {
+            "value": "[variables('baseTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "13650032323580769513"
+            }
+          },
+          "parameters": {
+            "searchName": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure AI Search service name (globally unique, 2–60 chars, lowercase alphanumeric + hyphens)"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "searchSku": {
+              "type": "string",
+              "defaultValue": "free",
+              "allowedValues": [
+                "free",
+                "basic",
+                "standard",
+                "standard2",
+                "standard3"
+              ],
+              "metadata": {
+                "description": "Search SKU. free=£0 (dev), basic=~£65/mo (prod minimum)."
+              }
+            },
+            "replicaCount": {
+              "type": "int",
+              "defaultValue": 1,
+              "minValue": 1,
+              "maxValue": 12,
+              "metadata": {
+                "description": "Number of replicas. 1 is minimum (and only option for free and basic)."
+              }
+            },
+            "partitionCount": {
+              "type": "int",
+              "defaultValue": 1,
+              "minValue": 1,
+              "metadata": {
+                "description": "Number of partitions. 1 minimum."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Search/searchServices",
+              "apiVersion": "2023-11-01",
+              "name": "[parameters('searchName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "[parameters('searchSku')]"
+              },
+              "properties": {
+                "replicaCount": "[parameters('replicaCount')]",
+                "partitionCount": "[if(equals(parameters('searchSku'), 'free'), 1, parameters('partitionCount'))]",
+                "hostingMode": "default",
+                "publicNetworkAccess": "enabled",
+                "disableLocalAuth": false,
+                "authOptions": {
+                  "aadOrApiKey": {
+                    "aadAuthFailureMode": "http403"
+                  }
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "searchId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Search/searchServices', parameters('searchName'))]"
+            },
+            "searchEndpoint": {
+              "type": "string",
+              "value": "[format('https://{0}.search.windows.net', parameters('searchName'))]"
+            },
+            "searchName": {
+              "type": "string",
+              "value": "[parameters('searchName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/deployments', 'deploy-rg-ai')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-budget-ai",
+      "location": "[deployment().location]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "budgetName": {
+            "value": "[format('budget-opscopilot-ai-{0}', parameters('environment'))]"
+          },
+          "budgetAmount": {
+            "value": "[parameters('budgetAmount')]"
+          },
+          "budgetEmails": {
+            "value": "[parameters('budgetEmails')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "2918745872335246573"
+            }
+          },
+          "parameters": {
+            "budgetName": {
+              "type": "string",
+              "metadata": {
+                "description": "Budget name (unique within subscription)"
+              }
+            },
+            "budgetAmount": {
+              "type": "int",
+              "defaultValue": 80,
+              "metadata": {
+                "description": "Monthly budget amount in GBP"
+              }
+            },
+            "budgetEmails": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "List of email addresses to notify on threshold breach"
+              }
+            },
+            "startDate": {
+              "type": "string",
+              "defaultValue": "2026-02-01",
+              "metadata": {
+                "description": "Budget start date (YYYY-MM-01 format)"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Consumption/budgets",
+              "apiVersion": "2023-11-01",
+              "name": "[parameters('budgetName')]",
+              "properties": {
+                "category": "Cost",
+                "amount": "[parameters('budgetAmount')]",
+                "timeGrain": "Monthly",
+                "timePeriod": {
+                  "startDate": "[parameters('startDate')]"
+                },
+                "notifications": {
+                  "alert50": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 50,
+                    "contactEmails": "[parameters('budgetEmails')]",
+                    "contactRoles": [
+                      "Owner"
+                    ],
+                    "thresholdType": "Actual"
+                  },
+                  "alert75": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 75,
+                    "contactEmails": "[parameters('budgetEmails')]",
+                    "contactRoles": [
+                      "Owner"
+                    ],
+                    "thresholdType": "Actual"
+                  },
+                  "alert90": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 90,
+                    "contactEmails": "[parameters('budgetEmails')]",
+                    "contactRoles": [
+                      "Owner"
+                    ],
+                    "thresholdType": "Actual"
+                  },
+                  "alert100": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 100,
+                    "contactEmails": "[parameters('budgetEmails')]",
+                    "contactRoles": [
+                      "Owner"
+                    ],
+                    "thresholdType": "Actual"
+                  }
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "budgetId": {
+              "type": "string",
+              "value": "[subscriptionResourceId('Microsoft.Consumption/budgets', parameters('budgetName'))]"
+            },
+            "budgetName": {
+              "type": "string",
+              "value": "[parameters('budgetName')]"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[parameters('rgName')]"
+    },
+    "keyVaultId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-ai'), '2025-04-01').outputs.keyVaultId.value]"
+    },
+    "keyVaultUri": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-ai'), '2025-04-01').outputs.keyVaultUri.value]"
+    },
+    "aoaiEndpoint": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-aoai'), '2025-04-01').outputs.aoaiEndpoint.value]"
+    },
+    "aoaiAccountName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-aoai'), '2025-04-01').outputs.aoaiAccountName.value]"
+    },
+    "deploymentsEnabled": {
+      "type": "bool",
+      "value": "[parameters('deploymentsEnabled')]"
+    },
+    "lawId": {
+      "type": "string",
+      "value": "[if(parameters('enableLaw'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-ai'), '2025-04-01').outputs.workspaceId.value, '')]"
+    },
+    "appInsightsId": {
+      "type": "string",
+      "value": "[if(and(parameters('enableLaw'), parameters('enableAppInsights')), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-ai'), '2025-04-01').outputs.appInsightsId.value, '')]"
+    },
+    "searchEndpoint": {
+      "type": "string",
+      "value": "[if(parameters('searchProvision'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-search'), '2025-04-01').outputs.searchEndpoint.value, '')]"
+    },
+    "searchName": {
+      "type": "string",
+      "value": "[if(parameters('searchProvision'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-search'), '2025-04-01').outputs.searchName.value, '')]"
+    }
+  }
+}

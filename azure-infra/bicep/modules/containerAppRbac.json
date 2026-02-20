@@ -1,0 +1,109 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.40.2.10011",
+      "templateHash": "9702263216073500247"
+    }
+  },
+  "parameters": {
+    "kvResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Key Vault (e.g. kv-opsctpltfdev)"
+      }
+    },
+    "lawResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Log Analytics Workspace"
+      }
+    },
+    "apiHostPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Principal ID of the apihost system-assigned managed identity"
+      }
+    },
+    "workerHostPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Principal ID of the workerhost system-assigned managed identity"
+      }
+    },
+    "mcpHostPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Principal ID of the mcphost system-assigned managed identity"
+      }
+    }
+  },
+  "variables": {
+    "kvSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e0",
+    "lawReaderRoleId": "73c42c96-874c-492b-b04d-ab87d138a893"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/')))]",
+      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/'))), parameters('apiHostPrincipalId'), variables('kvSecretsUserRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('kvSecretsUserRoleId'))]",
+        "principalId": "[parameters('apiHostPrincipalId')]",
+        "principalType": "ServicePrincipal",
+        "description": "Key Vault Secrets User — ca-opscopilot-apihost (system MI)"
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/')))]",
+      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/'))), parameters('workerHostPrincipalId'), variables('kvSecretsUserRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('kvSecretsUserRoleId'))]",
+        "principalId": "[parameters('workerHostPrincipalId')]",
+        "principalType": "ServicePrincipal",
+        "description": "Key Vault Secrets User — ca-opscopilot-workerhost (system MI)"
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/')))]",
+      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/'))), parameters('mcpHostPrincipalId'), variables('kvSecretsUserRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('kvSecretsUserRoleId'))]",
+        "principalId": "[parameters('mcpHostPrincipalId')]",
+        "principalType": "ServicePrincipal",
+        "description": "Key Vault Secrets User — ca-opscopilot-mcphost (system MI)"
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', last(split(parameters('lawResourceId'), '/')))]",
+      "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', last(split(parameters('lawResourceId'), '/'))), parameters('apiHostPrincipalId'), variables('lawReaderRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('lawReaderRoleId'))]",
+        "principalId": "[parameters('apiHostPrincipalId')]",
+        "principalType": "ServicePrincipal",
+        "description": "Log Analytics Reader — ca-opscopilot-apihost (system MI)"
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', last(split(parameters('lawResourceId'), '/')))]",
+      "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', last(split(parameters('lawResourceId'), '/'))), parameters('mcpHostPrincipalId'), variables('lawReaderRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('lawReaderRoleId'))]",
+        "principalId": "[parameters('mcpHostPrincipalId')]",
+        "principalType": "ServicePrincipal",
+        "description": "Log Analytics Reader — ca-opscopilot-mcphost (system MI)"
+      }
+    }
+  ]
+}

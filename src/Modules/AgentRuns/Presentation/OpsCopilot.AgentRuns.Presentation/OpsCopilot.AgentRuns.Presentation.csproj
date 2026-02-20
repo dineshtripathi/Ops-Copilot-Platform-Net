@@ -6,4 +6,15 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Application\OpsCopilot.AgentRuns.Application\OpsCopilot.AgentRuns.Application.csproj" />
+    <ProjectReference Include="..\..\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
+    <!-- fingerprint dependency: acceptable cross-module ref for MVP -->
+    <ProjectReference Include="..\..\..\AlertIngestion\Domain\OpsCopilot.AlertIngestion.Domain\OpsCopilot.AlertIngestion.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
 </Project>
