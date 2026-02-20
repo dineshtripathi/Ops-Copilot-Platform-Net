@@ -87,6 +87,12 @@ param budgetAmount int = 80
 @description('Email addresses that receive budget alerts.')
 param budgetEmails array = []
 
+@description('''Object ID of the service principal that runs this deployment.
+  Used to grant Key Vault Secrets Officer so the pipeline can write secrets.
+  Resolved in CI via: az ad sp show --id $CLIENT_ID --query id -o tsv
+''')
+param deployerObjectId string = ''
+
 // ── Tags ──────────────────────────────────────────────────────────────────────
 @description('Extra tags to merge onto all resources.')
 param extraTags object = {}
@@ -144,6 +150,7 @@ module kv 'modules/keyVault.bicep' = {
     keyVaultName: keyVaultName
     location: location
     tags: baseTags
+    deployerObjectId: deployerObjectId
   }
 }
 

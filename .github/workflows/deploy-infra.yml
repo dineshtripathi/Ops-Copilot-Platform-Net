@@ -68,6 +68,11 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PLATFORM }}
 
+      - name: Resolve Platform SP Object ID
+        run: |
+          SP_OID=$(az ad sp show --id "${{ secrets.AZURE_CLIENT_ID_PLATFORM }}" --query id -o tsv)
+          echo "DEPLOYER_OID=$SP_OID" >> $GITHUB_ENV
+
       - name: Cleanup old Platform RG (SubA)
         if: ${{ inputs.cleanupEnabled == 'true' }}
         run: |
@@ -84,7 +89,8 @@ jobs:
             --location "${{ inputs.region }}" \
             --template-file "${{ env.BICEP_ROOT }}/main.platform.bicep" \
             --parameters "${{ env.BICEP_ROOT }}/env/${{ inputs.environment }}/platform.parameters.json" \
-            --parameters sqlAdminPassword="${{ secrets.SQL_ADMIN_PASSWORD_PLATFORM }}"
+            --parameters sqlAdminPassword="${{ secrets.SQL_ADMIN_PASSWORD_PLATFORM }}" \
+            --parameters deployerObjectId="$DEPLOYER_OID"
 
       - name: Deploy Platform
         id: deploy_platform
@@ -95,6 +101,7 @@ jobs:
             --template-file "${{ env.BICEP_ROOT }}/main.platform.bicep" \
             --parameters "${{ env.BICEP_ROOT }}/env/${{ inputs.environment }}/platform.parameters.json" \
             --parameters sqlAdminPassword="${{ secrets.SQL_ADMIN_PASSWORD_PLATFORM }}" \
+            --parameters deployerObjectId="$DEPLOYER_OID" \
             --name "platform-${{ inputs.environment }}-${{ github.run_id }}" \
             --query "properties.outputs" \
             --output json > /tmp/platform-outputs.json
@@ -146,6 +153,11 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_AI }}
 
+      - name: Resolve AI SP Object ID
+        run: |
+          SP_OID=$(az ad sp show --id "${{ secrets.AZURE_CLIENT_ID_AI }}" --query id -o tsv)
+          echo "DEPLOYER_OID=$SP_OID" >> $GITHUB_ENV
+
       - name: Cleanup old AI RG (SubB)
         if: ${{ inputs.cleanupEnabled == 'true' }}
         run: |
@@ -161,7 +173,8 @@ jobs:
             --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID_AI }}" \
             --location "${{ inputs.region }}" \
             --template-file "${{ env.BICEP_ROOT }}/main.ai.bicep" \
-            --parameters "${{ env.BICEP_ROOT }}/env/${{ inputs.environment }}/ai.parameters.json"
+            --parameters "${{ env.BICEP_ROOT }}/env/${{ inputs.environment }}/ai.parameters.json" \
+            --parameters deployerObjectId="$DEPLOYER_OID"
 
       - name: Deploy AI
         id: deploy_ai
@@ -171,6 +184,7 @@ jobs:
             --location "${{ inputs.region }}" \
             --template-file "${{ env.BICEP_ROOT }}/main.ai.bicep" \
             --parameters "${{ env.BICEP_ROOT }}/env/${{ inputs.environment }}/ai.parameters.json" \
+            --parameters deployerObjectId="$DEPLOYER_OID" \
             --name "ai-${{ inputs.environment }}-${{ github.run_id }}" \
             --query "properties.outputs" \
             --output json > /tmp/ai-outputs.json
