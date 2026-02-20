@@ -42,11 +42,13 @@ jobs:
       matrix:
         include:
           - tenantLabel: TenantA
-            clientId: AZURE_CLIENT_ID_TENA
-            subscriptionId: AZURE_SUBSCRIPTION_ID_TENA
           - tenantLabel: TenantB
-            clientId: AZURE_CLIENT_ID_TENB
-            subscriptionId: AZURE_SUBSCRIPTION_ID_TENB
+
+    # GitHub Actions does not support dynamic secret lookups (secrets[matrix.var]).
+    # Use a conditional expression at job level to select the correct secret per tenant.
+    env:
+      AZURE_CLIENT_ID: ${{ matrix.tenantLabel == 'TenantA' && secrets.AZURE_CLIENT_ID_TENA || secrets.AZURE_CLIENT_ID_TENB }}
+      AZURE_SUBSCRIPTION_ID: ${{ matrix.tenantLabel == 'TenantA' && secrets.AZURE_SUBSCRIPTION_ID_TENA || secrets.AZURE_SUBSCRIPTION_ID_TENB }}
 
     steps:
       - name: Checkout
@@ -55,9 +57,9 @@ jobs:
       - name: Azure Login (OIDC) — ${{ matrix.tenantLabel }}
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets[matrix.clientId] }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets[matrix.subscriptionId] }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Install Bicep CLI
         run: az bicep install
@@ -73,7 +75,7 @@ jobs:
           echo "Using parameter file: $PARAM_FILE"
 
           az deployment sub what-if \
-            --subscription ${{ secrets[matrix.subscriptionId] }} \
+            --subscription "$AZURE_SUBSCRIPTION_ID" \
             --location ${{ inputs.REGION }} \
             --template-file azure-infra/bicep/main.bicep \
             --parameters @${PARAM_FILE} \
@@ -94,11 +96,13 @@ jobs:
       matrix:
         include:
           - tenantLabel: TenantA
-            clientId: AZURE_CLIENT_ID_TENA
-            subscriptionId: AZURE_SUBSCRIPTION_ID_TENA
           - tenantLabel: TenantB
-            clientId: AZURE_CLIENT_ID_TENB
-            subscriptionId: AZURE_SUBSCRIPTION_ID_TENB
+
+    # GitHub Actions does not support dynamic secret lookups (secrets[matrix.var]).
+    # Use a conditional expression at job level to select the correct secret per tenant.
+    env:
+      AZURE_CLIENT_ID: ${{ matrix.tenantLabel == 'TenantA' && secrets.AZURE_CLIENT_ID_TENA || secrets.AZURE_CLIENT_ID_TENB }}
+      AZURE_SUBSCRIPTION_ID: ${{ matrix.tenantLabel == 'TenantA' && secrets.AZURE_SUBSCRIPTION_ID_TENA || secrets.AZURE_SUBSCRIPTION_ID_TENB }}
 
     steps:
       - name: Checkout
@@ -107,9 +111,9 @@ jobs:
       - name: Azure Login (OIDC) — ${{ matrix.tenantLabel }}
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets[matrix.clientId] }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets[matrix.subscriptionId] }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Install Bicep CLI
         run: az bicep install
@@ -125,7 +129,7 @@ jobs:
           echo "Deployment name: $DEPLOYMENT_NAME"
 
           RESULT=$(az deployment sub create \
-            --subscription ${{ secrets[matrix.subscriptionId] }} \
+            --subscription "$AZURE_SUBSCRIPTION_ID" \
             --location ${{ inputs.REGION }} \
             --name "$DEPLOYMENT_NAME" \
             --template-file azure-infra/bicep/main.bicep \
