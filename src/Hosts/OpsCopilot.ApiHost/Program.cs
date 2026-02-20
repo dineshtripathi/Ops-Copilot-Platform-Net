@@ -12,7 +12,13 @@ using OpsCopilot.AlertIngestion.Presentation.Extensions;
 // OpsCopilot.ApiHost — public API surface
 //
 // MCP hard-boundary: this host must NOT reference Azure.Monitor.Query or call
-// Log Analytics directly.  All observations travel through McpHost via HTTP.
+// Log Analytics directly.  All KQL observations travel through McpHost via
+// the MCP stdio protocol (StdioClientTransport → McpStdioKqlToolClient).
+//
+// McpHost is launched as a child process on first tool call.  Configure via:
+//   MCP_KQL_SERVER_COMMAND  (default: dotnet run --project src/Hosts/OpsCopilot.McpHost/...)
+//   MCP_KQL_SERVER_WORKDIR  (default: auto-discovered solution root)
+//   MCP_KQL_TIMEOUT_SECONDS (default: 30)
 // ─────────────────────────────────────────────────────────────────────────────
 var builder = WebApplication.CreateBuilder(args);
 
