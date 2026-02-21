@@ -15,6 +15,14 @@
     <UserSecretsId>3f8d1a2e-9c4b-4e77-b8f3-d0c5e6a7f901</UserSecretsId>
   </PropertyGroup>
 
+  <!-- EF Core tooling (migrations) -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
   <!-- Shared configuration helpers (Key Vault, User Secrets bootstrap) -->
   <ItemGroup>
     <ProjectReference Include="..\..\BuildingBlocks\Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure.csproj" />

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
@@ -21,14 +22,19 @@ public sealed class TriageOrchestrator
 {
     private readonly IAgentRunRepository _repo;
     private readonly IKqlToolClient      _kql;
+    private readonly ILogger<TriageOrchestrator> _log;
 
     private static readonly JsonSerializerOptions JsonOpts =
         new(JsonSerializerDefaults.Web) { WriteIndented = false };
 
-    public TriageOrchestrator(IAgentRunRepository repo, IKqlToolClient kql)
+    public TriageOrchestrator(
+        IAgentRunRepository repo,
+        IKqlToolClient kql,
+        ILogger<TriageOrchestrator> log)
     {
         _repo = repo;
         _kql  = kql;
+        _log  = log;
     }
 
     public async Task<TriageResult> RunAsync(
@@ -38,6 +44,9 @@ public sealed class TriageOrchestrator
         int    timeRangeMinutes = 120,
         CancellationToken ct = default)
     {
+        _log.LogInformation("Triage run starting for tenant {TenantId}, fingerprint {Fingerprint}",
+            tenantId, alertFingerprint);
+
         var run = await _repo.CreateRunAsync(tenantId, alertFingerprint, ct);
 
         // search * is table-agnostic — works on any Log Analytics workspace
@@ -69,6 +78,8 @@ public sealed class TriageOrchestrator
                 ExecutedAtUtc: DateTimeOffset.UtcNow,
                 Error:         ex.Message);
             toolStatus = "Failed";
+
+            _log.LogWarning(ex, "KQL tool threw for run {RunId}", run.RunId);
 
             var citation     = BuildCitation(response);
             var citationsJson = JsonSerializer.Serialize(new[] { citation }, JsonOpts);
@@ -104,6 +115,9 @@ public sealed class TriageOrchestrator
 
         await _repo.CompleteRunAsync(run.RunId, finalStatus, summaryJson, toolCitationsJson, ct);
 
+        _log.LogInformation("Triage run {RunId} completed with status {Status} in {ElapsedMs}ms",
+            run.RunId, finalStatus, sw.ElapsedMilliseconds);
+
         return new TriageResult(run.RunId, finalStatus, summaryJson, new[] { toolCitation });
     }
 
@@ -111,9 +125,4 @@ public sealed class TriageOrchestrator
         => new(r.WorkspaceId, r.ExecutedQuery, r.Timespan, r.ExecutedAtUtc);
 }
 
-/// <summary>Value returned to the presentation layer after a triage run.</summary>
-public sealed record TriageResult(
-    Guid                      RunId,
-    AgentRunStatus            Status,
-    string?                   SummaryJson,
-    IReadOnlyList<KqlCitation> Citations);
+

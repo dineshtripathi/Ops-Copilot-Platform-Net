@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
@@ -64,7 +66,7 @@ public sealed class TriageOrchestratorTests
             .Setup(k => k.ExecuteAsync(It.IsAny<KqlToolRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(kqlResponse);
 
-        var sut = new TriageOrchestrator(repoMock.Object, kqlMock.Object);
+        var sut = new TriageOrchestrator(repoMock.Object, kqlMock.Object, NullLogger<TriageOrchestrator>.Instance);
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -113,7 +115,7 @@ public sealed class TriageOrchestratorTests
             .Setup(k => k.ExecuteAsync(It.IsAny<KqlToolRequest>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("Connection refused to McpHost"));
 
-        var sut = new TriageOrchestrator(repoMock.Object, kqlMock.Object);
+        var sut = new TriageOrchestrator(repoMock.Object, kqlMock.Object, NullLogger<TriageOrchestrator>.Instance);
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -168,7 +170,7 @@ public sealed class TriageOrchestratorTests
                 ExecutedAtUtc: DateTimeOffset.UtcNow,
                 Error:         "Query timed out"));
 
-        var sut = new TriageOrchestrator(repoMock.Object, kqlMock.Object);
+        var sut = new TriageOrchestrator(repoMock.Object, kqlMock.Object, NullLogger<TriageOrchestrator>.Instance);
 
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
 
@@ -176,5 +178,149 @@ public sealed class TriageOrchestratorTests
         repoMock.Verify(r => r.CompleteRunAsync(
             agentRun.RunId, AgentRunStatus.Degraded,
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Structured-logging verification
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_Success_LogsStartAndCompletion()
+    {
+        // Arrange
+        var agentRun  = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock  = CreateHappyPathRepo(agentRun);
+        var kqlMock   = CreateHappyPathKql();
+        var logMock   = new Mock<ILogger<TriageOrchestrator>>();
+
+        var sut = new TriageOrchestrator(repoMock.Object, kqlMock.Object, logMock.Object);
+
+        // Act
+        await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert: two Information logs (start + completion), zero Warning logs
+        logMock.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("Triage run starting")),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+
+        logMock.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("completed with status")),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+
+        logMock.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task RunAsync_ToolThrows_LogsStartAndWarning()
+    {
+        // Arrange
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        repoMock
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(agentRun);
+        repoMock
+            .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(
+                agentRun.RunId, AgentRunStatus.Degraded,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock = new Mock<IKqlToolClient>(MockBehavior.Strict);
+        kqlMock
+            .Setup(k => k.ExecuteAsync(It.IsAny<KqlToolRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("KQL timeout"));
+
+        var logMock = new Mock<ILogger<TriageOrchestrator>>();
+
+        var sut = new TriageOrchestrator(repoMock.Object, kqlMock.Object, logMock.Object);
+
+        // Act
+        await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert: one start log, one warning (with exception), NO completion log
+        logMock.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("Triage run starting")),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+
+        logMock.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("KQL tool threw")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+
+        // The completion log should NOT appear — the exception path returns early
+        logMock.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("completed with status")),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Never);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helpers — shared mock setup for logging tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static Mock<IAgentRunRepository> CreateHappyPathRepo(AgentRun agentRun)
+    {
+        var mock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        mock.Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(agentRun);
+        mock.Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        mock.Setup(r => r.CompleteRunAsync(
+                agentRun.RunId, AgentRunStatus.Completed,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        return mock;
+    }
+
+    private static Mock<IKqlToolClient> CreateHappyPathKql()
+    {
+        var mock = new Mock<IKqlToolClient>(MockBehavior.Strict);
+        mock.Setup(k => k.ExecuteAsync(It.IsAny<KqlToolRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KqlToolResponse(
+                Ok:            true,
+                Rows:          new List<IReadOnlyDictionary<string, object?>>
+                {
+                    new Dictionary<string, object?> { ["message"] = "test log line" }
+                },
+                ExecutedQuery: "search * | where TimeGenerated > ago(30m) | take 20",
+                WorkspaceId:   WorkspaceId,
+                Timespan:      "PT30M",
+                ExecutedAtUtc: DateTimeOffset.UtcNow,
+                Error:         null));
+        return mock;
     }
 }

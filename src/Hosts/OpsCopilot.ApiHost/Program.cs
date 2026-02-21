@@ -96,13 +96,13 @@ builder.Logging.AddConsole();
 var app = builder.Build();
 
 // ── Database bootstrap ────────────────────────────────────────────────────────
-// EnsureCreatedAsync() creates the agentRuns schema + tables on first run.
-// No migrations needed for Dev Slice 1.
+// MigrateAsync() applies any pending EF Core migrations on startup.
+// For first run this creates the agentRuns schema + tables.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AgentRunsDbContext>();
-    await db.Database.EnsureCreatedAsync();
-    app.Logger.LogInformation("AgentRunsDbContext schema ensured.");
+    await db.Database.MigrateAsync();
+    app.Logger.LogInformation("AgentRunsDbContext migrations applied.");
 }
 
 // ── Health probe ──────────────────────────────────────────────────────────────

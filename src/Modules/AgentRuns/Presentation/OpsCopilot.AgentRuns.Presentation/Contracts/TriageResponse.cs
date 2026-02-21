@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace OpsCopilot.AgentRuns.Presentation.Contracts;
 
 /// <summary>Serialised form of a KQL citation returned to callers.</summary>
@@ -14,10 +16,10 @@ public sealed record CitationDto(
 /// <summary>Response body for POST /agent/triage.</summary>
 /// <param name="RunId">Unique identifier of the persisted AgentRun ledger entry.</param>
 /// <param name="Status">Terminal status of the run (Completed / Degraded / Failed).</param>
-/// <param name="Summary">LLM-generated or structured summary (null on failure).</param>
+/// <param name="Summary">Structured JSON summary (e.g. <c>{"rowCount":5}</c>). Null on failure.</param>
 /// <param name="Citations">Evidence citations — one per KQL tool invocation.</param>
 public sealed record TriageResponse(
-    Guid                      RunId,
-    string                    Status,
-    string?                   Summary,
+    Guid                       RunId,
+    string                     Status,
+    JsonElement?               Summary,
     IReadOnlyList<CitationDto> Citations);

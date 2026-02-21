@@ -82,6 +82,12 @@ public static class AgentRunEndpoints
                     statusCode: StatusCodes.Status400BadRequest,
                     title:      "Missing WorkspaceId");
 
+            if (!Guid.TryParse(workspaceId, out _))
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["WorkspaceId"] = [$"'{workspaceId}' is not a valid GUID."],
+                });
+
             // ── Compatibility bridge ────────────────────────────────────────
             // The application layer (AlertFingerprintService) currently expects
             // a raw JSON string. Serialize the typed DTO to compact JSON here so
@@ -106,10 +112,19 @@ public static class AgentRunEndpoints
                     c.ExecutedAtUtc))
                 .ToList();
 
+            // Parse the summary JSON string into a structured JsonElement
+            // to prevent double-encoding in the HTTP response.
+            JsonElement? summary = null;
+            if (result.SummaryJson is not null)
+            {
+                using var doc = JsonDocument.Parse(result.SummaryJson);
+                summary = doc.RootElement.Clone();
+            }
+
             return Results.Ok(new TriageResponse(
                 result.RunId,
                 result.Status.ToString(),
-                result.SummaryJson,
+                summary,
                 citations));
         })
         .WithName("PostTriage")
