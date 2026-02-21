@@ -51,6 +51,16 @@ string? tenantId = builder.Configuration["AzureAuth:TenantId"];
 string authMode  = builder.Configuration["AzureAuth:Mode"]
                    ?? (isDevelopment ? "ExplicitChain" : "DefaultAzureCredential");
 
+if (isDevelopment && string.IsNullOrEmpty(tenantId))
+{
+    startupLogger.LogWarning(
+        "[Auth] AzureAuth:TenantId is empty.  " +
+        "Azure CLI / PowerShell credentials will use whichever tenant you last " +
+        "logged into, which may not be the OpsCopilot tenant.  " +
+        "Set it in appsettings.Development.json or via: " +
+        "AzureAuth__TenantId=<your-tenant-guid>");
+}
+
 startupLogger.LogInformation(
     "[Auth] Mode={AuthMode} | Environment={Env}",
     authMode, builder.Environment.EnvironmentName);
@@ -60,10 +70,22 @@ TokenCredential credential;
 if (string.Equals(authMode, "ExplicitChain", StringComparison.OrdinalIgnoreCase))
 {
     // ── ExplicitChain: deterministic credential list ─────────────────────
+    //
+    // IMPORTANT: ChainedTokenCredential only falls through on CredentialUnavailableException.
+    // However, when credentials like AzureCliCredential are constructed manually (not via
+    // DefaultAzureCredentialFactory), the internal IsChainedCredential flag is false.
+    // This means timeouts throw AuthenticationFailedException — which is FATAL to the chain.
+    //
+    // Fix: We wrap each credential in a ResilientCredential that converts
+    // AuthenticationFailedException → CredentialUnavailableException so the chain falls through.
+    //
+    // We also keep ProcessTimeout at the SDK default (13 s) rather than 60 s.
+    // 60 s was unnecessarily long and made the pipe-child `az` hang painful.
+
     bool useCli   = ReadBool(builder.Configuration["AzureAuth:UseAzureCliCredential"], true);
     bool usePs    = ReadBool(builder.Configuration["AzureAuth:UseAzurePowerShellCredential"], true);
     bool useAzd   = ReadBool(builder.Configuration["AzureAuth:UseAzureDeveloperCliCredential"], false);
-    int  timeoutS = ReadInt(builder.Configuration["AzureAuth:CredentialProcessTimeoutSeconds"], 60);
+    int  timeoutS = ReadInt(builder.Configuration["AzureAuth:CredentialProcessTimeoutSeconds"], 13);
     var  timeout  = TimeSpan.FromSeconds(timeoutS);
 
     var sources     = new List<TokenCredential>();
@@ -71,31 +93,40 @@ if (string.Equals(authMode, "ExplicitChain", StringComparison.OrdinalIgnoreCase)
 
     if (useCli)
     {
-        sources.Add(new AzureCliCredential(new AzureCliCredentialOptions
-        {
-            TenantId       = tenantId,
-            ProcessTimeout = timeout,
-        }));
+        sources.Add(new ResilientCredential(
+            "AzureCliCredential",
+            new AzureCliCredential(new AzureCliCredentialOptions
+            {
+                TenantId       = tenantId,
+                ProcessTimeout = timeout,
+            }),
+            startupLogger));
         sourceNames.Add("AzureCliCredential");
     }
 
     if (usePs)
     {
-        sources.Add(new AzurePowerShellCredential(new AzurePowerShellCredentialOptions
-        {
-            TenantId       = tenantId,
-            ProcessTimeout = timeout,
-        }));
+        sources.Add(new ResilientCredential(
+            "AzurePowerShellCredential",
+            new AzurePowerShellCredential(new AzurePowerShellCredentialOptions
+            {
+                TenantId       = tenantId,
+                ProcessTimeout = timeout,
+            }),
+            startupLogger));
         sourceNames.Add("AzurePowerShellCredential");
     }
 
     if (useAzd)
     {
-        sources.Add(new AzureDeveloperCliCredential(new AzureDeveloperCliCredentialOptions
-        {
-            TenantId       = tenantId,
-            ProcessTimeout = timeout,
-        }));
+        sources.Add(new ResilientCredential(
+            "AzureDeveloperCliCredential",
+            new AzureDeveloperCliCredential(new AzureDeveloperCliCredentialOptions
+            {
+                TenantId       = tenantId,
+                ProcessTimeout = timeout,
+            }),
+            startupLogger));
         sourceNames.Add("AzureDeveloperCliCredential");
     }
 
@@ -162,6 +193,43 @@ builder.Services
     .WithStdioServerTransport()
     .WithToolsFromAssembly();
 
+// ── Development-only auth probe ─────────────────────────────────────────────
+// Attempt to acquire a real token before the MCP wire starts. This surfaces
+// credential problems (expired `az login`, wrong tenant, missing CLI) as a
+// clear log message instead of a cryptic MCP tool-call failure later.
+if (isDevelopment)
+{
+    const string logAnalyticsScope = "https://api.loganalytics.io/.default";
+    try
+    {
+        startupLogger.LogInformation("[Auth-Probe] Acquiring token for {Scope} …", logAnalyticsScope);
+        var tokenResult = await credential.GetTokenAsync(
+            new TokenRequestContext(new[] { logAnalyticsScope }),
+            CancellationToken.None);
+
+        startupLogger.LogInformation(
+            "[Auth-Probe] ✔ Token acquired — expires {ExpiresOn:u}",
+            tokenResult.ExpiresOn);
+    }
+    catch (AuthenticationFailedException ex)
+    {
+        startupLogger.LogError(
+            ex,
+            "[Auth-Probe] ✘ Failed to acquire a token for {Scope}.  " +
+            "Ensure you are logged in:  az login --tenant <tenant-id>  or  " +
+            "Connect-AzAccount -TenantId <tenant-id>",
+            logAnalyticsScope);
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogWarning(
+            ex,
+            "[Auth-Probe] ✘ Unexpected error during probe for {Scope}. " +
+            "The MCP server will still start, but KQL tool calls may fail.",
+            logAnalyticsScope);
+    }
+}
+
 await builder.Build().RunAsync();
 
 static bool ReadBool(string? raw, bool defaultValue)
@@ -169,5 +237,82 @@ static bool ReadBool(string? raw, bool defaultValue)
 
 static int ReadInt(string? raw, int defaultValue)
     => int.TryParse(raw, out var parsed) ? parsed : defaultValue;
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ResilientCredential – works around the internal IsChainedCredential flag
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// Azure.Identity's ChainedTokenCredential only falls through to the next
+// credential on CredentialUnavailableException.  When credentials like
+// AzureCliCredential timeout, they throw AuthenticationFailedException —
+// UNLESS the internal IsChainedCredential flag is set to true.
+//
+// DefaultAzureCredentialFactory sets that flag, but manual construction
+// (which ExplicitChain mode uses) cannot — the property is internal.
+//
+// This wrapper catches AuthenticationFailedException and converts it to
+// CredentialUnavailableException, ensuring ChainedTokenCredential falls
+// through to the next credential in the chain.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Wraps a <see cref="TokenCredential"/> so that any
+/// <see cref="AuthenticationFailedException"/> is re-thrown as
+/// <see cref="CredentialUnavailableException"/>, allowing
+/// <see cref="ChainedTokenCredential"/> to try the next credential.
+/// </summary>
+internal sealed class ResilientCredential : TokenCredential
+{
+    private readonly string          _name;
+    private readonly TokenCredential _inner;
+    private readonly ILogger         _logger;
+
+    public ResilientCredential(string name, TokenCredential inner, ILogger logger)
+    {
+        _name   = name;
+        _inner  = inner;
+        _logger = logger;
+    }
+
+    public override AccessToken GetToken(
+        TokenRequestContext requestContext, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return _inner.GetToken(requestContext, cancellationToken);
+        }
+        catch (AuthenticationFailedException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[ResilientCredential] {Name} threw AuthenticationFailedException — " +
+                "converting to CredentialUnavailableException so the chain falls through.",
+                _name);
+
+            throw new CredentialUnavailableException(
+                $"{_name} failed: {ex.Message}", ex);
+        }
+    }
+
+    public override async ValueTask<AccessToken> GetTokenAsync(
+        TokenRequestContext requestContext, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _inner.GetTokenAsync(requestContext, cancellationToken);
+        }
+        catch (AuthenticationFailedException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[ResilientCredential] {Name} threw AuthenticationFailedException — " +
+                "converting to CredentialUnavailableException so the chain falls through.",
+                _name);
+
+            throw new CredentialUnavailableException(
+                $"{_name} failed: {ex.Message}", ex);
+        }
+    }
+}
 
 

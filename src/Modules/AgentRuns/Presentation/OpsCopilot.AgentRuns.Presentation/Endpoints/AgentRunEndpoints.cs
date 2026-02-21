@@ -69,9 +69,18 @@ public static class AgentRunEndpoints
             if (errors.Count > 0)
                 return Results.ValidationProblem(errors);
 
-            // ── Config ──────────────────────────────────────────────────────
-            var workspaceId = config["WORKSPACE_ID"]
-                ?? throw new InvalidOperationException("WORKSPACE_ID is not configured.");
+            // ── Workspace ID (request body → config fallback) ────────────────
+            var workspaceId = !string.IsNullOrWhiteSpace(request.WorkspaceId)
+                ? request.WorkspaceId
+                : config["WORKSPACE_ID"];
+
+            if (string.IsNullOrWhiteSpace(workspaceId))
+                return Results.Problem(
+                    detail:     "Supply 'workspaceId' in the request body or set the WORKSPACE_ID "
+                              + "environment variable / config entry. "
+                              + "For local dev: dotnet user-secrets set WORKSPACE_ID \"<your-guid>\"",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title:      "Missing WorkspaceId");
 
             // ── Compatibility bridge ────────────────────────────────────────
             // The application layer (AlertFingerprintService) currently expects

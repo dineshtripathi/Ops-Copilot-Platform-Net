@@ -1,6 +1,6 @@
 # Ops Copilot — Dependency Rules (Locked)
 
-This file is authoritative. Every project, template, and AI-generated change must conform.
+
 
 ## 1. Clean Architecture Principle
 

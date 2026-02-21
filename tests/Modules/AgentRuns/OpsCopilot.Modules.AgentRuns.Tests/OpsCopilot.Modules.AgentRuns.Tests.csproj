@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\src\Modules\AgentRuns\Application\OpsCopilot.AgentRuns.Application\OpsCopilot.AgentRuns.Application.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\AgentRuns\Presentation\OpsCopilot.AgentRuns.Presentation\OpsCopilot.AgentRuns.Presentation.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\AlertIngestion\Domain\OpsCopilot.AlertIngestion.Domain\OpsCopilot.AlertIngestion.Domain.csproj" />
   </ItemGroup>
 

@@ -6,6 +6,11 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Allow Integration.Tests to call internal methods (e.g. BuildChildEnvironment) -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpsCopilot.Integration.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.2" />
     <!-- MCP stdio client — calls McpHost child process via StdioClientTransport -->

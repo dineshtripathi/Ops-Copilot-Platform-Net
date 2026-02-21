@@ -52,6 +52,34 @@ builder.Configuration.AddOpsCopilotKeyVault(
     builder.Configuration["KeyVault:VaultUri"],
     startupLogger);
 
+// ── Startup diagnostics — surface config problems before they become timeouts ─
+{
+    var mcpCmd     = builder.Configuration["McpKql:ServerCommand"]
+                  ?? builder.Configuration["MCP_KQL_SERVER_COMMAND"]
+                  ?? "(built-in default)";
+    var mcpTimeout = builder.Configuration["McpKql:TimeoutSeconds"]
+                  ?? builder.Configuration["MCP_KQL_TIMEOUT_SECONDS"]
+                  ?? "30";
+    var hasWsId    = !string.IsNullOrWhiteSpace(builder.Configuration["WORKSPACE_ID"]);
+    var hasSql     = !string.IsNullOrWhiteSpace(
+                         builder.Configuration["ConnectionStrings:Sql"]
+                      ?? builder.Configuration["SQL_CONNECTION_STRING"]);
+
+    startupLogger.LogInformation(
+        "[Startup] McpKql  ServerCommand={Cmd} | TimeoutSeconds={Timeout}",
+        mcpCmd, mcpTimeout);
+    startupLogger.LogInformation(
+        "[Startup] Config  WORKSPACE_ID={HasWsId} | SQL_CONNECTION_STRING={HasSql}",
+        hasWsId ? "set" : "*** MISSING ***",
+        hasSql  ? "set" : "*** MISSING ***");
+
+    if (!hasWsId)
+        startupLogger.LogWarning(
+            "[Startup] WORKSPACE_ID is not configured. " +
+            "POST /agent/triage will return 400 unless callers supply WorkspaceId in the request body. " +
+            "Set via User Secrets: dotnet user-secrets set WORKSPACE_ID <guid>");
+}
+
 // ── Module registrations ──────────────────────────────────────────────────────
 builder.Services
     // AgentRuns module

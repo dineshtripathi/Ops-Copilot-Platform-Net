@@ -151,12 +151,25 @@ public sealed class McpStdioKqlToolClient : IKqlToolClient, IAsyncDisposable
                 string.Join(' ', _options.Arguments),
                 workDir ?? "(inherited)");
 
+            // ── Environment variable inheritance ──────────────────────────────
+            // StdioClientTransport does NOT inherit the parent's environment by
+            // default.  We must explicitly forward the variables that McpHost
+            // needs — in particular, PATH (so `az` / `pwsh` are discoverable),
+            // Azure identity token-cache directories, and the hosting-env flag
+            // so the child picks up appsettings.Development.json.
+            var envVars = BuildChildEnvironment();
+
+            _logger.LogDebug(
+                "Child process environment: {Keys}",
+                string.Join(", ", envVars.Keys.OrderBy(k => k)));
+
             var transport = new StdioTransport(new StdioTransportOptions
             {
-                Name             = "OpsCopilotMcpHost",
-                Command          = _options.Executable,
-                Arguments        = _options.Arguments.ToList(),
-                WorkingDirectory = workDir,
+                Name                 = "OpsCopilotMcpHost",
+                Command              = _options.Executable,
+                Arguments            = _options.Arguments.ToList(),
+                WorkingDirectory     = workDir,
+                EnvironmentVariables = envVars,
             });
 
             _mcpClient = await SdkMcpClient.CreateAsync(transport, cancellationToken: ct);
@@ -343,6 +356,74 @@ public sealed class McpStdioKqlToolClient : IKqlToolClient, IAsyncDisposable
             Timespan:      request.TimespanIso8601,
             ExecutedAtUtc: executedAtUtc,
             Error:         $"[{errorType}] {message}");
+
+    /// <summary>
+    /// Builds a dictionary of environment variables to forward to the McpHost
+    /// child process.  StdioClientTransport does NOT inherit the parent env,
+    /// so we must explicitly pass every variable the child needs:
+    ///
+    /// 1. OS-essential: PATH, PATHEXT, USERPROFILE, HOME, TEMP, TMP
+    /// 2. Windows-critical: SystemRoot, SystemDrive, COMSPEC, windir
+    ///    (cmd.exe / Python hang without these — az.cmd uses cmd.exe)
+    /// 3. Windows user-profile: APPDATA, LOCALAPPDATA, HOMEDRIVE, HOMEPATH,
+    ///    ProgramData, ProgramFiles, ProgramFiles(x86)
+    /// 4. .NET runtime: DOTNET_ROOT, DOTNET_CLI_HOME
+    /// 5. Azure identity: AZURE_CONFIG_DIR, AZURE_TENANT_ID, MSI_ENDPOINT,
+    ///    MSI_SECRET, IDENTITY_ENDPOINT, IDENTITY_HEADER  (MI / Workload ID)
+    /// 6. Hosting env: ASPNETCORE_ENVIRONMENT, DOTNET_ENVIRONMENT
+    /// 7. App-specific: WORKSPACE_ID plus any AzureAuth__* variables
+    /// </summary>
+    internal static Dictionary<string, string?> BuildChildEnvironment()
+    {
+        var env = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        // ── 1. Well-known variables (forward if set) ─────────────────────
+        string[] wellKnown =
+        [
+            // OS essentials
+            "PATH", "PATHEXT", "USERPROFILE", "HOME", "TEMP", "TMP",
+            // Windows-critical: cmd.exe / Python / .NET hang without these
+            "SystemRoot", "SystemDrive", "COMSPEC", "windir",
+            // Windows user-profile dirs (Azure CLI config, token caches)
+            "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH", "ProgramData",
+            "ProgramFiles", "ProgramFiles(x86)",
+            // .NET runtime
+            "DOTNET_ROOT", "DOTNET_CLI_HOME",
+            // Azure Identity SDK — local CLI/PS credential cache
+            "AZURE_CONFIG_DIR", "AZURE_TENANT_ID",
+            // Azure Managed Identity (App Service / Container Apps)
+            "MSI_ENDPOINT", "MSI_SECRET",
+            "IDENTITY_ENDPOINT", "IDENTITY_HEADER",
+            // Hosting environment → selects appsettings.Development.json
+            "ASPNETCORE_ENVIRONMENT", "DOTNET_ENVIRONMENT",
+            // App-specific workspace override
+            "WORKSPACE_ID",
+        ];
+
+        foreach (var name in wellKnown)
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrEmpty(value))
+                env[name] = value;
+        }
+
+        // ── 2. AzureAuth__* variables (config-binding via env vars) ──────
+        //    The McpHost reads AzureAuth:Mode, AzureAuth:TenantId etc.
+        //    which map to env vars like AzureAuth__Mode.
+        foreach (var entry in Environment.GetEnvironmentVariables())
+        {
+            if (entry is System.Collections.DictionaryEntry de
+                && de.Key is string key
+                && de.Value is string val
+                && key.StartsWith("AzureAuth__", StringComparison.OrdinalIgnoreCase)
+                && !env.ContainsKey(key))
+            {
+                env[key] = val;
+            }
+        }
+
+        return env;
+    }
 
     /// <summary>
     /// Walks up from <see cref="AppContext.BaseDirectory"/> to the first

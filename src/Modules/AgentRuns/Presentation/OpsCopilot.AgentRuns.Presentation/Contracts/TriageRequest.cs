@@ -11,6 +11,13 @@ namespace OpsCopilot.AgentRuns.Presentation.Contracts;
 /// Look-back window for KQL queries, in minutes.
 /// Must be between 1 and 1440 (24 hours). Defaults to 120.
 /// </param>
+/// <param name="WorkspaceId">
+/// Optional Log Analytics workspace ID override.
+/// When null/empty, the server falls back to the <c>WORKSPACE_ID</c> config
+/// or environment variable. Allows callers to target a specific workspace
+/// without requiring server-side configuration.
+/// </param>
 public sealed record TriageRequest(
     AlertPayloadDto AlertPayload,
-    int             TimeRangeMinutes = 120);
+    int             TimeRangeMinutes = 120,
+    string?         WorkspaceId      = null);

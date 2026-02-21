@@ -53,7 +53,7 @@ public sealed class TriageOrchestratorTests
             {
                 new Dictionary<string, object?> { ["message"] = "error: NullReference" }
             },
-            ExecutedQuery: "union traces, exceptions | where timestamp > ago(30m) | take 20",
+            ExecutedQuery: "search * | where TimeGenerated > ago(30m) | take 20",
             WorkspaceId:   WorkspaceId,
             Timespan:      "PT30M",
             ExecutedAtUtc: DateTimeOffset.UtcNow,

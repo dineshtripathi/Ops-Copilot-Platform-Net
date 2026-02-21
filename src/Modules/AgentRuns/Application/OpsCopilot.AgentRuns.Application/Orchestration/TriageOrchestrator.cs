@@ -40,7 +40,9 @@ public sealed class TriageOrchestrator
     {
         var run = await _repo.CreateRunAsync(tenantId, alertFingerprint, ct);
 
-        var kql      = $"union traces, exceptions | where timestamp > ago({timeRangeMinutes}m) | take 20";
+        // search * is table-agnostic — works on any Log Analytics workspace
+        // regardless of whether App Insights, Container Apps, or other tables exist.
+        var kql      = $"search * | where TimeGenerated > ago({timeRangeMinutes}m) | take 20";
         var timespan = $"PT{timeRangeMinutes}M";
         var request  = new KqlToolRequest(tenantId, workspaceId, kql, timespan);
 

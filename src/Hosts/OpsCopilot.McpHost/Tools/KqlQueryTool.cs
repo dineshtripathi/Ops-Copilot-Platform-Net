@@ -53,7 +53,7 @@ public sealed class KqlQueryTool
 
         [Description(
             "Non-empty KQL query to execute, e.g. " +
-            "\"union traces, exceptions | where timestamp > ago(2h) | take 20\".")]
+            "\"search * | where TimeGenerated > ago(2h) | take 20\".")]
         string kql,
 
         [Description(
