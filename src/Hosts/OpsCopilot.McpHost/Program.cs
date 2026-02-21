@@ -13,15 +13,15 @@ using ModelContextProtocol.Server;
 // Transport: stdio  — stdout is the MCP wire; stderr is for application logs.
 // Tools    : kql_query — executes KQL against Azure Log Analytics.
 //
+// Authentication modes (AzureAuth:Mode):
+//   ExplicitChain          — deterministic credential chain; default in Development.
+//   DefaultAzureCredential — full DAC with configurable exclusions; default in Production.
+//
 // How to run locally:
-//   az login                                    # authenticate with DefaultAzureCredential
+//   az login --tenant <your-tenant-id>
 //   dotnet run --project src/Hosts/OpsCopilot.McpHost
 //
-// How an MCP client connects (e.g. Claude Desktop, ApiHost future slice):
-//   {
-//     "command": "dotnet",
-//     "args": ["run", "--project", "src/Hosts/OpsCopilot.McpHost"]
-//   }
+// See docs/local-dev-auth.md for full troubleshooting.
 // ─────────────────────────────────────────────────────────────────────────────
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -40,33 +40,43 @@ var startupLogger = bootstrapLoggerFactory.CreateLogger("Startup");
 bool isDevelopment = builder.Environment.IsDevelopment();
 
 // ── Azure credential configuration ──────────────────────────────────────────
-// Development : ChainedTokenCredential with explicit CLI / PowerShell sources
-//               and a configurable ProcessTimeout — no noise credentials.
-// Production  : DefaultAzureCredential narrowed to ManagedIdentity only
-//               (override via AzureAuth:* config if needed).
+// AzureAuth:Mode selects the strategy:
+//   "ExplicitChain"          → ChainedTokenCredential built from Use* flags.
+//   "DefaultAzureCredential" → SDK DefaultAzureCredential with Exclude* flags.
+//
+// When Mode is not set, the default is:
+//   Development → ExplicitChain  (deterministic, no noise sources)
+//   Production  → DefaultAzureCredential (MI-only by default)
 string? tenantId = builder.Configuration["AzureAuth:TenantId"];
+string authMode  = builder.Configuration["AzureAuth:Mode"]
+                   ?? (isDevelopment ? "ExplicitChain" : "DefaultAzureCredential");
+
+startupLogger.LogInformation(
+    "[Auth] Mode={AuthMode} | Environment={Env}",
+    authMode, builder.Environment.EnvironmentName);
+
 TokenCredential credential;
 
-if (isDevelopment)
+if (string.Equals(authMode, "ExplicitChain", StringComparison.OrdinalIgnoreCase))
 {
-    int timeoutSeconds = ReadInt(
-        builder.Configuration["AzureAuth:CredentialProcessTimeoutSeconds"], 30);
-    var processTimeout = TimeSpan.FromSeconds(timeoutSeconds);
+    // ── ExplicitChain: deterministic credential list ─────────────────────
+    bool useCli   = ReadBool(builder.Configuration["AzureAuth:UseAzureCliCredential"], true);
+    bool usePs    = ReadBool(builder.Configuration["AzureAuth:UseAzurePowerShellCredential"], true);
+    bool useAzd   = ReadBool(builder.Configuration["AzureAuth:UseAzureDeveloperCliCredential"], false);
+    int  timeoutS = ReadInt(builder.Configuration["AzureAuth:CredentialProcessTimeoutSeconds"], 60);
+    var  timeout  = TimeSpan.FromSeconds(timeoutS);
 
-    bool useCli = !ReadBool(
-        builder.Configuration["AzureAuth:ExcludeAzureCliCredential"], false);
-    bool usePs  = !ReadBool(
-        builder.Configuration["AzureAuth:ExcludeAzurePowerShellCredential"], false);
-
-    var sources = new List<TokenCredential>();
+    var sources     = new List<TokenCredential>();
+    var sourceNames = new List<string>();
 
     if (useCli)
     {
         sources.Add(new AzureCliCredential(new AzureCliCredentialOptions
         {
             TenantId       = tenantId,
-            ProcessTimeout = processTimeout,
+            ProcessTimeout = timeout,
         }));
+        sourceNames.Add("AzureCliCredential");
     }
 
     if (usePs)
@@ -74,46 +84,56 @@ if (isDevelopment)
         sources.Add(new AzurePowerShellCredential(new AzurePowerShellCredentialOptions
         {
             TenantId       = tenantId,
-            ProcessTimeout = processTimeout,
+            ProcessTimeout = timeout,
         }));
+        sourceNames.Add("AzurePowerShellCredential");
+    }
+
+    if (useAzd)
+    {
+        sources.Add(new AzureDeveloperCliCredential(new AzureDeveloperCliCredentialOptions
+        {
+            TenantId       = tenantId,
+            ProcessTimeout = timeout,
+        }));
+        sourceNames.Add("AzureDeveloperCliCredential");
     }
 
     if (sources.Count == 0)
     {
         throw new InvalidOperationException(
-            "No Azure credentials enabled for Development. " +
-            "Set AzureAuth:ExcludeAzureCliCredential and/or " +
-            "AzureAuth:ExcludeAzurePowerShellCredential to false in " +
-            "appsettings.Development.json.");
+            "AzureAuth:Mode is ExplicitChain but no credentials are enabled. " +
+            "Set at least one of AzureAuth:UseAzureCliCredential, " +
+            "AzureAuth:UseAzurePowerShellCredential, or " +
+            "AzureAuth:UseAzureDeveloperCliCredential to true.");
     }
 
     credential = new ChainedTokenCredential(sources.ToArray());
 
     startupLogger.LogInformation(
-        "[Auth] Development credential chain | " +
-        "AzureCli={UseCli} | AzurePowerShell={UsePs} | " +
+        "[Auth] ExplicitChain configured | Chain={Chain} | " +
         "TenantId={TenantId} | ProcessTimeoutSeconds={Timeout}",
-        useCli, usePs,
+        string.Join(" → ", sourceNames),
         string.IsNullOrEmpty(tenantId) ? "(default)" : tenantId,
-        timeoutSeconds);
+        timeoutS);
 }
 else
 {
-    // Production / Staging: DefaultAzureCredential with most sources excluded.
+    // ── DefaultAzureCredential: production / MI-safe ────────────────────
     // Container Apps provides a system-assigned managed identity — that is
     // usually the only source needed.  Override via config to widen the chain.
     var options = new DefaultAzureCredentialOptions
     {
-        ExcludeEnvironmentCredential         = ReadBool(builder.Configuration["AzureAuth:ExcludeEnvironmentCredential"], true),
-        ExcludeWorkloadIdentityCredential    = ReadBool(builder.Configuration["AzureAuth:ExcludeWorkloadIdentityCredential"], true),
-        ExcludeManagedIdentityCredential     = ReadBool(builder.Configuration["AzureAuth:ExcludeManagedIdentityCredential"], false),
-        ExcludeSharedTokenCacheCredential    = ReadBool(builder.Configuration["AzureAuth:ExcludeSharedTokenCacheCredential"], true),
-        ExcludeVisualStudioCredential        = ReadBool(builder.Configuration["AzureAuth:ExcludeVisualStudioCredential"], true),
-        ExcludeVisualStudioCodeCredential    = ReadBool(builder.Configuration["AzureAuth:ExcludeVisualStudioCodeCredential"], true),
-        ExcludeAzureCliCredential            = ReadBool(builder.Configuration["AzureAuth:ExcludeAzureCliCredential"], true),
-        ExcludeAzurePowerShellCredential     = ReadBool(builder.Configuration["AzureAuth:ExcludeAzurePowerShellCredential"], true),
-        ExcludeAzureDeveloperCliCredential   = ReadBool(builder.Configuration["AzureAuth:ExcludeAzureDeveloperCliCredential"], true),
-        ExcludeInteractiveBrowserCredential  = ReadBool(builder.Configuration["AzureAuth:ExcludeInteractiveBrowserCredential"], true),
+        ExcludeEnvironmentCredential        = ReadBool(builder.Configuration["AzureAuth:ExcludeEnvironmentCredential"], true),
+        ExcludeWorkloadIdentityCredential   = ReadBool(builder.Configuration["AzureAuth:ExcludeWorkloadIdentityCredential"], true),
+        ExcludeManagedIdentityCredential    = ReadBool(builder.Configuration["AzureAuth:ExcludeManagedIdentityCredential"], false),
+        ExcludeSharedTokenCacheCredential   = ReadBool(builder.Configuration["AzureAuth:ExcludeSharedTokenCacheCredential"], true),
+        ExcludeVisualStudioCredential       = ReadBool(builder.Configuration["AzureAuth:ExcludeVisualStudioCredential"], true),
+        ExcludeVisualStudioCodeCredential   = ReadBool(builder.Configuration["AzureAuth:ExcludeVisualStudioCodeCredential"], true),
+        ExcludeAzureCliCredential           = ReadBool(builder.Configuration["AzureAuth:ExcludeAzureCliCredential"], true),
+        ExcludeAzurePowerShellCredential    = ReadBool(builder.Configuration["AzureAuth:ExcludeAzurePowerShellCredential"], true),
+        ExcludeAzureDeveloperCliCredential  = ReadBool(builder.Configuration["AzureAuth:ExcludeAzureDeveloperCliCredential"], true),
+        ExcludeInteractiveBrowserCredential = ReadBool(builder.Configuration["AzureAuth:ExcludeInteractiveBrowserCredential"], true),
     };
 
     if (!string.IsNullOrEmpty(tenantId))
@@ -122,9 +142,12 @@ else
     credential = new DefaultAzureCredential(options);
 
     startupLogger.LogInformation(
-        "[Auth] Production credential (DefaultAzureCredential) | " +
-        "ExcludeManagedIdentity={MI} | TenantId={TenantId}",
+        "[Auth] DefaultAzureCredential configured | " +
+        "ExcludeManagedIdentity={MI} | ExcludeCli={CLI} | ExcludePS={PS} | " +
+        "TenantId={TenantId}",
         options.ExcludeManagedIdentityCredential,
+        options.ExcludeAzureCliCredential,
+        options.ExcludeAzurePowerShellCredential,
         string.IsNullOrEmpty(options.TenantId) ? "(default)" : options.TenantId);
 }
 

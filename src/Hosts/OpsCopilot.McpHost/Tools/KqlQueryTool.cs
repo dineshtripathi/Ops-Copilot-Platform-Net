@@ -159,9 +159,12 @@ public sealed class KqlQueryTool
             logger.LogError(ex, "KQL execution failed | workspace={WorkspaceId}", workspaceId);
 
             var message = hostEnvironment.IsDevelopment()
-                ? "Local auth: ensure 'az login' (or 'Connect-AzAccount') succeeded before " +
-                  "starting McpHost. Set AzureAuth:TenantId in appsettings.Development.json " +
-                  "if targeting a specific tenant. " +
+                ? "Local auth failed. Troubleshooting checklist: " +
+                  "(1) Run 'az login --tenant <tid>' or 'Connect-AzAccount -Tenant <tid>'. " +
+                  "(2) For PowerShell: 'Enable-AzContextAutosave -Scope CurrentUser' to persist tokens. " +
+                  "(3) Set AzureAuth:TenantId in appsettings.Development.json for your tenant. " +
+                  "(4) Verify token: 'az account get-access-token --resource https://api.loganalytics.io'. " +
+                  "See docs/local-dev-auth.md for details. " +
                   $"[{ex.GetType().Name}] {ex.Message}"
                 : ex.Message;
 
