@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Xml;
 using Azure.Monitor.Query;
 using Azure.Monitor.Query.Models;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
@@ -41,6 +42,7 @@ public sealed class KqlQueryTool
         // Injected from DI — registered as singleton in Program.cs
         LogsQueryClient  logsClient,
         ILoggerFactory   loggerFactory,
+        IHostEnvironment hostEnvironment,
 
         // MCP tool parameters — appear in the JSON input schema
         [Description(
@@ -155,7 +157,15 @@ public sealed class KqlQueryTool
         catch (Exception ex)
         {
             logger.LogError(ex, "KQL execution failed | workspace={WorkspaceId}", workspaceId);
-            return Fail(workspaceId, kql, timespan, executedAtUtc, ex.Message, ex.GetType().Name);
+
+            var message = hostEnvironment.IsDevelopment()
+                ? "Local auth: ensure 'az login' (or 'Connect-AzAccount') succeeded before " +
+                  "starting McpHost. Set AzureAuth:TenantId in appsettings.Development.json " +
+                  "if targeting a specific tenant. " +
+                  $"[{ex.GetType().Name}] {ex.Message}"
+                : ex.Message;
+
+            return Fail(workspaceId, kql, timespan, executedAtUtc, message, ex.GetType().Name);
         }
     }
 
