@@ -21,6 +21,9 @@ public interface IAgentRunRepository
     /// <summary>Inserts the tool-call row. Never updates an existing row.</summary>
     Task AppendToolCallAsync(ToolCall toolCall, CancellationToken ct = default);
 
+    /// <summary>Inserts the policy-event row. Never updates an existing row.</summary>
+    Task AppendPolicyEventAsync(AgentRunPolicyEvent policyEvent, CancellationToken ct = default);
+
     /// <summary>Updates only the terminal fields of the run. May only be called once per run.</summary>
     Task CompleteRunAsync(
         Guid          runId,

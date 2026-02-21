@@ -9,6 +9,7 @@ using OpsCopilot.AlertIngestion.Application.Extensions;
 using OpsCopilot.AlertIngestion.Presentation.Endpoints;
 using OpsCopilot.AlertIngestion.Presentation.Extensions;
 using OpsCopilot.BuildingBlocks.Infrastructure.Configuration;
+using OpsCopilot.Governance.Application;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -88,7 +89,9 @@ builder.Services
     .AddAgentRunsPresentation()
     // AlertIngestion module
     .AddAlertIngestionApplication()
-    .AddAlertIngestionPresentation();
+    .AddAlertIngestionPresentation()
+    // Governance module
+    .AddGovernanceApplication(builder.Configuration);
 
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();

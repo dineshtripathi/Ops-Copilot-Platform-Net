@@ -44,4 +44,9 @@
     <ProjectReference Include="..\..\Modules\AlertIngestion\Presentation\OpsCopilot.AlertIngestion.Presentation\OpsCopilot.AlertIngestion.Presentation.csproj" />
   </ItemGroup>
 
+  <!-- Governance module -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Modules\Governance\Application\OpsCopilot.Governance.Application\OpsCopilot.Governance.Application.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\..\..\src\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\AgentRuns\Presentation\OpsCopilot.AgentRuns.Presentation\OpsCopilot.AgentRuns.Presentation.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\AlertIngestion\Domain\OpsCopilot.AlertIngestion.Domain\OpsCopilot.AlertIngestion.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\Governance\Application\OpsCopilot.Governance.Application\OpsCopilot.Governance.Application.csproj" />
   </ItemGroup>
 
 </Project>

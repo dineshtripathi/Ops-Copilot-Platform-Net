@@ -32,6 +32,13 @@ public sealed class SqlAgentRunRepository : IAgentRunRepository
         await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>INSERT-only. Never updates an existing PolicyEvent row.</summary>
+    public async Task AppendPolicyEventAsync(AgentRunPolicyEvent policyEvent, CancellationToken ct = default)
+    {
+        _db.PolicyEvents.Add(policyEvent);
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task CompleteRunAsync(
         Guid runId, AgentRunStatus status,
         string summaryJson, string citationsJson, CancellationToken ct = default)

@@ -17,6 +17,7 @@ public sealed class AgentRunsDbContext : DbContext
 
     public DbSet<AgentRun> AgentRuns => Set<AgentRun>();
     public DbSet<ToolCall> ToolCalls => Set<ToolCall>();
+    public DbSet<AgentRunPolicyEvent> PolicyEvents => Set<AgentRunPolicyEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -45,6 +46,16 @@ public sealed class AgentRunsDbContext : DbContext
             e.Property(x => x.CitationsJson).HasColumnType("nvarchar(max)");
             e.HasIndex(x => x.RunId);
             e.HasIndex(x => x.ExecutedAtUtc);
+        });
+
+        modelBuilder.Entity<AgentRunPolicyEvent>(e =>
+        {
+            e.HasKey(x => x.PolicyEventId);
+            e.Property(x => x.PolicyName).HasMaxLength(128).IsRequired();
+            e.Property(x => x.ReasonCode).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Message).HasColumnType("nvarchar(max)").IsRequired();
+            e.HasIndex(x => x.RunId);
+            e.HasIndex(x => x.OccurredAtUtc);
         });
     }
 }

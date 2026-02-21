@@ -1,0 +1,12 @@
+using OpsCopilot.Governance.Application.Models;
+
+namespace OpsCopilot.Governance.Application.Policies;
+
+/// <summary>
+/// Determines whether a specific tool may be invoked for a given tenant.
+/// Checked BEFORE the MCP call — denied tools never reach MCP.
+/// </summary>
+public interface IToolAllowlistPolicy
+{
+    PolicyDecision CanUseTool(string tenantId, string toolName);
+}
