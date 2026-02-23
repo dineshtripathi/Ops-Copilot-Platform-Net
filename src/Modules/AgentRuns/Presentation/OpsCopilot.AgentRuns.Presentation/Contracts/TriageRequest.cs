@@ -20,4 +20,5 @@ namespace OpsCopilot.AgentRuns.Presentation.Contracts;
 public sealed record TriageRequest(
     AlertPayloadDto AlertPayload,
     int             TimeRangeMinutes = 120,
-    string?         WorkspaceId      = null);
+    string?         WorkspaceId      = null,
+    Guid?           SessionId        = null);

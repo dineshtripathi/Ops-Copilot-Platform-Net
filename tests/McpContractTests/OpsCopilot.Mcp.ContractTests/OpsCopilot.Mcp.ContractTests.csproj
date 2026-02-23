@@ -23,4 +23,13 @@
     <PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      Disable parallel test execution: MCP contract tests launch McpHost via
+      'dotnet run' as a child process. Parallel runs cause MSBuild lock
+      contention because multiple invocations try to build the same project.
+    -->
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

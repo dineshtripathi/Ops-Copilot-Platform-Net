@@ -30,7 +30,7 @@ public sealed class IngestAlertCommandHandler
                 "RawJson must not be empty.", nameof(command));
 
         var fingerprint = AlertFingerprintService.Compute(command.RawJson);
-        var run         = await _repository.CreateRunAsync(command.TenantId, fingerprint, ct);
+        var run         = await _repository.CreateRunAsync(command.TenantId, fingerprint, sessionId: null, ct);
 
         return new IngestAlertResult(run.RunId, fingerprint);
     }

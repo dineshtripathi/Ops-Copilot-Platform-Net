@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Domain\OpsCopilot.Rag.Domain\OpsCopilot.Rag.Domain.csproj" />
+  </ItemGroup>
+
 </Project>

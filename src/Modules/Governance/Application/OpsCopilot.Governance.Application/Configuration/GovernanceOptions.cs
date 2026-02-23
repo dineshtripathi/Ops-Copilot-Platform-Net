@@ -17,13 +17,16 @@ public sealed class GovernanceOptions
 public sealed class GovernanceDefaults
 {
     /// <summary>Tool names allowed for triage. Empty = allow all.</summary>
-    public List<string> AllowedTools { get; set; } = ["kql_query"];
+    public List<string> AllowedTools { get; set; } = ["kql_query", "runbook_search"];
 
     /// <summary>Whether triage is enabled globally.</summary>
     public bool TriageEnabled { get; set; } = true;
 
     /// <summary>Maximum token budget per run (null = unlimited).</summary>
     public int? TokenBudget { get; set; }
+
+    /// <summary>Default session TTL in minutes. Defaults to 30.</summary>
+    public int SessionTtlMinutes { get; set; } = 30;
 }
 
 public sealed class TenantOverride
@@ -36,4 +39,7 @@ public sealed class TenantOverride
 
     /// <summary>Tenant-specific token budget (overrides defaults when set).</summary>
     public int? TokenBudget { get; set; }
+
+    /// <summary>Tenant-specific session TTL in minutes (overrides defaults when set).</summary>
+    public int? SessionTtlMinutes { get; set; }
 }

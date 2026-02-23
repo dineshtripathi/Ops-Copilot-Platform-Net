@@ -16,6 +16,7 @@ public interface IAgentRunRepository
     Task<AgentRun> CreateRunAsync(
         string tenantId,
         string alertFingerprint,
+        Guid? sessionId = null,
         CancellationToken ct = default);
 
     /// <summary>Inserts the tool-call row. Never updates an existing row.</summary>
@@ -31,4 +32,12 @@ public interface IAgentRunRepository
         string        summaryJson,
         string        citationsJson,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the most recent completed runs for the given session,
+    /// ordered by <c>CreatedAtUtc</c> descending, capped at <paramref name="limit"/>.
+    /// Used to build compact session context on resume.
+    /// </summary>
+    Task<IReadOnlyList<AgentRun>> GetRecentRunsBySessionAsync(
+        Guid sessionId, int limit, CancellationToken ct = default);
 }

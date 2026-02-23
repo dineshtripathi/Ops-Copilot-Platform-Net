@@ -1,6 +1,7 @@
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Repositories;
+using Microsoft.EntityFrameworkCore;
 
 namespace OpsCopilot.AgentRuns.Infrastructure.Persistence;
 
@@ -17,9 +18,9 @@ public sealed class SqlAgentRunRepository : IAgentRunRepository
     public SqlAgentRunRepository(AgentRunsDbContext db) => _db = db;
 
     public async Task<AgentRun> CreateRunAsync(
-        string tenantId, string alertFingerprint, CancellationToken ct = default)
+        string tenantId, string alertFingerprint, Guid? sessionId = null, CancellationToken ct = default)
     {
-        var run = AgentRun.Create(tenantId, alertFingerprint);
+        var run = AgentRun.Create(tenantId, alertFingerprint, sessionId);
         _db.AgentRuns.Add(run);
         await _db.SaveChangesAsync(ct);
         return run;
@@ -47,5 +48,16 @@ public sealed class SqlAgentRunRepository : IAgentRunRepository
                   ?? throw new InvalidOperationException($"AgentRun {runId} not found.");
         run.Complete(status, summaryJson, citationsJson);
         await _db.SaveChangesAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<AgentRun>> GetRecentRunsBySessionAsync(
+        Guid sessionId, int limit, CancellationToken ct = default)
+    {
+        return await _db.AgentRuns
+            .Where(r => r.SessionId == sessionId)
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .Take(limit)
+            .ToListAsync(ct);
     }
 }

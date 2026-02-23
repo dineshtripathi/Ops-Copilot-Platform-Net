@@ -12,7 +12,7 @@ public sealed class AgentRun
     // EF Core constructor
     private AgentRun() { }
 
-    public static AgentRun Create(string tenantId, string alertFingerprint)
+    public static AgentRun Create(string tenantId, string alertFingerprint, Guid? sessionId = null)
         => new()
         {
             RunId            = Guid.NewGuid(),
@@ -20,6 +20,7 @@ public sealed class AgentRun
             AlertFingerprint = alertFingerprint,
             Status           = AgentRunStatus.Pending,
             CreatedAtUtc     = DateTimeOffset.UtcNow,
+            SessionId        = sessionId,
         };
 
     public Guid            RunId            { get; private set; }
@@ -30,6 +31,7 @@ public sealed class AgentRun
     public string?         AlertFingerprint { get; private set; }
     public string?         SummaryJson      { get; private set; }
     public string?         CitationsJson    { get; private set; }
+    public Guid?            SessionId        { get; private set; }
 
     /// <summary>
     /// Transitions the run to a terminal state. May only be called once.

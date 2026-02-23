@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
+using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
 using OpsCopilot.AlertIngestion.Domain.Services;
@@ -97,12 +98,25 @@ public static class AgentRunEndpoints
             var fingerprint      = AlertFingerprintService.Compute(alertPayloadJson);
 
             // ── Orchestrate ─────────────────────────────────────────────────
-            var result = await orchestrator.RunAsync(
-                tenantId,
-                fingerprint,
-                workspaceId,
-                request.TimeRangeMinutes,
-                ct);
+            TriageResult result;
+            try
+            {
+                result = await orchestrator.RunAsync(
+                    tenantId,
+                    fingerprint,
+                    workspaceId,
+                    request.TimeRangeMinutes,
+                    request.AlertPayload.Title,
+                    request.SessionId,
+                    ct);
+            }
+            catch (SessionTenantMismatchException ex)
+            {
+                return Results.Problem(
+                    detail:     ex.Message,
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title:      "Session tenant mismatch");
+            }
 
             var citations = result.Citations
                 .Select(c => new CitationDto(
@@ -110,6 +124,14 @@ public static class AgentRunEndpoints
                     c.ExecutedQuery,
                     c.Timespan,
                     c.ExecutedAtUtc))
+                .ToList();
+
+            var runbookCitations = result.RunbookCitations
+                .Select(c => new RunbookCitationDto(
+                    c.RunbookId,
+                    c.Title,
+                    c.Snippet,
+                    c.Score))
                 .ToList();
 
             // Parse the summary JSON string into a structured JsonElement
@@ -125,13 +147,19 @@ public static class AgentRunEndpoints
                 result.RunId,
                 result.Status.ToString(),
                 summary,
-                citations));
+                citations,
+                runbookCitations,
+                result.SessionId,
+                result.IsNewSession,
+                result.SessionExpiresAtUtc,
+                result.UsedSessionContext));
         })
         .WithName("PostTriage")
         .WithTags("AgentRuns")
         .Accepts<TriageRequest>("application/json")
         .Produces<TriageResponse>(StatusCodes.Status200OK)
-        .ProducesProblem(StatusCodes.Status400BadRequest);
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status403Forbidden);
 
         return app;
     }

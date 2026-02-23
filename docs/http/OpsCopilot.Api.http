@@ -1,0 +1,352 @@
+### ================================================================
+### OpsCopilot API — REST Client file  (VS Code REST Client extension)
+###
+### Sections:
+###   A. Health
+###   B. Triage — happy path
+###   C. Triage — runbook-positive path
+###   D. Triage — validation cases
+###   E. Ingest alert — happy path + validation
+###   F. MCP boundary check
+###   G. Triage — session-based follow-up
+###   H. Session continuity hardening (Dev Slice 4B)
+###
+### NOTE on runbook_search:
+###   `runbook_search` is NOT a public HTTP endpoint.
+###   It is invoked internally by POST /agent/triage via MCP stdio
+###   through McpHost (child process). Proof that it ran is visible
+###   in the triage response fields: summary.runbookHits > 0 and a
+###   non-empty runbookCitations array.
+### ================================================================
+
+@baseUrl = http://localhost:5000
+@tenantId = tenant-dev-001
+@workspaceId = 00000000-0000-0000-0000-000000000001
+@timeRange = 120
+
+### NOTE — Fake workspace ID:
+###   @workspaceId above is a synthetic GUID that does not map to a
+###   real Azure Log Analytics workspace.  KQL queries executed via
+###   POST /agent/triage will return Degraded or Failed status because
+###   the Azure Monitor SDK cannot resolve this workspace.  This is
+###   expected local-dev behaviour; integration with a real workspace
+###   requires setting a valid GUID and appropriate AAD credentials.
+
+### ════════════════════════════════════════════════════════════════
+### A. Health
+### ════════════════════════════════════════════════════════════════
+
+### A1. Health probe  → 200 "healthy"
+GET {{baseUrl}}/healthz
+Accept: text/plain
+
+### ════════════════════════════════════════════════════════════════
+### B. Triage — happy path
+### ════════════════════════════════════════════════════════════════
+
+### B1. Full triage (all optional fields populated)
+### Expected: 200, status=Completed, citations + runbookCitations present
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "cpu-spike-vm-web-01",
+    "title": "CPU usage exceeded 95% for 15 minutes",
+    "severity": "High",
+    "firedAtUtc": "2025-07-01T14:30:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-xyz/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/vm-web-01",
+    "serviceName": "vm-web-01",
+    "environment": "production",
+    "correlationId": "corr-abc-001",
+    "dimensions": {
+      "region": "eastus2",
+      "tier": "Standard_D4s_v3"
+    }
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### B2. Minimal triage (only required fields)
+### Expected: 200, status=Completed
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Datadog",
+    "fingerprint": "disk-full-db-01"
+  }
+}
+
+### ════════════════════════════════════════════════════════════════
+### C. Triage — runbook-positive path
+###    Uses a title that predictably matches embedded runbooks
+###    so runbook_search (called internally via MCP) returns hits.
+### ════════════════════════════════════════════════════════════════
+
+### C1. Runbook-positive triage
+### Expected:
+###   - status: "Completed"
+###   - summary.runbookHits > 0
+###   - runbookCitations: non-empty array (runbookId, title, snippet, score)
+###   - citations: also present (KQL results)
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "high-cpu-web-01",
+    "title": "High CPU on web-01",
+    "severity": "Critical",
+    "firedAtUtc": "2025-07-01T15:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-xyz/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/web-01",
+    "serviceName": "web-01",
+    "environment": "production"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### ════════════════════════════════════════════════════════════════
+### D. Triage — validation cases
+### ════════════════════════════════════════════════════════════════
+
+### D1. Missing x-tenant-id header  → 400
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "cpu-spike-vm-web-01"
+  }
+}
+
+### D2. Missing alertPayload  → 400
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "timeRangeMinutes": 60
+}
+
+### D3. Blank alertSource  → 400
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "  ",
+    "fingerprint": "cpu-spike-vm-web-01"
+  }
+}
+
+### D4. timeRangeMinutes out of range (max 1440)  → 400
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "cpu-spike-vm-web-01"
+  },
+  "timeRangeMinutes": 9999
+}
+
+### D5. Invalid workspaceId (not a GUID)  → 400
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "cpu-spike-vm-web-01"
+  },
+  "workspaceId": "not-a-guid"
+}
+
+### ════════════════════════════════════════════════════════════════
+### E. Ingest alert
+###
+### NOTE — Pending status:
+###   Ingested alerts are created with Status = Pending and remain
+###   in that state. Transitioning Pending → Completed requires an
+###   orchestration / triage pipeline that is planned for a future
+###   dev slice. Until then, querying GET /agent-runs will show
+###   ingested records stuck at Pending — this is expected.
+### ════════════════════════════════════════════════════════════════
+
+### E1. Ingest alert — happy path
+POST {{baseUrl}}/ingest/alert
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+x-correlation-id: req-abc-001
+
+{
+  "payload": "{\"alertId\":\"alert-001\",\"severity\":\"High\",\"resourceId\":\"/subscriptions/sub-xyz/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/vm-web-01\",\"description\":\"CPU usage exceeded 95% for 15 minutes\"}"
+}
+
+### E2. Ingest alert — missing x-tenant-id  → 400
+POST {{baseUrl}}/ingest/alert
+Content-Type: application/json
+
+{
+  "payload": "{\"alertId\":\"alert-001\"}"
+}
+
+### ════════════════════════════════════════════════════════════════
+### F. MCP boundary check
+###    Proves MCP tools (kql_query, runbook_search) are NOT
+###    reachable over HTTP. They run only via MCP stdio transport
+###    inside McpHost. Any attempt to call them via HTTP → 404.
+### ════════════════════════════════════════════════════════════════
+
+### F1. POST /mcp/tools/kql_query → 404 (no such HTTP route)
+POST {{baseUrl}}/mcp/tools/kql_query
+Content-Type: application/json
+
+{}
+
+### F2. POST /mcp/tools/runbook_search → 404 (no such HTTP route)
+POST {{baseUrl}}/mcp/tools/runbook_search
+Content-Type: application/json
+
+{}
+
+### ════════════════════════════════════════════════════════════════
+### G. Triage — session-based follow-up (Dev Slice 4A)
+###    sessionId is an optional field. When omitted, a new session
+###    is created. When provided, the existing session is resumed.
+###    Response includes sessionId, isNewSession, sessionExpiresAtUtc.
+### ════════════════════════════════════════════════════════════════
+
+### G1. Triage — new session (no sessionId)
+### Expected: 200, isNewSession=true, sessionId + sessionExpiresAtUtc present
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "session-test-new-01",
+    "title": "Session test — new session",
+    "severity": "Medium"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### ──────────────────────────────────────────────────────────────
+### HOW-TO: After running G1, copy the "sessionId" value from the
+### response JSON and paste it into @sessionId below. Then run G2.
+### ──────────────────────────────────────────────────────────────
+
+### G2. Triage — resume existing session
+### Usage: copy the sessionId from G1's response and paste below.
+### Expected: 200, isNewSession=false, same sessionId returned
+@sessionId = 00000000-0000-0000-0000-000000000000
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "session-test-resume-01",
+    "title": "Session test — resume session",
+    "severity": "Medium"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}",
+  "sessionId": "{{sessionId}}"
+}
+
+### G3. Triage — invalid sessionId (non-existent)
+### Expected: 200 (new session created with warning log), isNewSession=true
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "session-test-invalid-01",
+    "title": "Session test — invalid sessionId"
+  },
+  "sessionId": "deadbeef-dead-beef-dead-beefdeadbeef"
+}
+
+### ════════════════════════════════════════════════════════════════
+### H. Session continuity hardening (Dev Slice 4B)
+###    Tests tenant-safety, expired-session fallback, and
+###    session-context carry-over (usedSessionContext flag).
+### ════════════════════════════════════════════════════════════════
+
+### H1. Tenant mismatch → 403 Forbidden
+### Usage: run G1 with x-tenant-id: tenant-dev-001, copy the sessionId
+###        from the response, paste into @sessionId above, then run H1.
+### Expected: 403, Problem Details with title "Session tenant mismatch"
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: tenant-verify-4b
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "tenant-mismatch-01",
+    "title": "Session test — tenant mismatch (4B)"
+  },
+  "sessionId": "{{sessionId}}"
+}
+
+### H2. Expired session → new session fallback
+### Usage: wait for the session TTL to expire (default 30 min), or
+###        temporarily lower Governance:Defaults:SessionTtlMinutes
+###        in appsettings, then provide the expired sessionId.
+### Expected: 200, isNewSession=true, new sessionId returned
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "expired-session-01",
+    "title": "Session test — expired session fallback (4B)"
+  },
+  "sessionId": "{{sessionId}}"
+}
+
+### H3. Session resume — usedSessionContext flag
+### Usage: run G1 to create a session, copy the sessionId into
+###        @sessionId, then run H3.
+### Expected: 200, isNewSession=false, usedSessionContext=true,
+###           response includes data from prior run context
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "session-context-01",
+    "title": "Session test — verify usedSessionContext (4B)"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}",
+  "sessionId": "{{sessionId}}"
+}

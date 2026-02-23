@@ -17,6 +17,7 @@ public static class GovernanceApplicationExtensions
         services.AddSingleton<IToolAllowlistPolicy, DefaultToolAllowlistPolicy>();
         services.AddSingleton<ITokenBudgetPolicy, DefaultTokenBudgetPolicy>();
         services.AddSingleton<IDegradedModePolicy, DefaultDegradedModePolicy>();
+        services.AddSingleton<ISessionPolicy, DefaultSessionPolicy>();
 
         return services;
     }

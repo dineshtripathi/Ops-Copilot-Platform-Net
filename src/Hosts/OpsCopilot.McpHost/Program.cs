@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
+using OpsCopilot.Rag.Infrastructure.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.McpHost — MCP tool server (stdio transport)
@@ -12,6 +13,7 @@ using ModelContextProtocol.Server;
 // Protocol : Model Context Protocol (MCP) over stdin/stdout.
 // Transport: stdio  — stdout is the MCP wire; stderr is for application logs.
 // Tools    : kql_query — executes KQL against Azure Log Analytics.
+//            runbook_search — searches the operational runbook knowledge base.
 //
 // Authentication modes (AzureAuth:Mode):
 //   ExplicitChain          — deterministic credential chain; default in Development.
@@ -185,6 +187,17 @@ else
 // ── Azure Monitor Query client (singleton) ────────────────────────────────────
 builder.Services.AddSingleton(_ => new LogsQueryClient(credential));
 
+// ── RAG infrastructure (runbook retrieval for the runbook_search tool) ────────
+builder.Services.AddRagInfrastructure(builder.Configuration);
+
+// ── RAG diagnostics — log base path so runbook resolution issues are obvious ──
+{
+    var ragBasePath = builder.Configuration["Rag:RunbookBasePath"] ?? "(default — embedded)";
+    startupLogger.LogInformation(
+        "[Startup] RAG  RunbookBasePath={BasePath}",
+        ragBasePath);
+}
+
 // ── MCP server ────────────────────────────────────────────────────────────────
 // - StdioServerTransport: reads JSON-RPC from stdin, writes to stdout
 // - WithToolsFromAssembly: discovers all [McpServerToolType] classes in this exe
@@ -192,6 +205,8 @@ builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
     .WithToolsFromAssembly();
+
+startupLogger.LogInformation("[Startup] MCP server configured — stdio transport, tools from assembly");
 
 // ── Development-only auth probe ─────────────────────────────────────────────
 // Attempt to acquire a real token before the MCP wire starts. This surfaces

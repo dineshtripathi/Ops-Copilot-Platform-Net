@@ -6,6 +6,7 @@ using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Infrastructure.McpClient;
 using OpsCopilot.AgentRuns.Infrastructure.Persistence;
+using OpsCopilot.AgentRuns.Infrastructure.Sessions;
 
 namespace OpsCopilot.AgentRuns.Infrastructure.Extensions;
 
@@ -54,9 +55,21 @@ public static class AgentRunsInfrastructureExtensions
 
         services.AddDbContext<AgentRunsDbContext>(options =>
             options.UseSqlServer(connStr, sql =>
-                sql.EnableRetryOnFailure(maxRetryCount: 3)));
+            {
+                sql.EnableRetryOnFailure(maxRetryCount: 3);
+                // Keep __EFMigrationsHistory in the same schema as the module tables.
+                // Without this, EF defaults to dbo which causes history mismatches.
+                sql.MigrationsHistoryTable("__EFMigrationsHistory", "agentRuns");
+            }));
 
         services.AddScoped<IAgentRunRepository, SqlAgentRunRepository>();
+
+        // ── Session store (in-memory for MVP, swap for Redis later) ───────
+        // WARNING: Sessions are lost on process restart and are NOT shared
+        // across multiple host instances. Replace with Redis/SQL-backed
+        // implementation before multi-replica or production deployment.
+        services.AddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddSingleton<ISessionStore, InMemorySessionStore>();
 
         // ── MCP stdio client ──────────────────────────────────────────────────
         var mcpOptions = BuildMcpKqlServerOptions(configuration);
@@ -67,6 +80,12 @@ public static class AgentRunsInfrastructureExtensions
             new McpStdioKqlToolClient(
                 mcpOptions,
                 sp.GetRequiredService<ILogger<McpStdioKqlToolClient>>()));
+
+        // Runbook search MCP client — same McpHost binary, own child process.
+        services.AddSingleton<IRunbookSearchToolClient>(sp =>
+            new McpStdioRunbookToolClient(
+                mcpOptions,
+                sp.GetRequiredService<ILogger<McpStdioRunbookToolClient>>()));
 
         return services;
     }

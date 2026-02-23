@@ -10,6 +10,7 @@ using OpsCopilot.AlertIngestion.Presentation.Endpoints;
 using OpsCopilot.AlertIngestion.Presentation.Extensions;
 using OpsCopilot.BuildingBlocks.Infrastructure.Configuration;
 using OpsCopilot.Governance.Application;
+using OpsCopilot.Governance.Application.Configuration;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -79,6 +80,24 @@ builder.Configuration.AddOpsCopilotKeyVault(
             "[Startup] WORKSPACE_ID is not configured. " +
             "POST /agent/triage will return 400 unless callers supply WorkspaceId in the request body. " +
             "Set via User Secrets: dotnet user-secrets set WORKSPACE_ID <guid>");
+}
+
+// ── Governance diagnostics — log effective allowlist so denial mismatches are obvious ──
+{
+    var govSection = builder.Configuration.GetSection(GovernanceOptions.SectionName);
+    var govOpts    = new GovernanceOptions();
+    govSection.Bind(govOpts);
+
+    var tools = govOpts.Defaults.AllowedTools.Count > 0
+        ? string.Join(", ", govOpts.Defaults.AllowedTools)
+        : "(empty — allow all)";
+
+    startupLogger.LogInformation(
+        "[Startup] Governance  AllowedTools=[{Tools}] | TriageEnabled={Triage} | TokenBudget={Budget} | TenantOverrides={Overrides}",
+        tools,
+        govOpts.Defaults.TriageEnabled,
+        govOpts.Defaults.TokenBudget?.ToString() ?? "unlimited",
+        govOpts.TenantOverrides.Count);
 }
 
 // ── Module registrations ──────────────────────────────────────────────────────

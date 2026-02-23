@@ -34,6 +34,8 @@ public sealed class AgentRunsDbContext : DbContext
             e.HasIndex(x => x.TenantId);
             e.HasIndex(x => x.AlertFingerprint);
             e.HasIndex(x => new { x.TenantId, x.CreatedAtUtc });
+            e.Property(x => x.SessionId);
+            e.HasIndex(x => x.SessionId);
         });
 
         modelBuilder.Entity<ToolCall>(e =>
