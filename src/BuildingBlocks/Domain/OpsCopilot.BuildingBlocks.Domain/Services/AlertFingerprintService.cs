@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace OpsCopilot.AlertIngestion.Domain.Services;
+namespace OpsCopilot.BuildingBlocks.Domain.Services;
 
 /// <summary>
 /// Produces a stable, deterministic fingerprint for an alert payload.

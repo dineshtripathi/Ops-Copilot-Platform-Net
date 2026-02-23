@@ -5,7 +5,7 @@ using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Repositories;
-using OpsCopilot.Governance.Application.Policies;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 
 namespace OpsCopilot.AgentRuns.Application.Orchestration;
 

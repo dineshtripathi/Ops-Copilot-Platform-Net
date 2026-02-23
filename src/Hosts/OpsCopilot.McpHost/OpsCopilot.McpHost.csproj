@@ -24,10 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- RAG module — runbook retrieval for the runbook_search MCP tool -->
-    <ProjectReference Include="..\..\Modules\Rag\Application\OpsCopilot.Rag.Application\OpsCopilot.Rag.Application.csproj" />
-    <ProjectReference Include="..\..\Modules\Rag\Domain\OpsCopilot.Rag.Domain\OpsCopilot.Rag.Domain.csproj" />
-    <ProjectReference Include="..\..\Modules\Rag\Infrastructure\OpsCopilot.Rag.Infrastructure\OpsCopilot.Rag.Infrastructure.csproj" />
+    <!-- RAG module — single Presentation facade hides inner layers -->
+    <ProjectReference Include="..\..\Modules\Rag\Presentation\OpsCopilot.Rag.Presentation\OpsCopilot.Rag.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

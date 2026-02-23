@@ -9,8 +9,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Application\OpsCopilot.AgentRuns.Application\OpsCopilot.AgentRuns.Application.csproj" />
     <ProjectReference Include="..\..\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
-    <!-- fingerprint dependency: acceptable cross-module ref for MVP -->
-    <ProjectReference Include="..\..\..\AlertIngestion\Domain\OpsCopilot.AlertIngestion.Domain\OpsCopilot.AlertIngestion.Domain.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\OpsCopilot.AgentRuns.Infrastructure\OpsCopilot.AgentRuns.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\BuildingBlocks\Domain\OpsCopilot.BuildingBlocks.Domain\OpsCopilot.BuildingBlocks.Domain.csproj" />
   </ItemGroup>
 
   <ItemGroup>

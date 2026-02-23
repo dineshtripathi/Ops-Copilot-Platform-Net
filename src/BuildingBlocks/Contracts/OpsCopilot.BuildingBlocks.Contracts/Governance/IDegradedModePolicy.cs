@@ -1,6 +1,4 @@
-using OpsCopilot.Governance.Application.Models;
-
-namespace OpsCopilot.Governance.Application.Policies;
+namespace OpsCopilot.BuildingBlocks.Contracts.Governance;
 
 /// <summary>
 /// Maps a runtime exception to a deterministic degraded-mode outcome.

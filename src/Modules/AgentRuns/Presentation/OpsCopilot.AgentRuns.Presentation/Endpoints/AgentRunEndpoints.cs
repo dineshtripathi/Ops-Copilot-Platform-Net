@@ -6,7 +6,7 @@ using Microsoft.Extensions.Configuration;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
-using OpsCopilot.AlertIngestion.Domain.Services;
+using OpsCopilot.BuildingBlocks.Domain.Services;
 
 namespace OpsCopilot.AgentRuns.Presentation.Endpoints;
 

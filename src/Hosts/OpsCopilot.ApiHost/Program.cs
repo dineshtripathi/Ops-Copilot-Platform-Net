@@ -1,16 +1,10 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using OpsCopilot.AgentRuns.Application.Extensions;
-using OpsCopilot.AgentRuns.Infrastructure.Extensions;
-using OpsCopilot.AgentRuns.Infrastructure.Persistence;
+﻿using Microsoft.Extensions.Logging;
 using OpsCopilot.AgentRuns.Presentation.Endpoints;
 using OpsCopilot.AgentRuns.Presentation.Extensions;
-using OpsCopilot.AlertIngestion.Application.Extensions;
 using OpsCopilot.AlertIngestion.Presentation.Endpoints;
 using OpsCopilot.AlertIngestion.Presentation.Extensions;
 using OpsCopilot.BuildingBlocks.Infrastructure.Configuration;
-using OpsCopilot.Governance.Application;
-using OpsCopilot.Governance.Application.Configuration;
+using OpsCopilot.Governance.Presentation.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -82,35 +76,12 @@ builder.Configuration.AddOpsCopilotKeyVault(
             "Set via User Secrets: dotnet user-secrets set WORKSPACE_ID <guid>");
 }
 
-// ── Governance diagnostics — log effective allowlist so denial mismatches are obvious ──
-{
-    var govSection = builder.Configuration.GetSection(GovernanceOptions.SectionName);
-    var govOpts    = new GovernanceOptions();
-    govSection.Bind(govOpts);
-
-    var tools = govOpts.Defaults.AllowedTools.Count > 0
-        ? string.Join(", ", govOpts.Defaults.AllowedTools)
-        : "(empty — allow all)";
-
-    startupLogger.LogInformation(
-        "[Startup] Governance  AllowedTools=[{Tools}] | TriageEnabled={Triage} | TokenBudget={Budget} | TenantOverrides={Overrides}",
-        tools,
-        govOpts.Defaults.TriageEnabled,
-        govOpts.Defaults.TokenBudget?.ToString() ?? "unlimited",
-        govOpts.TenantOverrides.Count);
-}
-
 // ── Module registrations ──────────────────────────────────────────────────────
+// Each Presentation facade hides Application + Infrastructure wiring.
 builder.Services
-    // AgentRuns module
-    .AddAgentRunsApplication()
-    .AddAgentRunsInfrastructure(builder.Configuration)   // EF Core + IKqlToolClient
-    .AddAgentRunsPresentation()
-    // AlertIngestion module
-    .AddAlertIngestionApplication()
-    .AddAlertIngestionPresentation()
-    // Governance module
-    .AddGovernanceApplication(builder.Configuration);
+    .AddAgentRunsModule(builder.Configuration)
+    .AddAlertIngestionModule()
+    .AddGovernanceModule(builder.Configuration, startupLogger);
 
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();
@@ -118,14 +89,7 @@ builder.Logging.AddConsole();
 var app = builder.Build();
 
 // ── Database bootstrap ────────────────────────────────────────────────────────
-// MigrateAsync() applies any pending EF Core migrations on startup.
-// For first run this creates the agentRuns schema + tables.
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AgentRunsDbContext>();
-    await db.Database.MigrateAsync();
-    app.Logger.LogInformation("AgentRunsDbContext migrations applied.");
-}
+await app.UseAgentRunsMigrations();
 
 // ── Health probe ──────────────────────────────────────────────────────────────
 app.MapGet("/healthz", () => Results.Ok("healthy"))

@@ -1,4 +1,4 @@
-namespace OpsCopilot.Governance.Application.Models;
+namespace OpsCopilot.BuildingBlocks.Contracts.Governance;
 
 /// <summary>
 /// Result of a tool-allowlist or generic policy check.

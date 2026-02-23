@@ -28,25 +28,11 @@
     <ProjectReference Include="..\..\BuildingBlocks\Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure.csproj" />
   </ItemGroup>
 
-  <!-- AgentRuns module -->
+  <!-- Module facades — hosts reference only Presentation; inner layers are hidden -->
   <ItemGroup>
-    <ProjectReference Include="..\..\Modules\AgentRuns\Application\OpsCopilot.AgentRuns.Application\OpsCopilot.AgentRuns.Application.csproj" />
-    <ProjectReference Include="..\..\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
-    <ProjectReference Include="..\..\Modules\AgentRuns\Infrastructure\OpsCopilot.AgentRuns.Infrastructure\OpsCopilot.AgentRuns.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\AgentRuns\Presentation\OpsCopilot.AgentRuns.Presentation\OpsCopilot.AgentRuns.Presentation.csproj" />
-  </ItemGroup>
-
-  <!-- AlertIngestion module -->
-  <ItemGroup>
-    <ProjectReference Include="..\..\Modules\AlertIngestion\Application\OpsCopilot.AlertIngestion.Application\OpsCopilot.AlertIngestion.Application.csproj" />
-    <ProjectReference Include="..\..\Modules\AlertIngestion\Domain\OpsCopilot.AlertIngestion.Domain\OpsCopilot.AlertIngestion.Domain.csproj" />
-    <ProjectReference Include="..\..\Modules\AlertIngestion\Infrastructure\OpsCopilot.AlertIngestion.Infrastructure\OpsCopilot.AlertIngestion.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\AlertIngestion\Presentation\OpsCopilot.AlertIngestion.Presentation\OpsCopilot.AlertIngestion.Presentation.csproj" />
-  </ItemGroup>
-
-  <!-- Governance module -->
-  <ItemGroup>
-    <ProjectReference Include="..\..\Modules\Governance\Application\OpsCopilot.Governance.Application\OpsCopilot.Governance.Application.csproj" />
+    <ProjectReference Include="..\..\Modules\Governance\Presentation\OpsCopilot.Governance.Presentation\OpsCopilot.Governance.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

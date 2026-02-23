@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
-using OpsCopilot.Rag.Infrastructure.Extensions;
+using OpsCopilot.Rag.Presentation.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.McpHost — MCP tool server (stdio transport)
@@ -187,8 +187,8 @@ else
 // ── Azure Monitor Query client (singleton) ────────────────────────────────────
 builder.Services.AddSingleton(_ => new LogsQueryClient(credential));
 
-// ── RAG infrastructure (runbook retrieval for the runbook_search tool) ────────
-builder.Services.AddRagInfrastructure(builder.Configuration);
+// ── RAG module (runbook retrieval for the runbook_search tool) ────────────────
+builder.Services.AddRagModule(builder.Configuration);
 
 // ── RAG diagnostics — log base path so runbook resolution issues are obvious ──
 {

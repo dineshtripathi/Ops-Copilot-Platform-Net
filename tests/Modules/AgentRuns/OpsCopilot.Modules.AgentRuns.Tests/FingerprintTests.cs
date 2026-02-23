@@ -1,4 +1,4 @@
-using OpsCopilot.AlertIngestion.Domain.Services;
+using OpsCopilot.BuildingBlocks.Domain.Services;
 using Xunit;
 
 namespace OpsCopilot.Modules.AgentRuns.Tests;

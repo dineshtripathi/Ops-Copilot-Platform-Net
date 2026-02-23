@@ -1,6 +1,4 @@
-using OpsCopilot.Governance.Application.Models;
-
-namespace OpsCopilot.Governance.Application.Policies;
+namespace OpsCopilot.BuildingBlocks.Contracts.Governance;
 
 /// <summary>
 /// Determines whether a specific tool may be invoked for a given tenant.

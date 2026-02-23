@@ -1,4 +1,4 @@
-using OpsCopilot.Governance.Application.Models;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 
 namespace OpsCopilot.Governance.Application.Policies;
 

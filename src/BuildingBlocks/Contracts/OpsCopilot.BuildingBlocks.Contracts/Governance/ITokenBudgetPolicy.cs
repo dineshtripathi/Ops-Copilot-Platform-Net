@@ -1,6 +1,4 @@
-using OpsCopilot.Governance.Application.Models;
-
-namespace OpsCopilot.Governance.Application.Policies;
+namespace OpsCopilot.BuildingBlocks.Contracts.Governance;
 
 /// <summary>
 /// Checks whether a run is within its token budget before proceeding.

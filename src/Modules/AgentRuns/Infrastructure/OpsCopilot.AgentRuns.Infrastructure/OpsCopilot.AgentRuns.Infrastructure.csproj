@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Application\OpsCopilot.AgentRuns.Application\OpsCopilot.AgentRuns.Application.csproj" />
     <ProjectReference Include="..\..\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\BuildingBlocks\Contracts\OpsCopilot.BuildingBlocks.Contracts\OpsCopilot.BuildingBlocks.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

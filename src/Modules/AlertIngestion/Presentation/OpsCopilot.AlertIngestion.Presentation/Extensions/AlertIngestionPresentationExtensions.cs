@@ -1,16 +1,18 @@
 using Microsoft.Extensions.DependencyInjection;
+using OpsCopilot.AlertIngestion.Application.Extensions;
 
 namespace OpsCopilot.AlertIngestion.Presentation.Extensions;
 
 public static class AlertIngestionPresentationExtensions
 {
     /// <summary>
-    /// Registers any Presentation-layer services for the AlertIngestion module.
-    /// (Currently no scoped services — endpoints are registered via MapAlertIngestionEndpoints.)
+    /// Registers all AlertIngestion module services: Application and Presentation layers.
+    /// Hosts call only this method — inner layers are hidden behind this facade.
     /// </summary>
-    public static IServiceCollection AddAlertIngestionPresentation(
+    public static IServiceCollection AddAlertIngestionModule(
         this IServiceCollection services)
     {
+        services.AddAlertIngestionApplication();
         // Reserved for future presentation-layer registrations.
         return services;
     }

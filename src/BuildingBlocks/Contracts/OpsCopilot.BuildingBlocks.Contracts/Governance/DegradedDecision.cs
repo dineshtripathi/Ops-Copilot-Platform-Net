@@ -1,4 +1,4 @@
-namespace OpsCopilot.Governance.Application.Models;
+namespace OpsCopilot.BuildingBlocks.Contracts.Governance;
 
 /// <summary>
 /// Maps a runtime failure to a deterministic degraded-mode outcome.

@@ -12,8 +12,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Domain\OpsCopilot.AlertIngestion.Domain\OpsCopilot.AlertIngestion.Domain.csproj" />
-    <!-- cross-module: AlertIngestion.Application initiates AgentRun records -->
-    <ProjectReference Include="..\..\..\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\BuildingBlocks\Domain\OpsCopilot.BuildingBlocks.Domain\OpsCopilot.BuildingBlocks.Domain.csproj" />
+    <!-- cross-module: AlertIngestion uses narrow IAgentRunCreator contract -->
+    <ProjectReference Include="..\..\..\..\BuildingBlocks\Contracts\OpsCopilot.BuildingBlocks.Contracts\OpsCopilot.BuildingBlocks.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

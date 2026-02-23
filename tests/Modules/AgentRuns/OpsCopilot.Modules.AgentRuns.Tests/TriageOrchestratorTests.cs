@@ -6,8 +6,7 @@ using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Repositories;
-using OpsCopilot.Governance.Application.Models;
-using OpsCopilot.Governance.Application.Policies;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using Xunit;
 
 namespace OpsCopilot.Modules.AgentRuns.Tests;

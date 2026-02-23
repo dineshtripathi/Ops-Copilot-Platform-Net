@@ -63,6 +63,7 @@ public static class AgentRunsInfrastructureExtensions
             }));
 
         services.AddScoped<IAgentRunRepository, SqlAgentRunRepository>();
+        services.AddScoped<BuildingBlocks.Contracts.AgentRuns.IAgentRunCreator, Adapters.AgentRunCreatorAdapter>();
 
         // ── Session store (in-memory for MVP, swap for Redis later) ───────
         // WARNING: Sessions are lost on process restart and are NOT shared

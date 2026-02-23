@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.Governance.Application.Configuration;
 
 namespace OpsCopilot.Governance.Application.Policies;

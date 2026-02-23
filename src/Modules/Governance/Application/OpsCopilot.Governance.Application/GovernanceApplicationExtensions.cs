@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.Governance.Application.Configuration;
 using OpsCopilot.Governance.Application.Policies;
 
