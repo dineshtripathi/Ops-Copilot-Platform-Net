@@ -6,4 +6,23 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Allow Integration.Tests to call internal methods -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpsCopilot.Integration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Application\OpsCopilot.SafeActions.Application\OpsCopilot.SafeActions.Application.csproj" />
+    <ProjectReference Include="..\..\Domain\OpsCopilot.SafeActions.Domain\OpsCopilot.SafeActions.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\BuildingBlocks\Contracts\OpsCopilot.BuildingBlocks.Contracts\OpsCopilot.BuildingBlocks.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>

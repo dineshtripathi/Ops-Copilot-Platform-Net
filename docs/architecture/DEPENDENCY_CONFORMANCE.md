@@ -113,6 +113,7 @@ These are documented in the `$Allowlist` hash table inside
 |--------|--------|------|--------|
 | AgentRuns.Presentation | AgentRuns.Infrastructure | L8 | Composition root — wires EF Core DbContext + migration runner via DI |
 | Rag.Presentation | Rag.Infrastructure | L8 | Composition root — wires RAG infrastructure stack via DI |
+| SafeActions.Presentation | SafeActions.Infrastructure | L8 | Composition root — wires EF Core DbContext + migration runner via DI |
 
 ### Adding a new exception
 

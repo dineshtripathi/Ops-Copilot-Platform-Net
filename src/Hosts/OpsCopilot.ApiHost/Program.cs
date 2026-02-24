@@ -5,6 +5,8 @@ using OpsCopilot.AlertIngestion.Presentation.Endpoints;
 using OpsCopilot.AlertIngestion.Presentation.Extensions;
 using OpsCopilot.BuildingBlocks.Infrastructure.Configuration;
 using OpsCopilot.Governance.Presentation.Extensions;
+using OpsCopilot.SafeActions.Presentation.Endpoints;
+using OpsCopilot.SafeActions.Presentation.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -81,7 +83,8 @@ builder.Configuration.AddOpsCopilotKeyVault(
 builder.Services
     .AddAgentRunsModule(builder.Configuration)
     .AddAlertIngestionModule()
-    .AddGovernanceModule(builder.Configuration, startupLogger);
+    .AddGovernanceModule(builder.Configuration, startupLogger)
+    .AddSafeActionsModule(builder.Configuration);
 
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();
@@ -90,6 +93,7 @@ var app = builder.Build();
 
 // ── Database bootstrap ────────────────────────────────────────────────────────
 await app.UseAgentRunsMigrations();
+await app.UseSafeActionsMigrations();
 
 // ── Health probe ──────────────────────────────────────────────────────────────
 app.MapGet("/healthz", () => Results.Ok("healthy"))
@@ -99,6 +103,7 @@ app.MapGet("/healthz", () => Results.Ok("healthy"))
 // ── Module endpoints ──────────────────────────────────────────────────────────
 app.MapAlertIngestionEndpoints();   // POST /ingest/alert
 app.MapAgentRunEndpoints();         // POST /agent/triage
+app.MapSafeActionEndpoints();       // /safe-actions/*
 
 app.Run();
 

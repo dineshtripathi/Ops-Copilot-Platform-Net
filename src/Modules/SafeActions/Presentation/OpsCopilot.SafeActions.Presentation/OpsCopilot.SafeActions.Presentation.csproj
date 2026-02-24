@@ -6,4 +6,15 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Application\OpsCopilot.SafeActions.Application\OpsCopilot.SafeActions.Application.csproj" />
+    <ProjectReference Include="..\..\Domain\OpsCopilot.SafeActions.Domain\OpsCopilot.SafeActions.Domain.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\OpsCopilot.SafeActions.Infrastructure\OpsCopilot.SafeActions.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\BuildingBlocks\Domain\OpsCopilot.BuildingBlocks.Domain\OpsCopilot.BuildingBlocks.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
 </Project>

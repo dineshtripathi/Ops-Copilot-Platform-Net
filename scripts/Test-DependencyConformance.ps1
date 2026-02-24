@@ -68,6 +68,8 @@ $Allowlist = @{
         'Composition root: wires EF Core DbContext + migration runner via DI'
     'Mod:Rag:Presentation -> Mod:Rag:Infrastructure' =
         'Composition root: wires RAG infrastructure stack via DI'
+    'Mod:SafeActions:Presentation -> Mod:SafeActions:Infrastructure' =
+        'Composition root: wires EF Core DbContext + migration runner via DI'
 }
 
 #endregion

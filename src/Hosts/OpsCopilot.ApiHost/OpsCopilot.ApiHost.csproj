@@ -33,6 +33,7 @@
     <ProjectReference Include="..\..\Modules\AgentRuns\Presentation\OpsCopilot.AgentRuns.Presentation\OpsCopilot.AgentRuns.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\AlertIngestion\Presentation\OpsCopilot.AlertIngestion.Presentation\OpsCopilot.AlertIngestion.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Governance\Presentation\OpsCopilot.Governance.Presentation\OpsCopilot.Governance.Presentation.csproj" />
+    <ProjectReference Include="..\..\Modules\SafeActions\Presentation\OpsCopilot.SafeActions.Presentation\OpsCopilot.SafeActions.Presentation.csproj" />
   </ItemGroup>
 
 </Project>
