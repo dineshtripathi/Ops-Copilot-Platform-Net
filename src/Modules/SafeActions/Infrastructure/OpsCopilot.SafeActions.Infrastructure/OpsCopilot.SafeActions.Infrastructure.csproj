@@ -6,9 +6,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <!-- Allow Integration.Tests to call internal methods -->
+  <!-- Allow test projects to call internal methods -->
   <ItemGroup>
     <InternalsVisibleTo Include="OpsCopilot.Integration.Tests" />
+    <InternalsVisibleTo Include="OpsCopilot.Modules.SafeActions.Tests" />
   </ItemGroup>
 
   <ItemGroup>

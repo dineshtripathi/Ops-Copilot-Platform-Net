@@ -31,8 +31,8 @@ public static class SafeActionsInfrastructureExtensions
         // ── Repository ──────────────────────────────────────────────
         services.AddScoped<IActionRecordRepository, SqlActionRecordRepository>();
 
-        // ── Action executor (stub for initial slice) ────────────────
-        services.AddSingleton<IActionExecutor, StubActionExecutor>();
+        // ── Action executor (dry-run — deterministic, zero side-effects) ─
+        services.AddSingleton<IActionExecutor, DryRunActionExecutor>();
 
         // ── Policy (default = allow-all; swap per-tenant later) ─────
         services.AddSingleton<ISafeActionPolicy, DefaultSafeActionPolicy>();

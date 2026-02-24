@@ -399,4 +399,103 @@ public class SafeActionOrchestratorTests
         var record = ActionRecord.Create("t-1", Guid.NewGuid(), "restart_pod", "{}");
         Assert.Throws<InvalidOperationException>(() => record.MarkExecuting());
     }
+
+    // ─── Dry-run executor integration ─────────────────────────────
+
+    [Fact]
+    public async Task ExecuteAsync_With_DryRun_Executor_Completes_Successfully()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+        repo.Setup(r => r.SaveAsync(record, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.AppendExecutionLogAsync(
+                It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var dryRunExecutor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        dryRunExecutor.Setup(e => e.ExecuteAsync(
+                "restart_pod", "{\"target\":\"pod-1\"}", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ActionExecutionResult(
+                true,
+                "{\"mode\":\"dry-run\",\"actionType\":\"restart_pod\",\"simulatedOutcome\":\"success\",\"reason\":\"dry-run completed\",\"durationMs\":0}",
+                0));
+
+        var orchestrator = CreateOrchestrator(repo, dryRunExecutor);
+        var result = await orchestrator.ExecuteAsync(record.ActionRecordId);
+
+        Assert.Equal(ActionStatus.Completed, result.Status);
+        Assert.Contains("dry-run", result.OutcomeJson!);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_With_DryRun_SimulateFailure_Transitions_To_Failed()
+    {
+        var record = ActionRecord.Create(
+            "t-1", Guid.NewGuid(), "restart_pod",
+            "{\"target\":\"pod-1\",\"simulateFailure\":true}",
+            "{\"undo\":\"stop_pod\"}");
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+        repo.Setup(r => r.SaveAsync(record, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.AppendExecutionLogAsync(
+                It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var dryRunExecutor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        dryRunExecutor.Setup(e => e.ExecuteAsync(
+                "restart_pod", "{\"target\":\"pod-1\",\"simulateFailure\":true}", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ActionExecutionResult(
+                false,
+                "{\"mode\":\"dry-run\",\"actionType\":\"restart_pod\",\"simulatedOutcome\":\"simulated_failure\",\"reason\":\"caller requested simulated failure via simulateFailure flag\",\"durationMs\":0}",
+                0));
+
+        var orchestrator = CreateOrchestrator(repo, dryRunExecutor);
+        var result = await orchestrator.ExecuteAsync(record.ActionRecordId);
+
+        Assert.Equal(ActionStatus.Failed, result.Status);
+        Assert.Contains("simulated_failure", result.OutcomeJson!);
+    }
+
+    [Fact]
+    public async Task ExecuteRollbackAsync_With_DryRun_Completes_Successfully()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{\"target\":\"pod-1\"}", "{\"ok\":true}");
+        record.RequestRollback();
+        record.ApproveRollback();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+        repo.Setup(r => r.SaveAsync(record, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.AppendExecutionLogAsync(
+                It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var dryRunExecutor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        dryRunExecutor.Setup(e => e.RollbackAsync(
+                "restart_pod", "{\"undo\":\"stop_pod\"}", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ActionExecutionResult(
+                true,
+                "{\"mode\":\"dry-run-rollback\",\"actionType\":\"restart_pod\",\"simulatedOutcome\":\"success\",\"reason\":\"dry-run completed\",\"durationMs\":0}",
+                0));
+
+        var orchestrator = CreateOrchestrator(repo, dryRunExecutor);
+        var result = await orchestrator.ExecuteRollbackAsync(record.ActionRecordId);
+
+        Assert.Equal(RollbackStatus.RolledBack, result.RollbackStatus);
+        Assert.Contains("dry-run-rollback", result.RollbackOutcomeJson!);
+    }
 }

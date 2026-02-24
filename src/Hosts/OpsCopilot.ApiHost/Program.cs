@@ -76,6 +76,10 @@ builder.Configuration.AddOpsCopilotKeyVault(
             "[Startup] WORKSPACE_ID is not configured. " +
             "POST /agent/triage will return 400 unless callers supply WorkspaceId in the request body. " +
             "Set via User Secrets: dotnet user-secrets set WORKSPACE_ID <guid>");
+
+    var safeActionsExec = builder.Configuration.GetValue<bool>("SafeActions:EnableExecution");
+    startupLogger.LogInformation(
+        "[Startup] SafeActions EnableExecution={Enabled}", safeActionsExec);
 }
 
 // ── Module registrations ──────────────────────────────────────────────────────

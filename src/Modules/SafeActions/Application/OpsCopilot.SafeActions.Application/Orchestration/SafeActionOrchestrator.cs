@@ -133,8 +133,8 @@ public sealed class SafeActionOrchestrator
         await _repository.SaveAsync(record, ct);
 
         _logger.LogInformation(
-            "Executing action {ActionRecordId} (type={ActionType})",
-            actionRecordId, record.ActionType);
+            "Executing action {ActionRecordId} (type={ActionType}, tenant={TenantId}) — transition Approved→Executing",
+            actionRecordId, record.ActionType, record.TenantId);
 
         var sw = Stopwatch.StartNew();
         ActionExecutionResult result;
@@ -147,7 +147,8 @@ public sealed class SafeActionOrchestrator
         {
             sw.Stop();
             _logger.LogError(ex,
-                "Action {ActionRecordId} execution threw exception", actionRecordId);
+                "Action {ActionRecordId} execution threw exception (type={ActionType}, tenant={TenantId}, durationMs={DurationMs})",
+                actionRecordId, record.ActionType, record.TenantId, sw.ElapsedMilliseconds);
             result = new ActionExecutionResult(
                 Success:      false,
                 ResponseJson: $"{{\"error\":\"{ex.Message}\"}}",
@@ -171,9 +172,10 @@ public sealed class SafeActionOrchestrator
 
         await _repository.SaveAsync(record, ct);
 
+        var executeStatus = result.Success ? "Completed" : "Failed";
         _logger.LogInformation(
-            "Action {ActionRecordId} execution {Status}",
-            actionRecordId, result.Success ? "completed" : "failed");
+            "Action {ActionRecordId} execution {Status} (type={ActionType}, tenant={TenantId}, durationMs={DurationMs}, transition=Executing→{Status})",
+            actionRecordId, executeStatus, record.ActionType, record.TenantId, sw.ElapsedMilliseconds, executeStatus);
 
         return record;
     }
@@ -230,7 +232,8 @@ public sealed class SafeActionOrchestrator
                 $"Action {actionRecordId} has no rollback payload.");
 
         _logger.LogInformation(
-            "Executing rollback for action {ActionRecordId}", actionRecordId);
+            "Executing rollback for action {ActionRecordId} (type={ActionType}, tenant={TenantId}) — transition RollbackApproved→RollingBack",
+            actionRecordId, record.ActionType, record.TenantId);
 
         var sw = Stopwatch.StartNew();
         ActionExecutionResult result;
@@ -243,7 +246,8 @@ public sealed class SafeActionOrchestrator
         {
             sw.Stop();
             _logger.LogError(ex,
-                "Rollback for action {ActionRecordId} threw exception", actionRecordId);
+                "Rollback for action {ActionRecordId} threw exception (type={ActionType}, tenant={TenantId}, durationMs={DurationMs})",
+                actionRecordId, record.ActionType, record.TenantId, sw.ElapsedMilliseconds);
             result = new ActionExecutionResult(
                 Success:      false,
                 ResponseJson: $"{{\"error\":\"{ex.Message}\"}}",
@@ -265,9 +269,10 @@ public sealed class SafeActionOrchestrator
 
         await _repository.SaveAsync(record, ct);
 
+        var rollbackStatus = result.Success ? "RolledBack" : "RollbackFailed";
         _logger.LogInformation(
-            "Rollback for action {ActionRecordId} {Status}",
-            actionRecordId, result.Success ? "completed" : "failed");
+            "Rollback for action {ActionRecordId} {Status} (type={ActionType}, tenant={TenantId}, durationMs={DurationMs}, transition=RollingBack→{Status})",
+            actionRecordId, rollbackStatus, record.ActionType, record.TenantId, sw.ElapsedMilliseconds, rollbackStatus);
 
         return record;
     }

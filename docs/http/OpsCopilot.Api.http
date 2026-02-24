@@ -350,3 +350,44 @@ x-tenant-id: {{tenantId}}
   "workspaceId": "{{workspaceId}}",
   "sessionId": "{{sessionId}}"
 }
+
+###############################################################################
+# I · SafeActions — Execute endpoints (501 guard)
+#     SafeActions:EnableExecution = false (default) → 501 Not Implemented
+#     Set the flag to true in appsettings to enable execution.
+###############################################################################
+
+### I1 · Execute a safe-action (expect 501 while guard is off)
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-7
+
+### I2 · Execute rollback for a safe-action (expect 501 while guard is off)
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/rollback/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-7
+
+###############################################################################
+# J · SafeActions — Dry-Run Execution (requires EnableExecution = true)
+#     Requires  SafeActions:EnableExecution = true  in appsettings.
+#     DryRunActionExecutor returns deterministic JSON — no external side effects.
+#     Payload containing "simulateFailure": true triggers a simulated failure.
+###############################################################################
+
+### J1 · Dry-run execute — normal payload (expect 200 with dry-run outcome)
+# @name dryRunExecute
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-8
+
+### J2 · Dry-run execute — simulateFailure payload (expect 200, status=Failed)
+# @name dryRunSimulateFailure
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000002/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-8
+
+### J3 · Dry-run rollback execute (expect 200 with dry-run-rollback outcome)
+# @name dryRunRollbackExecute
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/rollback/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-8
