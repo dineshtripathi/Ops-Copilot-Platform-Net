@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using OpsCopilot.SafeActions.Application.Orchestration;
 using OpsCopilot.SafeActions.Domain.Entities;
 using OpsCopilot.SafeActions.Presentation.Contracts;
@@ -165,11 +166,16 @@ public static class SafeActionEndpoints
         .ProducesProblem(StatusCodes.Status409Conflict);
 
         // ── POST /safe-actions/{id}/execute ─────────────────────────
+        // Guarded: returns 501 unless SafeActions:EnableExecution = true.
         group.MapPost("/{id:guid}/execute", async (
             Guid id,
+            IConfiguration configuration,
             SafeActionOrchestrator orchestrator,
             CancellationToken ct) =>
         {
+            if (!configuration.GetValue<bool>("SafeActions:EnableExecution"))
+                return Results.StatusCode(StatusCodes.Status501NotImplemented);
+
             try
             {
                 var record = await orchestrator.ExecuteAsync(id, ct);
@@ -186,6 +192,7 @@ public static class SafeActionEndpoints
         })
         .WithName("ExecuteAction")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status501NotImplemented)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status409Conflict);
 
@@ -246,11 +253,16 @@ public static class SafeActionEndpoints
         .ProducesProblem(StatusCodes.Status409Conflict);
 
         // ── POST /safe-actions/{id}/rollback/execute ────────────────
+        // Guarded: returns 501 unless SafeActions:EnableExecution = true.
         group.MapPost("/{id:guid}/rollback/execute", async (
             Guid id,
+            IConfiguration configuration,
             SafeActionOrchestrator orchestrator,
             CancellationToken ct) =>
         {
+            if (!configuration.GetValue<bool>("SafeActions:EnableExecution"))
+                return Results.StatusCode(StatusCodes.Status501NotImplemented);
+
             try
             {
                 var record = await orchestrator.ExecuteRollbackAsync(id, ct);
@@ -267,6 +279,7 @@ public static class SafeActionEndpoints
         })
         .WithName("ExecuteRollback")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status501NotImplemented)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status409Conflict);
 
