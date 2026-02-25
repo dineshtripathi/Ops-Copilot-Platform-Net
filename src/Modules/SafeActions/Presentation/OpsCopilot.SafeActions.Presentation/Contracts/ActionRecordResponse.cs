@@ -1,3 +1,4 @@
+using OpsCopilot.SafeActions.Domain;
 using OpsCopilot.SafeActions.Domain.Entities;
 
 namespace OpsCopilot.SafeActions.Presentation.Contracts;
@@ -24,7 +25,29 @@ public sealed class ActionRecordResponse
     public DateTimeOffset? CompletedAtUtc         { get; init; }
     public DateTimeOffset? RolledBackAtUtc        { get; init; }
 
+    // ── Audit-summary enrichment fields ─────────────────────────
+    public int             ExecutionLogCount      { get; init; }
+    public DateTimeOffset? LastExecutionAtUtc      { get; init; }
+    public bool?           LastExecutionSuccess    { get; init; }
+    public int             ApprovalCount           { get; init; }
+    public string?         LastApprovalDecision    { get; init; }
+    public DateTimeOffset? LastApprovalAtUtc       { get; init; }
+
+    // ── Detail collections (populated only on GET-by-id) ────────
+    public IReadOnlyList<ApprovalDetailResponse>      Approvals     { get; init; } = Array.Empty<ApprovalDetailResponse>();
+    public IReadOnlyList<ExecutionLogDetailResponse>   ExecutionLogs { get; init; } = Array.Empty<ExecutionLogDetailResponse>();
+
     public static ActionRecordResponse From(ActionRecord record)
+        => From(record, AuditSummary.Empty);
+
+    public static ActionRecordResponse From(ActionRecord record, AuditSummary audit)
+        => From(record, audit, Array.Empty<ApprovalRecord>(), Array.Empty<ExecutionLog>());
+
+    public static ActionRecordResponse From(
+        ActionRecord                record,
+        AuditSummary                audit,
+        IReadOnlyList<ApprovalRecord> approvals,
+        IReadOnlyList<ExecutionLog>   executionLogs)
         => new()
         {
             ActionRecordId         = record.ActionRecordId,
@@ -43,5 +66,13 @@ public sealed class ActionRecordResponse
             ExecutedAtUtc          = record.ExecutedAtUtc,
             CompletedAtUtc         = record.CompletedAtUtc,
             RolledBackAtUtc        = record.RolledBackAtUtc,
+            ExecutionLogCount      = audit.ExecutionLogCount,
+            LastExecutionAtUtc     = audit.LastExecutionAtUtc,
+            LastExecutionSuccess   = audit.LastExecutionSuccess,
+            ApprovalCount          = audit.ApprovalCount,
+            LastApprovalDecision   = audit.LastApprovalDecision,
+            LastApprovalAtUtc      = audit.LastApprovalAtUtc,
+            Approvals              = approvals.Select(ApprovalDetailResponse.From).ToList(),
+            ExecutionLogs          = executionLogs.Select(ExecutionLogDetailResponse.From).ToList(),
         };
 }

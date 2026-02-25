@@ -17,6 +17,9 @@
 ###   M. Azure Monitor Query (Dev Slice 11)
 ###   N. Target Allowlist Hardening (Dev Slice 12)
 ###   O. Tenant-Scoped Execution Policy (Dev Slice 13)
+###   P. Execution Replay Guard (Dev Slice 14)
+###   Q. Execution Audit Querying (Dev Slice 15)
+###   R. Action Detail Audit Enrichment (Dev Slice 16)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -705,3 +708,177 @@ x-tenant-id: tenant-verify-14
 POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/rollback/execute
 Content-Type: application/json
 x-tenant-id: tenant-verify-14
+
+## ═══════════════════════════════════════════════════════════════════
+## Q · Execution Audit Querying  (Slice 15 — tenant-verify-15)
+## ═══════════════════════════════════════════════════════════════════
+
+### Q1 · List with no filters → 200 OK (default query)
+###      Expected: 200 with array, audit fields present on each item
+# @name listDefaultQuery
+GET {{baseUrl}}/safe-actions
+x-tenant-id: tenant-verify-15
+
+### Q2 · Filter by status → 200 OK
+###      Expected: Only records with status=Proposed returned
+# @name listFilterByStatus
+GET {{baseUrl}}/safe-actions?status=Proposed
+x-tenant-id: tenant-verify-15
+
+### Q3 · Filter by rollbackStatus → 200 OK
+###      Expected: Only records with rollbackStatus=Available
+# @name listFilterByRollbackStatus
+GET {{baseUrl}}/safe-actions?rollbackStatus=Available
+x-tenant-id: tenant-verify-15
+
+### Q4 · Filter by actionType → 200 OK
+###      Expected: Only records with matching actionType
+# @name listFilterByActionType
+GET {{baseUrl}}/safe-actions?actionType=restart_pod
+x-tenant-id: tenant-verify-15
+
+### Q5 · Filter by hasExecutionLogs → 200 OK
+###      Expected: Only records that have execution logs
+# @name listFilterByHasExecutionLogs
+GET {{baseUrl}}/safe-actions?hasExecutionLogs=true
+x-tenant-id: tenant-verify-15
+
+### Q6 · Filter by date range → 200 OK
+###      Expected: Only records within the date range
+# @name listFilterByDateRange
+GET {{baseUrl}}/safe-actions?fromUtc=2025-01-01T00:00:00Z&toUtc=2025-12-31T23:59:59Z
+x-tenant-id: tenant-verify-15
+
+### Q7 · Combined filters → 200 OK
+###      Expected: Records matching all filter criteria
+# @name listCombinedFilters
+GET {{baseUrl}}/safe-actions?status=Completed&actionType=restart_pod&limit=10&fromUtc=2025-01-01T00:00:00Z
+x-tenant-id: tenant-verify-15
+
+### Q8 · Custom limit → 200 OK
+###      Expected: At most 5 records returned
+# @name listCustomLimit
+GET {{baseUrl}}/safe-actions?limit=5
+x-tenant-id: tenant-verify-15
+
+### Q9 · Invalid status value → 400 Bad Request
+###      Expected: 400 with "Invalid status value"
+# @name listInvalidStatus
+GET {{baseUrl}}/safe-actions?status=NotARealStatus
+x-tenant-id: tenant-verify-15
+
+### Q10 · Invalid rollbackStatus value → 400 Bad Request
+###       Expected: 400 with "Invalid rollbackStatus value"
+# @name listInvalidRollbackStatus
+GET {{baseUrl}}/safe-actions?rollbackStatus=BOGUS
+x-tenant-id: tenant-verify-15
+
+### Q11 · Invalid fromUtc date → 400 Bad Request
+###       Expected: 400 with "Invalid fromUtc value"
+# @name listInvalidFromUtc
+GET {{baseUrl}}/safe-actions?fromUtc=not-a-date
+x-tenant-id: tenant-verify-15
+
+### Q12 · fromUtc after toUtc → 400 Bad Request
+###       Expected: 400 with "fromUtc must not be after toUtc"
+# @name listFromAfterTo
+GET {{baseUrl}}/safe-actions?fromUtc=2025-12-31T00:00:00Z&toUtc=2025-01-01T00:00:00Z
+x-tenant-id: tenant-verify-15
+
+### Q13 · Missing tenant header → 400 Bad Request
+###       Expected: 400 — x-tenant-id is required
+# @name listMissingTenant
+GET {{baseUrl}}/safe-actions
+
+### Q14 · RunId-only path (existing behavior) → 200 OK
+###       Expected: 200 with records for the given runId, audit-enriched
+# @name listByRunId
+GET {{baseUrl}}/safe-actions?runId=00000000-0000-0000-0000-000000000001
+x-tenant-id: tenant-verify-15
+
+## ═══════════════════════════════════════════════════════════════════
+## R · Action Detail Audit Enrichment  (Slice 16 — tenant-verify-16)
+## ═══════════════════════════════════════════════════════════════════
+
+### R1 · GET by ID returns approval history → 200 OK
+###      Expected: 200 with approvals[] populated
+# @name getDetailApprovals
+GET {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001
+x-tenant-id: tenant-verify-16
+
+### R2 · GET by ID returns execution log history → 200 OK
+###      Expected: 200 with executionLogs[] populated
+# @name getDetailExecutionLogs
+GET {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001
+x-tenant-id: tenant-verify-16
+
+### R3 · GET by ID with no audit data → 200 OK
+###      Expected: 200 with approvals=[], executionLogs=[], zero audit counts
+# @name getDetailEmptyAudit
+GET {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000002
+x-tenant-id: tenant-verify-16
+
+### R4 · GET by non-existent ID → 404 Not Found
+###      Expected: 404
+# @name getDetailNotFound
+GET {{baseUrl}}/safe-actions/00000000-0000-0000-0000-ffffffffffff
+x-tenant-id: tenant-verify-16
+
+### R5 · GET by ID verifies payload redaction → 200 OK
+###      Expected: executionLogs[].requestPayloadJson and responsePayloadJson
+###               have sensitive keys (token, password, secret, key, connectionString)
+###               replaced with "[REDACTED]"
+# @name getDetailRedaction
+GET {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001
+x-tenant-id: tenant-verify-16
+
+### R6 · GET by ID includes audit summary fields → 200 OK
+###      Expected: executionLogCount, lastExecutionSuccess, approvalCount,
+###               lastApprovalDecision present
+# @name getDetailAuditSummary
+GET {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001
+x-tenant-id: tenant-verify-16
+
+
+## ═══════════════════════════════════════════════════════════════
+## S · Auth/Claims Identity Hardening  (Slice 17 — tenant-verify-17)
+## ═══════════════════════════════════════════════════════════════
+
+### S1 · Approve action with x-actor-id header fallback → 200 OK
+###      Expected: 200, approvedBy = the value from x-actor-id header
+###      Requires: a Proposed action record exists at the given ID
+# @name approveWithHeader
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/approve
+x-tenant-id: tenant-verify-17
+x-actor-id: dev-operator-17
+Content-Type: application/json
+
+{
+  "reason": "Approved via header fallback in Slice 17"
+}
+
+### S2 · Approve action without header (anonymous fallback) → 200 OK
+###      Expected: 200 (in dev with AllowAnonymousActorFallback=true),
+###               approvedBy = "unknown"
+###      Requires: a Proposed action record exists at the given ID
+# @name approveAnonymousFallback
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000002/approve
+x-tenant-id: tenant-verify-17
+Content-Type: application/json
+
+{
+  "reason": "Approved without actor header — anonymous fallback"
+}
+
+### S3 · Reject action with x-actor-id header fallback → 200 OK
+###      Expected: 200, rejectedBy = the value from x-actor-id header
+###      Requires: a Proposed action record exists at the given ID
+# @name rejectWithHeader
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000003/reject
+x-tenant-id: tenant-verify-17
+x-actor-id: dev-operator-17
+Content-Type: application/json
+
+{
+  "reason": "Rejected via header fallback in Slice 17"
+}

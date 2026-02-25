@@ -1,4 +1,5 @@
 using OpsCopilot.SafeActions.Domain.Entities;
+using OpsCopilot.SafeActions.Domain.Enums;
 
 namespace OpsCopilot.SafeActions.Domain.Repositories;
 
@@ -38,4 +39,34 @@ public interface IActionRecordRepository
     /// <summary>Returns action records associated with a specific agent run.</summary>
     Task<IReadOnlyList<ActionRecord>> GetByRunIdAsync(
         Guid runId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns action records for a tenant matching the supplied filters,
+    /// ordered by creation date descending.
+    /// </summary>
+    Task<IReadOnlyList<ActionRecord>> QueryByTenantAsync(
+        string          tenantId,
+        ActionStatus?   status,
+        RollbackStatus? rollbackStatus,
+        string?         actionType,
+        bool?           hasExecutionLogs,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        int             limit,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns audit summaries (execution log + approval aggregates) for a batch
+    /// of action record IDs. IDs with no audit data are absent from the dictionary.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, AuditSummary>> GetAuditSummariesAsync(
+        IReadOnlyList<Guid> actionRecordIds, CancellationToken ct = default);
+
+    /// <summary>Returns all approval records for a single action, ordered by creation date ascending.</summary>
+    Task<IReadOnlyList<ApprovalRecord>> GetApprovalsForActionAsync(
+        Guid actionRecordId, CancellationToken ct = default);
+
+    /// <summary>Returns all execution log entries for a single action, ordered by execution date ascending.</summary>
+    Task<IReadOnlyList<ExecutionLog>> GetExecutionLogsForActionAsync(
+        Guid actionRecordId, CancellationToken ct = default);
 }

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using OpsCopilot.SafeActions.Application.Abstractions;
+using OpsCopilot.SafeActions.Domain;
 using OpsCopilot.SafeActions.Domain.Entities;
 using OpsCopilot.SafeActions.Domain.Enums;
 using OpsCopilot.SafeActions.Domain.Repositories;
@@ -341,6 +342,32 @@ public sealed class SafeActionOrchestrator
     public async Task<IReadOnlyList<ActionRecord>> ListByRunAsync(
         Guid runId, CancellationToken ct = default)
         => await _repository.GetByRunIdAsync(runId, ct);
+
+    public async Task<IReadOnlyList<ActionRecord>> QueryByTenantAsync(
+        string          tenantId,
+        ActionStatus?   status,
+        RollbackStatus? rollbackStatus,
+        string?         actionType,
+        bool?           hasExecutionLogs,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        int             limit,
+        CancellationToken ct = default)
+        => await _repository.QueryByTenantAsync(
+            tenantId, status, rollbackStatus, actionType,
+            hasExecutionLogs, fromUtc, toUtc, limit, ct);
+
+    public async Task<IReadOnlyDictionary<Guid, AuditSummary>> GetAuditSummariesAsync(
+        IReadOnlyList<Guid> actionRecordIds, CancellationToken ct = default)
+        => await _repository.GetAuditSummariesAsync(actionRecordIds, ct);
+
+    public async Task<IReadOnlyList<ApprovalRecord>> GetApprovalsForActionAsync(
+        Guid actionRecordId, CancellationToken ct = default)
+        => await _repository.GetApprovalsForActionAsync(actionRecordId, ct);
+
+    public async Task<IReadOnlyList<ExecutionLog>> GetExecutionLogsForActionAsync(
+        Guid actionRecordId, CancellationToken ct = default)
+        => await _repository.GetExecutionLogsForActionAsync(actionRecordId, ct);
 
     // ─── Helpers ──────────────────────────────────────────────────
 

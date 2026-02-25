@@ -7,6 +7,7 @@ using OpsCopilot.SafeActions.Application.Extensions;
 using OpsCopilot.SafeActions.Infrastructure.Extensions;
 using OpsCopilot.SafeActions.Infrastructure.Persistence;
 using OpsCopilot.SafeActions.Presentation.Endpoints;
+using OpsCopilot.SafeActions.Presentation.Identity;
 
 namespace OpsCopilot.SafeActions.Presentation.Extensions;
 
@@ -20,6 +21,7 @@ public static class SafeActionsPresentationExtensions
     {
         services.AddSafeActionsApplication();
         services.AddSafeActionsInfrastructure(configuration);
+        services.AddSingleton<IActorIdentityResolver, ClaimsActorIdentityResolver>();
         return services;
     }
 

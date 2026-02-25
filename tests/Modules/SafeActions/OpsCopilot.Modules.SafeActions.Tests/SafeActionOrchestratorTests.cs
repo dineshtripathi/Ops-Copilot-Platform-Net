@@ -3,6 +3,7 @@ using Moq;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.SafeActions.Application.Abstractions;
 using OpsCopilot.SafeActions.Application.Orchestration;
+using OpsCopilot.SafeActions.Domain;
 using OpsCopilot.SafeActions.Domain.Entities;
 using OpsCopilot.SafeActions.Domain.Enums;
 using OpsCopilot.SafeActions.Domain.Repositories;
@@ -657,6 +658,98 @@ public class SafeActionOrchestratorTests
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         repo.Verify(r => r.AppendExecutionLogAsync(
             It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ─── QueryByTenantAsync (Slice 15) ──────────────────────────────
+
+    [Fact]
+    public async Task QueryByTenantAsync_Forwards_All_Parameters_To_Repository()
+    {
+        var expected = new List<ActionRecord> { CreateProposedRecord() };
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+
+        var status = ActionStatus.Proposed;
+        var rollback = RollbackStatus.Available;
+        var from = DateTimeOffset.UtcNow.AddDays(-1);
+        var to = DateTimeOffset.UtcNow;
+
+        repo.Setup(r => r.QueryByTenantAsync(
+                "t-1", status, rollback, "restart_pod", true, from, to, 25,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var orchestrator = CreateOrchestrator(repo);
+
+        var result = await orchestrator.QueryByTenantAsync(
+            "t-1", status, rollback, "restart_pod", true, from, to, 25);
+
+        Assert.Same(expected, result);
+        repo.Verify(r => r.QueryByTenantAsync(
+            "t-1", status, rollback, "restart_pod", true, from, to, 25,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task QueryByTenantAsync_Passes_Nulls_When_No_Filters()
+    {
+        var expected = new List<ActionRecord>();
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+
+        repo.Setup(r => r.QueryByTenantAsync(
+                "t-1", null, null, null, null, null, null, 50,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var orchestrator = CreateOrchestrator(repo);
+
+        var result = await orchestrator.QueryByTenantAsync(
+            "t-1", null, null, null, null, null, null, 50);
+
+        Assert.Same(expected, result);
+    }
+
+    // ─── GetAuditSummariesAsync (Slice 15) ────────────────────────────
+
+    [Fact]
+    public async Task GetAuditSummariesAsync_Forwards_Ids_To_Repository()
+    {
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        var ids = new List<Guid> { id1, id2 };
+
+        var expected = new Dictionary<Guid, AuditSummary>
+        {
+            [id1] = new AuditSummary(2, DateTimeOffset.UtcNow, true, 1, "Approved", DateTimeOffset.UtcNow),
+            [id2] = AuditSummary.Empty,
+        };
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetAuditSummariesAsync(ids, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var orchestrator = CreateOrchestrator(repo);
+
+        var result = await orchestrator.GetAuditSummariesAsync(ids);
+
+        Assert.Same(expected, result);
+        repo.Verify(r => r.GetAuditSummariesAsync(ids, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetAuditSummariesAsync_Returns_Empty_Dict_For_Empty_Input()
+    {
+        var ids = new List<Guid>();
+        var expected = new Dictionary<Guid, AuditSummary>();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetAuditSummariesAsync(ids, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var orchestrator = CreateOrchestrator(repo);
+
+        var result = await orchestrator.GetAuditSummariesAsync(ids);
+
+        Assert.Empty(result);
     }
 
     // ─── Rollback Replay Guard (Slice 14) ─────────────────────────────

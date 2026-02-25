@@ -2,9 +2,13 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using OpsCopilot.SafeActions.Application.Orchestration;
+using OpsCopilot.SafeActions.Domain;
 using OpsCopilot.SafeActions.Domain.Entities;
+using OpsCopilot.SafeActions.Domain.Enums;
 using OpsCopilot.SafeActions.Presentation.Contracts;
+using OpsCopilot.SafeActions.Presentation.Identity;
 
 namespace OpsCopilot.SafeActions.Presentation.Endpoints;
 
@@ -67,9 +71,17 @@ public static class SafeActionEndpoints
             CancellationToken ct) =>
         {
             var record = await orchestrator.GetAsync(id, ct);
-            return record is null
-                ? Results.NotFound()
-                : Results.Ok(ActionRecordResponse.From(record));
+            if (record is null) return Results.NotFound();
+
+            var ids = new[] { record.ActionRecordId } as IReadOnlyList<Guid>;
+            var summaries = await orchestrator.GetAuditSummariesAsync(ids, ct);
+            summaries.TryGetValue(record.ActionRecordId, out var audit);
+            audit ??= AuditSummary.Empty;
+
+            var approvals     = await orchestrator.GetApprovalsForActionAsync(record.ActionRecordId, ct);
+            var executionLogs = await orchestrator.GetExecutionLogsForActionAsync(record.ActionRecordId, ct);
+
+            return Results.Ok(ActionRecordResponse.From(record, audit, approvals, executionLogs));
         })
         .WithName("GetAction")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
@@ -81,23 +93,84 @@ public static class SafeActionEndpoints
             SafeActionOrchestrator orchestrator,
             Guid? runId,
             int? limit,
+            string? actionType,
+            string? status,
+            string? rollbackStatus,
+            bool? hasExecutionLogs,
+            string? fromUtc,
+            string? toUtc,
             CancellationToken ct) =>
         {
             var tenantId = ctx.Request.Headers["x-tenant-id"].ToString();
             if (string.IsNullOrWhiteSpace(tenantId))
                 return Results.BadRequest("x-tenant-id header is required.");
 
+            // ── Parse & validate optional enum filters ──────────
+            ActionStatus? parsedStatus = null;
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                if (!Enum.TryParse<ActionStatus>(status, ignoreCase: true, out var s))
+                    return Results.BadRequest($"Invalid status value: {status}");
+                parsedStatus = s;
+            }
+
+            RollbackStatus? parsedRollbackStatus = null;
+            if (!string.IsNullOrWhiteSpace(rollbackStatus))
+            {
+                if (!Enum.TryParse<RollbackStatus>(rollbackStatus, ignoreCase: true, out var rs))
+                    return Results.BadRequest($"Invalid rollbackStatus value: {rollbackStatus}");
+                parsedRollbackStatus = rs;
+            }
+
+            // ── Parse & validate optional date filters ──────────
+            DateTimeOffset? parsedFromUtc = null;
+            if (!string.IsNullOrWhiteSpace(fromUtc))
+            {
+                if (!DateTimeOffset.TryParse(fromUtc, out var f))
+                    return Results.BadRequest($"Invalid fromUtc value: {fromUtc}");
+                parsedFromUtc = f;
+            }
+
+            DateTimeOffset? parsedToUtc = null;
+            if (!string.IsNullOrWhiteSpace(toUtc))
+            {
+                if (!DateTimeOffset.TryParse(toUtc, out var t))
+                    return Results.BadRequest($"Invalid toUtc value: {toUtc}");
+                parsedToUtc = t;
+            }
+
+            if (parsedFromUtc.HasValue && parsedToUtc.HasValue && parsedFromUtc > parsedToUtc)
+                return Results.BadRequest("fromUtc must not be after toUtc.");
+
             var effectiveLimit = Math.Clamp(limit ?? DefaultListLimit, 1, MaxListLimit);
 
             IReadOnlyList<ActionRecord> records;
 
-            if (runId.HasValue)
+            var hasFilters = parsedStatus.HasValue || parsedRollbackStatus.HasValue
+                || !string.IsNullOrWhiteSpace(actionType) || hasExecutionLogs.HasValue
+                || parsedFromUtc.HasValue || parsedToUtc.HasValue;
+
+            if (runId.HasValue && !hasFilters)
                 records = await orchestrator.ListByRunAsync(runId.Value, ct);
+            else if (hasFilters || !runId.HasValue)
+                records = await orchestrator.QueryByTenantAsync(
+                    tenantId, parsedStatus, parsedRollbackStatus, actionType,
+                    hasExecutionLogs, parsedFromUtc, parsedToUtc, effectiveLimit, ct);
             else
                 records = await orchestrator.ListByTenantAsync(
                     tenantId, effectiveLimit, ct);
 
-            return Results.Ok(records.Select(ActionRecordResponse.From));
+            // ── Enrich with audit summaries ─────────────────────
+            var ids = records.Select(r => r.ActionRecordId).ToList();
+            var summaries = await orchestrator.GetAuditSummariesAsync(ids, ct);
+
+            var response = records.Select(r =>
+            {
+                summaries.TryGetValue(r.ActionRecordId, out var audit);
+                return ActionRecordResponse.From(r, audit ?? AuditSummary.Empty);
+            });
+
+            return Results.Ok(response);
         })
         .WithName("ListActions")
         .Produces<IEnumerable<ActionRecordResponse>>(StatusCodes.Status200OK)
@@ -111,7 +184,11 @@ public static class SafeActionEndpoints
             SafeActionOrchestrator orchestrator,
             CancellationToken ct) =>
         {
-            var actorId = GetActorId(ctx);
+            var resolver = ctx.RequestServices.GetRequiredService<IActorIdentityResolver>();
+            var identity = resolver.Resolve(ctx);
+            if (identity is null)
+                return Results.Unauthorized();
+            var actorId = identity.ActorId;
 
             try
             {
@@ -131,6 +208,7 @@ public static class SafeActionEndpoints
         .WithName("ApproveAction")
         .Accepts<ApproveActionRequest>("application/json")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status409Conflict);
 
@@ -142,7 +220,11 @@ public static class SafeActionEndpoints
             SafeActionOrchestrator orchestrator,
             CancellationToken ct) =>
         {
-            var actorId = GetActorId(ctx);
+            var resolver = ctx.RequestServices.GetRequiredService<IActorIdentityResolver>();
+            var identity = resolver.Resolve(ctx);
+            if (identity is null)
+                return Results.Unauthorized();
+            var actorId = identity.ActorId;
 
             try
             {
@@ -162,6 +244,7 @@ public static class SafeActionEndpoints
         .WithName("RejectAction")
         .Accepts<ApproveActionRequest>("application/json")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status409Conflict);
 
@@ -234,7 +317,11 @@ public static class SafeActionEndpoints
             SafeActionOrchestrator orchestrator,
             CancellationToken ct) =>
         {
-            var actorId = GetActorId(ctx);
+            var resolver = ctx.RequestServices.GetRequiredService<IActorIdentityResolver>();
+            var identity = resolver.Resolve(ctx);
+            if (identity is null)
+                return Results.Unauthorized();
+            var actorId = identity.ActorId;
 
             try
             {
@@ -254,6 +341,7 @@ public static class SafeActionEndpoints
         .WithName("ApproveRollback")
         .Accepts<ApproveActionRequest>("application/json")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status409Conflict);
 
@@ -296,15 +384,4 @@ public static class SafeActionEndpoints
         return app;
     }
 
-    // ── Shared helpers ──────────────────────────────────────────────
-
-    /// <summary>
-    /// Extracts actor identity from the <c>x-actor-id</c> header,
-    /// falling back to <c>"unknown"</c> when absent.
-    /// </summary>
-    private static string GetActorId(HttpContext ctx)
-    {
-        var value = ctx.Request.Headers["x-actor-id"].ToString();
-        return string.IsNullOrWhiteSpace(value) ? "unknown" : value;
-    }
 }
