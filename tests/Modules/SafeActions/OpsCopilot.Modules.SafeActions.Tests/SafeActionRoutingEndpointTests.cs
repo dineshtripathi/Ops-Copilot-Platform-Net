@@ -90,6 +90,7 @@ public class SafeActionRoutingEndpointTests
             NullLogger<RoutingActionExecutor>.Instance);
 
         builder.Services.AddSingleton<IActionExecutor>(routing);
+        builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();

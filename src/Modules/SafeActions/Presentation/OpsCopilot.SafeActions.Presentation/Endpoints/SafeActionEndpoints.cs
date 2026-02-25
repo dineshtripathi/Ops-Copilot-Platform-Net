@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using OpsCopilot.SafeActions.Application.Abstractions;
 using OpsCopilot.SafeActions.Application.Orchestration;
 using OpsCopilot.SafeActions.Domain;
 using OpsCopilot.SafeActions.Domain.Entities;
@@ -68,8 +70,10 @@ public static class SafeActionEndpoints
         group.MapGet("/{id:guid}", async (
             Guid id,
             SafeActionOrchestrator orchestrator,
+            [FromServices] ISafeActionsTelemetry telemetry,
             CancellationToken ct) =>
         {
+            telemetry.RecordQueryRequest("detail");
             var record = await orchestrator.GetAsync(id, ct);
             if (record is null) return Results.NotFound();
 
@@ -91,6 +95,7 @@ public static class SafeActionEndpoints
         group.MapGet("/", async (
             HttpContext ctx,
             SafeActionOrchestrator orchestrator,
+            [FromServices] ISafeActionsTelemetry telemetry,
             Guid? runId,
             int? limit,
             string? actionType,
@@ -101,16 +106,23 @@ public static class SafeActionEndpoints
             string? toUtc,
             CancellationToken ct) =>
         {
+            telemetry.RecordQueryRequest("list");
             var tenantId = ctx.Request.Headers["x-tenant-id"].ToString();
             if (string.IsNullOrWhiteSpace(tenantId))
+            {
+                telemetry.RecordQueryValidationFailure();
                 return Results.BadRequest("x-tenant-id header is required.");
+            }
 
             // ── Parse & validate optional enum filters ──────────
             ActionStatus? parsedStatus = null;
             if (!string.IsNullOrWhiteSpace(status))
             {
                 if (!Enum.TryParse<ActionStatus>(status, ignoreCase: true, out var s))
+                {
+                    telemetry.RecordQueryValidationFailure();
                     return Results.BadRequest($"Invalid status value: {status}");
+                }
                 parsedStatus = s;
             }
 
@@ -118,7 +130,10 @@ public static class SafeActionEndpoints
             if (!string.IsNullOrWhiteSpace(rollbackStatus))
             {
                 if (!Enum.TryParse<RollbackStatus>(rollbackStatus, ignoreCase: true, out var rs))
+                {
+                    telemetry.RecordQueryValidationFailure();
                     return Results.BadRequest($"Invalid rollbackStatus value: {rollbackStatus}");
+                }
                 parsedRollbackStatus = rs;
             }
 
@@ -127,7 +142,10 @@ public static class SafeActionEndpoints
             if (!string.IsNullOrWhiteSpace(fromUtc))
             {
                 if (!DateTimeOffset.TryParse(fromUtc, out var f))
+                {
+                    telemetry.RecordQueryValidationFailure();
                     return Results.BadRequest($"Invalid fromUtc value: {fromUtc}");
+                }
                 parsedFromUtc = f;
             }
 
@@ -135,12 +153,18 @@ public static class SafeActionEndpoints
             if (!string.IsNullOrWhiteSpace(toUtc))
             {
                 if (!DateTimeOffset.TryParse(toUtc, out var t))
+                {
+                    telemetry.RecordQueryValidationFailure();
                     return Results.BadRequest($"Invalid toUtc value: {toUtc}");
+                }
                 parsedToUtc = t;
             }
 
             if (parsedFromUtc.HasValue && parsedToUtc.HasValue && parsedFromUtc > parsedToUtc)
+            {
+                telemetry.RecordQueryValidationFailure();
                 return Results.BadRequest("fromUtc must not be after toUtc.");
+            }
 
             var effectiveLimit = Math.Clamp(limit ?? DefaultListLimit, 1, MaxListLimit);
 
@@ -182,18 +206,23 @@ public static class SafeActionEndpoints
             Guid id,
             ApproveActionRequest request,
             SafeActionOrchestrator orchestrator,
+            [FromServices] ISafeActionsTelemetry telemetry,
             CancellationToken ct) =>
         {
             var resolver = ctx.RequestServices.GetRequiredService<IActorIdentityResolver>();
             var identity = resolver.Resolve(ctx);
             if (identity is null)
+            {
+                telemetry.RecordIdentityMissing401("approve");
                 return Results.Unauthorized();
+            }
             var actorId = identity.ActorId;
 
             try
             {
                 var record = await orchestrator.ApproveAsync(
                     id, actorId, request.Reason, ct);
+                telemetry.RecordApprovalDecision("approve");
                 return Results.Ok(ActionRecordResponse.From(record));
             }
             catch (KeyNotFoundException)
@@ -218,18 +247,23 @@ public static class SafeActionEndpoints
             Guid id,
             ApproveActionRequest request,
             SafeActionOrchestrator orchestrator,
+            [FromServices] ISafeActionsTelemetry telemetry,
             CancellationToken ct) =>
         {
             var resolver = ctx.RequestServices.GetRequiredService<IActorIdentityResolver>();
             var identity = resolver.Resolve(ctx);
             if (identity is null)
+            {
+                telemetry.RecordIdentityMissing401("reject");
                 return Results.Unauthorized();
+            }
             var actorId = identity.ActorId;
 
             try
             {
                 var record = await orchestrator.RejectAsync(
                     id, actorId, request.Reason, ct);
+                telemetry.RecordApprovalDecision("reject");
                 return Results.Ok(ActionRecordResponse.From(record));
             }
             catch (KeyNotFoundException)
@@ -254,10 +288,14 @@ public static class SafeActionEndpoints
             Guid id,
             IConfiguration configuration,
             SafeActionOrchestrator orchestrator,
+            [FromServices] ISafeActionsTelemetry telemetry,
             CancellationToken ct) =>
         {
             if (!configuration.GetValue<bool>("SafeActions:EnableExecution"))
+            {
+                telemetry.RecordGuarded501("execute");
                 return Results.StatusCode(StatusCodes.Status501NotImplemented);
+            }
 
             try
             {
@@ -315,18 +353,23 @@ public static class SafeActionEndpoints
             Guid id,
             ApproveActionRequest request,
             SafeActionOrchestrator orchestrator,
+            [FromServices] ISafeActionsTelemetry telemetry,
             CancellationToken ct) =>
         {
             var resolver = ctx.RequestServices.GetRequiredService<IActorIdentityResolver>();
             var identity = resolver.Resolve(ctx);
             if (identity is null)
+            {
+                telemetry.RecordIdentityMissing401("rollback_approve");
                 return Results.Unauthorized();
+            }
             var actorId = identity.ActorId;
 
             try
             {
                 var record = await orchestrator.ApproveRollbackAsync(
                     id, actorId, request.Reason, ct);
+                telemetry.RecordApprovalDecision("rollback_approve");
                 return Results.Ok(ActionRecordResponse.From(record));
             }
             catch (KeyNotFoundException)
@@ -351,10 +394,14 @@ public static class SafeActionEndpoints
             Guid id,
             IConfiguration configuration,
             SafeActionOrchestrator orchestrator,
+            [FromServices] ISafeActionsTelemetry telemetry,
             CancellationToken ct) =>
         {
             if (!configuration.GetValue<bool>("SafeActions:EnableExecution"))
+            {
+                telemetry.RecordGuarded501("rollback_execute");
                 return Results.StatusCode(StatusCodes.Status501NotImplemented);
+            }
 
             try
             {

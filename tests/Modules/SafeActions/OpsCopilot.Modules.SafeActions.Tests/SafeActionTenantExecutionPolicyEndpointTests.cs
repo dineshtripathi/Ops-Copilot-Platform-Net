@@ -82,6 +82,7 @@ public class SafeActionTenantExecutionPolicyEndpointTests
         tenantPolicy.Setup(p => p.EvaluateExecution(record.TenantId, record.ActionType))
                     .Returns(tenantDecision);
         builder.Services.AddSingleton(tenantPolicy.Object);
+        builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
 
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
@@ -194,6 +195,7 @@ public class SafeActionTenantExecutionPolicyEndpointTests
         builder.Services.AddSingleton(executor.Object);
         builder.Services.AddSingleton(Mock.Of<ISafeActionPolicy>());
         builder.Services.AddSingleton(tenantPolicy.Object);
+        builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();
@@ -236,6 +238,7 @@ public class SafeActionTenantExecutionPolicyEndpointTests
         builder.Services.AddSingleton(Mock.Of<IActionExecutor>());
         builder.Services.AddSingleton(Mock.Of<ISafeActionPolicy>());
         builder.Services.AddSingleton(Mock.Of<ITenantExecutionPolicy>());
+        builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();

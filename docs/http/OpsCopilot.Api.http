@@ -882,3 +882,45 @@ Content-Type: application/json
 {
   "reason": "Rejected via header fallback in Slice 17"
 }
+
+###########################################################################
+# Section T – S18 – Observability Smoke
+# Purpose : Verify that observed endpoints still return expected statuses.
+#           Counters are validated in unit tests; this section confirms
+#           the DI-registered telemetry does not break runtime behaviour.
+###########################################################################
+
+@tenantT = tenant-verify-18
+
+### T1 · Propose action (baseline for later queries) → 201 Created
+# @name proposeForObservability
+POST {{baseUrl}}/safe-actions
+x-tenant-id: {{tenantT}}
+Content-Type: application/json
+
+{
+  "agentRunId": "{{$guid}}",
+  "actionType": "restart_pod",
+  "payloadJson": "{\"target\":\"pod-obs-1\"}",
+  "rollbackPayloadJson": "{\"undo\":\"stop_pod\"}"
+}
+
+### T2 · Get proposed action detail → 200 OK  (records query.requests counter)
+# @name getDetailObservability
+GET {{baseUrl}}/safe-actions/{{proposeForObservability.response.body.$.actionRecordId}}
+x-tenant-id: {{tenantT}}
+
+### T3 · List actions for tenant → 200 OK  (records query.requests counter)
+# @name listActionsObservability
+GET {{baseUrl}}/safe-actions?tenantId={{tenantT}}&pageSize=5&pageNumber=1
+x-tenant-id: {{tenantT}}
+
+### T4 · List with invalid date range → 400 Bad Request (records query.validation_failures)
+# @name listBadRange
+GET {{baseUrl}}/safe-actions?tenantId={{tenantT}}&fromUtc=2099-01-01T00:00:00Z&toUtc=2000-01-01T00:00:00Z&pageSize=5&pageNumber=1
+x-tenant-id: {{tenantT}}
+
+### T5 · Execute without approval → 409 or replay conflict (records replay_conflict)
+# @name executeBeforeApproval
+POST {{baseUrl}}/safe-actions/{{proposeForObservability.response.body.$.actionRecordId}}/execute
+x-tenant-id: {{tenantT}}

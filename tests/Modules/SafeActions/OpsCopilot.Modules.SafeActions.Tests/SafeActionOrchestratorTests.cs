@@ -33,7 +33,8 @@ public class SafeActionOrchestratorTests
         Mock<IActionRecordRepository> repo,
         Mock<IActionExecutor>? executor = null,
         Mock<ISafeActionPolicy>? policy = null,
-        Mock<ITenantExecutionPolicy>? tenantPolicy = null)
+        Mock<ITenantExecutionPolicy>? tenantPolicy = null,
+        Mock<ISafeActionsTelemetry>? telemetry = null)
     {
         executor ??= new Mock<IActionExecutor>(MockBehavior.Strict);
 
@@ -56,6 +57,7 @@ public class SafeActionOrchestratorTests
             executor.Object,
             policy.Object,
             tenantPolicy.Object,
+            (telemetry ?? new Mock<ISafeActionsTelemetry>()).Object,
             Mock.Of<ILogger<SafeActionOrchestrator>>());
     }
 

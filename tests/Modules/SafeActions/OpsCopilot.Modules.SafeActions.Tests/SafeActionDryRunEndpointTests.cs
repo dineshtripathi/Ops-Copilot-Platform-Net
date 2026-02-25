@@ -45,6 +45,7 @@ public class SafeActionDryRunEndpointTests
         builder.Services.AddSingleton(Mock.Of<ISafeActionPolicy>());
         builder.Services.AddSingleton(Mock.Of<ITenantExecutionPolicy>(p =>
             p.EvaluateExecution(It.IsAny<string>(), It.IsAny<string>()) == PolicyDecision.Allow()));
+        builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();

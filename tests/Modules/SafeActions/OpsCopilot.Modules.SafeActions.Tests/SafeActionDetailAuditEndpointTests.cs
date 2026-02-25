@@ -53,6 +53,7 @@ public class SafeActionDetailAuditEndpointTests
         builder.Services.AddSingleton(Mock.Of<IActionExecutor>());
         builder.Services.AddSingleton(Mock.Of<ISafeActionPolicy>());
         builder.Services.AddSingleton(Mock.Of<ITenantExecutionPolicy>());
+        builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();

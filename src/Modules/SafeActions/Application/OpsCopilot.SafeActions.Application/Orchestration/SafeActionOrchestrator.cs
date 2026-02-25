@@ -20,6 +20,7 @@ public sealed class SafeActionOrchestrator
     private readonly IActionExecutor                    _executor;
     private readonly ISafeActionPolicy                  _policy;
     private readonly ITenantExecutionPolicy             _tenantExecutionPolicy;
+    private readonly ISafeActionsTelemetry              _telemetry;
     private readonly ILogger<SafeActionOrchestrator>    _logger;
 
     public SafeActionOrchestrator(
@@ -27,12 +28,14 @@ public sealed class SafeActionOrchestrator
         IActionExecutor                 executor,
         ISafeActionPolicy               policy,
         ITenantExecutionPolicy          tenantExecutionPolicy,
+        ISafeActionsTelemetry           telemetry,
         ILogger<SafeActionOrchestrator> logger)
     {
         _repository             = repository;
         _executor               = executor;
         _policy                 = policy;
         _tenantExecutionPolicy  = tenantExecutionPolicy;
+        _telemetry              = telemetry;
         _logger                 = logger;
     }
 
@@ -51,6 +54,7 @@ public sealed class SafeActionOrchestrator
         var decision = _policy.Evaluate(tenantId, actionType);
         if (!decision.Allowed)
         {
+            _telemetry.RecordPolicyDenied(actionType, tenantId);
             _logger.LogWarning(
                 "Policy denied action {ActionType} for tenant {TenantId}: {ReasonCode}",
                 actionType, tenantId, decision.ReasonCode);
@@ -131,12 +135,14 @@ public sealed class SafeActionOrchestrator
         CancellationToken ct = default)
     {
         var record = await GetRequiredAsync(actionRecordId, ct);
+        _telemetry.RecordExecutionAttempt(record.ActionType, record.TenantId);
 
         // ── Tenant execution policy gate ────────────────────────
         var tenantDecision = _tenantExecutionPolicy.EvaluateExecution(
             record.TenantId, record.ActionType);
         if (!tenantDecision.Allowed)
         {
+            _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
             _logger.LogWarning(
                 "Tenant execution policy denied execute for action {ActionRecordId} "
                 + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
@@ -149,6 +155,7 @@ public sealed class SafeActionOrchestrator
         // ── Replay guard — only Approved records may begin execution ──
         if (record.Status is not ActionStatus.Approved)
         {
+            _telemetry.RecordReplayConflict(record.ActionType);
             _logger.LogWarning(
                 "Execute replay blocked for action {ActionRecordId} — current status {Status} is not Approved",
                 actionRecordId, record.Status);
@@ -194,9 +201,15 @@ public sealed class SafeActionOrchestrator
 
         // Transition to terminal state
         if (result.Success)
+        {
             record.CompleteExecution(record.ProposedPayloadJson, result.ResponseJson);
+            _telemetry.RecordExecutionSuccess(record.ActionType, record.TenantId);
+        }
         else
+        {
             record.FailExecution(record.ProposedPayloadJson, result.ResponseJson);
+            _telemetry.RecordExecutionFailure(record.ActionType, record.TenantId);
+        }
 
         await _repository.SaveAsync(record, ct);
 
@@ -254,12 +267,14 @@ public sealed class SafeActionOrchestrator
         CancellationToken ct = default)
     {
         var record = await GetRequiredAsync(actionRecordId, ct);
+        _telemetry.RecordExecutionAttempt(record.ActionType, record.TenantId);
 
         // ── Tenant execution policy gate ────────────────────────
         var tenantDecision = _tenantExecutionPolicy.EvaluateExecution(
             record.TenantId, record.ActionType);
         if (!tenantDecision.Allowed)
         {
+            _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
             _logger.LogWarning(
                 "Tenant execution policy denied rollback-execute for action {ActionRecordId} "
                 + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
@@ -276,6 +291,7 @@ public sealed class SafeActionOrchestrator
         // ── Replay guard — only RollbackApproved records may begin rollback execution ──
         if (record.RollbackStatus is not RollbackStatus.Approved)
         {
+            _telemetry.RecordReplayConflict(record.ActionType);
             _logger.LogWarning(
                 "Rollback replay blocked for action {ActionRecordId} — current rollback status {RollbackStatus} is not Approved",
                 actionRecordId, record.RollbackStatus);
@@ -315,9 +331,15 @@ public sealed class SafeActionOrchestrator
         await _repository.AppendExecutionLogAsync(log, ct);
 
         if (result.Success)
+        {
             record.CompleteRollback(result.ResponseJson);
+            _telemetry.RecordExecutionSuccess(record.ActionType, record.TenantId);
+        }
         else
+        {
             record.FailRollback(result.ResponseJson);
+            _telemetry.RecordExecutionFailure(record.ActionType, record.TenantId);
+        }
 
         await _repository.SaveAsync(record, ct);
 
