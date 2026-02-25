@@ -140,3 +140,17 @@ Build: `0 Warning(s)  0 Error(s)`
 | 8 | No `Console.Write*` | ✅ |
 | 9 | Configuration via `IConfiguration` (not env vars) | ✅ |
 | 10 | Build produces 0 warnings, 0 errors | ✅ |
+
+---
+
+## Normalization Addendum (Slice 19.1)
+
+The following naming normalizations were applied post-commit to align with project conventions:
+
+| Item | Before | After |
+|------|--------|-------|
+| 429 JSON body key | `error` | `reasonCode` (literal `"throttled"`) |
+| 429 JSON body property order | `error, retryAfterSeconds, message` | `reasonCode, message, retryAfterSeconds` |
+| Telemetry counter name | `safeactions.execution.throttled` | `safe_actions.execution.throttled` |
+
+No behavior changes. No routing changes. No new packages.

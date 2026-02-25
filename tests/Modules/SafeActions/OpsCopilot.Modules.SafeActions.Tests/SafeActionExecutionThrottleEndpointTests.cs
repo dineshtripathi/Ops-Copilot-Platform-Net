@@ -124,9 +124,9 @@ public class SafeActionExecutionThrottleEndpointTests
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            Assert.Equal("TooManyRequests", root.GetProperty("error").GetString());
-            Assert.Equal(45, root.GetProperty("retryAfterSeconds").GetInt32());
+            Assert.Equal("throttled", root.GetProperty("reasonCode").GetString());
             Assert.NotNull(root.GetProperty("message").GetString());
+            Assert.Equal(45, root.GetProperty("retryAfterSeconds").GetInt32());
         }
         finally
         {
@@ -157,7 +157,7 @@ public class SafeActionExecutionThrottleEndpointTests
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            Assert.Equal("TooManyRequests", root.GetProperty("error").GetString());
+            Assert.Equal("throttled", root.GetProperty("reasonCode").GetString());
             Assert.Equal(30, root.GetProperty("retryAfterSeconds").GetInt32());
         }
         finally
@@ -192,9 +192,9 @@ public class SafeActionExecutionThrottleEndpointTests
                 propertyNames.Add(prop.Name);
 
             Assert.Equal(3, propertyNames.Count);
-            Assert.Contains("error", propertyNames);
-            Assert.Contains("retryAfterSeconds", propertyNames);
+            Assert.Contains("reasonCode", propertyNames);
             Assert.Contains("message", propertyNames);
+            Assert.Contains("retryAfterSeconds", propertyNames);
         }
         finally
         {

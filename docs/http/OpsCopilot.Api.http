@@ -990,7 +990,7 @@ Content-Type: application/json
 
 ### U6 · Execute second action (continues window counter) → eventually 429
 ###      Run U3-U6 rapidly to exceed maxAttempts=5.
-###      Expected once limit exceeded: 429 with { error, retryAfterSeconds, message }
+###      Expected once limit exceeded: 429 with { reasonCode, message, retryAfterSeconds }
 # @name executeThrottleDeny
 POST {{baseUrl}}/safe-actions/{{proposeForThrottle2.response.body.$.actionRecordId}}/execute
 x-tenant-id: {{tenantU}}

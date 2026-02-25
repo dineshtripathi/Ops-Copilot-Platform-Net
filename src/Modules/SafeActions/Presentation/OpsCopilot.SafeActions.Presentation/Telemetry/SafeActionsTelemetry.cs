@@ -72,7 +72,7 @@ public sealed class SafeActionsTelemetry : ISafeActionsTelemetry, IDisposable
             description: "Query validation failures");
 
         _executionThrottled      = _meter.CreateCounter<long>(
-            "safeactions.execution.throttled",
+            "safe_actions.execution.throttled",
             description: "Execution attempts denied by throttle policy");
     }
 

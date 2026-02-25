@@ -310,7 +310,7 @@ public static class SafeActionEndpoints
                 telemetry.RecordExecutionThrottled(
                     actionRecord.ActionType, actionRecord.TenantId, "execute");
                 return Results.Json(
-                    new { error = decision.ReasonCode, retryAfterSeconds = decision.RetryAfterSeconds, message = decision.Message },
+                    new { reasonCode = "throttled", message = decision.Message, retryAfterSeconds = decision.RetryAfterSeconds },
                     statusCode: StatusCodes.Status429TooManyRequests,
                     contentType: "application/json");
             }
@@ -435,7 +435,7 @@ public static class SafeActionEndpoints
                 telemetry.RecordExecutionThrottled(
                     actionRecord.ActionType, actionRecord.TenantId, "rollback_execute");
                 return Results.Json(
-                    new { error = decision.ReasonCode, retryAfterSeconds = decision.RetryAfterSeconds, message = decision.Message },
+                    new { reasonCode = "throttled", message = decision.Message, retryAfterSeconds = decision.RetryAfterSeconds },
                     statusCode: StatusCodes.Status429TooManyRequests,
                     contentType: "application/json");
             }

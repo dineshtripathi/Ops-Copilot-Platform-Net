@@ -38,6 +38,6 @@ public interface ISafeActionsTelemetry
     /// <summary>safeactions.query.validation_failures — incremented when a query request fails validation.</summary>
     void RecordQueryValidationFailure();
 
-    /// <summary>safeactions.execution.throttled — incremented when an execution attempt is denied by the throttle policy.</summary>
+    /// <summary>safe_actions.execution.throttled — incremented when an execution attempt is denied by the throttle policy.</summary>
     void RecordExecutionThrottled(string actionType, string tenantId, string operationKind);
 }
