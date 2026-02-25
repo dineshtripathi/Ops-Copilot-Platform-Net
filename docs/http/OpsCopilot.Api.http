@@ -10,6 +10,13 @@
 ###   F. MCP boundary check
 ###   G. Triage — session-based follow-up
 ###   H. Session continuity hardening (Dev Slice 4B)
+###   I. SafeActions — Execute endpoints (501 guard)
+###   J. SafeActions — Dry-Run Execution
+###   K. SafeActions — Real HTTP Probe (Dev Slice 9)
+###   L. Azure Resource Get (Dev Slice 10)
+###   M. Azure Monitor Query (Dev Slice 11)
+###   N. Target Allowlist Hardening (Dev Slice 12)
+###   O. Tenant-Scoped Execution Policy (Dev Slice 13)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -391,3 +398,310 @@ x-tenant-id: tenant-verify-8
 POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/rollback/execute
 Content-Type: application/json
 x-tenant-id: tenant-verify-8
+
+###############################################################################
+# K · SafeActions — Real HTTP Probe (Dev Slice 9)
+#
+#     TWO-FLAG SAFETY MODEL:
+#       1. SafeActions:EnableExecution = true   (endpoint guard — 501 otherwise)
+#       2. SafeActions:EnableRealHttpProbe = true (routes http_probe to real executor)
+#
+#     Both flags default to FALSE. When EnableRealHttpProbe is false, http_probe
+#     actions fall back to the dry-run executor. Non-http_probe action types
+#     ALWAYS use the dry-run executor regardless of the probe flag.
+#
+#     Additional settings:
+#       SafeActions:HttpProbeTimeoutMs       (default 5000)
+#       SafeActions:HttpProbeMaxResponseBytes (default 1024)
+#
+#     SSRF protection: only HTTPS URLs are allowed; localhost, *.internal,
+#     private IP ranges, IMDS, and loopback addresses are blocked.
+###############################################################################
+
+### K1 · http_probe execute — real probe (EnableExecution=true, EnableRealHttpProbe=true)
+###      Requires an Approved ActionRecord with actionType="http_probe" and
+###      payload: {"url":"https://example.com","method":"GET"}
+###      Expected: 200, outcomeJson contains mode="real_http_probe", statusCode, responseSnippet
+# @name httpProbeRealExecute
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000003/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-9
+
+### K2 · http_probe execute — dry-run fallback (EnableExecution=true, EnableRealHttpProbe=false)
+###      Same as K1 but with EnableRealHttpProbe=false.
+###      Expected: 200, outcomeJson contains mode="dry-run"
+# @name httpProbeDryRunFallback
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000003/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-9
+
+### K3 · http_probe rollback — not supported
+###      Real probe executor does not support rollback.
+###      Expected: 200, outcomeJson contains "rollback is not supported for http_probe"
+# @name httpProbeRollbackNotSupported
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000003/rollback/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-9
+
+### K4 · non-probe action — always dry-run even when probe flag is on
+###      Uses a record with actionType="restart_pod". EnableRealHttpProbe=true.
+###      Expected: 200, outcomeJson contains mode="dry-run"
+# @name nonProbeAlwaysDryRun
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-9
+
+# ═══════════════════════════════════════════════════════════════
+# L · Azure Resource Get (Slice 10) — THREE-FLAG SAFETY MODEL
+# ═══════════════════════════════════════════════════════════════
+#
+# Requires:
+#   SafeActions:EnableExecution          = true   (endpoint guard)
+#   SafeActions:EnableAzureReadExecutions = true   (azure gate)
+#
+# Uses DefaultAzureCredential — authenticate via:
+#   az login, AZURE_TENANT_ID env var, or Managed Identity
+#
+# Payload: { "resourceId": "/subscriptions/.../providers/..." }
+# Returns metadata ONLY (name, type, location, state, etag, tagsCount)
+# NO data-plane access, NO resource modification, GET-only
+
+### L1 · azure_resource_get execute — real SDK call (requires both flags)
+###      Pre: Create & approve an ActionRecord with actionType="azure_resource_get"
+###           and payload {"resourceId":"/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Compute/virtualMachines/<vm>"}
+###      Expected: 200, outcomeJson contains mode="azure_resource_get"
+# @name azureGetExecuteReal
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-10
+
+### L2 · azure_resource_get execute — dry-run fallback (EnableAzureReadExecutions=false)
+###      Expected: 200, outcomeJson contains mode="dry-run"
+# @name azureGetDryRunFallback
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-10
+
+### L3 · azure_resource_get rollback — not supported
+###      Expected: 200, outcomeJson contains "rollback is not supported for azure_resource_get"
+# @name azureGetRollbackNotSupported
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/rollback
+Content-Type: application/json
+x-tenant-id: tenant-verify-10
+
+### L4 · azure_resource_get with invalid resourceId — deterministic error
+###      Pre: payload {"resourceId":"not-a-valid-id"}
+###      Expected: 200, outcomeJson contains errorCode="invalid_resource_id"
+# @name azureGetInvalidResourceId
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-10
+
+# ═══════════════════════════════════════════════════════════════
+# M · Azure Monitor Query (Slice 11) — FOUR-FLAG SAFETY MODEL
+# ═══════════════════════════════════════════════════════════════
+#
+# Requires:
+#   SafeActions:EnableExecution                = true  (endpoint guard)
+#   SafeActions:EnableAzureMonitorReadExecutions = true (monitor gate)
+#
+# Uses DefaultAzureCredential — authenticate via:
+#   az login, AZURE_TENANT_ID env var, or Managed Identity
+#
+# Payload:
+#   {
+#     "workspaceId": "<GUID>",      — Log Analytics workspace ID
+#     "query": "<KQL string>",      — read-only KQL query
+#     "timespanMinutes": 60          — optional, default 60, clamped [1..1440]
+#   }
+#
+# Blocked query patterns (case-insensitive): .create, .alter, .drop,
+#   .ingest, .set, .append, .delete, .execute
+#
+# Returns: { mode, success, workspaceId, rowCount, columnCount, rows }
+# NO writes, NO data modification, read-only KQL queries ONLY
+
+### M1 · azure_monitor_query execute — real SDK call (requires both flags)
+###      Pre: Create & approve an ActionRecord with actionType="azure_monitor_query"
+###           and payload {"workspaceId":"<workspace-guid>","query":"Heartbeat | take 5"}
+###      Expected: 200, outcomeJson contains mode="azure_monitor_query"
+# @name azureMonitorQueryExecuteReal
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-11
+
+### M2 · azure_monitor_query execute — dry-run fallback (EnableAzureMonitorReadExecutions=false)
+###      Expected: 200, outcomeJson contains mode="dry-run"
+# @name azureMonitorQueryDryRunFallback
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-11
+
+### M3 · azure_monitor_query rollback — not supported
+###      Expected: 200, outcomeJson contains reason="not_supported"
+# @name azureMonitorQueryRollbackNotSupported
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/rollback
+Content-Type: application/json
+x-tenant-id: tenant-verify-11
+
+### M4 · azure_monitor_query with blocked pattern — deterministic error
+###      Pre: payload {"workspaceId":"<guid>","query":".drop table foo"}
+###      Expected: 200, outcomeJson contains reason="blocked_query_pattern"
+# @name azureMonitorQueryBlockedPattern
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-11
+
+### M5 · azure_monitor_query with invalid workspaceId — deterministic error
+###      Pre: payload {"workspaceId":"not-a-guid","query":"Heartbeat"}
+###      Expected: 200, outcomeJson contains reason="invalid_workspace_id"
+# @name azureMonitorQueryInvalidWorkspace
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-11
+
+###############################################################################
+# N · Slice 12 – Target Allowlist Hardening
+#     Config: SafeActions:AllowedAzureSubscriptionIds
+#             SafeActions:AllowedLogAnalyticsWorkspaceIds
+#     Empty list = no restriction (backward compatible).
+###############################################################################
+
+### N1 · azure_resource_get with allowlisted subscription — succeeds
+###      Pre: Add subscription to AllowedAzureSubscriptionIds config
+###      Expected: 200, outcomeJson Success=true (if ARM resource exists)
+# @name azureGetAllowlistedSubscription
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-12
+
+### N2 · azure_resource_get with non-allowlisted subscription — rejected
+###      Pre: Subscription NOT in AllowedAzureSubscriptionIds
+###      Expected: 200, outcomeJson contains reason="target_not_allowlisted"
+# @name azureGetNonAllowlistedSubscription
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-12
+
+### N3 · azure_monitor_query with allowlisted workspace — succeeds
+###      Pre: WorkspaceId in AllowedLogAnalyticsWorkspaceIds config
+###      Expected: 200, outcomeJson Success=true (if workspace reachable)
+# @name azureMonitorQueryAllowlistedWorkspace
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-12
+
+### N4 · azure_monitor_query with non-allowlisted workspace — rejected
+###      Pre: WorkspaceId NOT in AllowedLogAnalyticsWorkspaceIds
+###      Expected: 200, outcomeJson contains reason="target_not_allowlisted"
+# @name azureMonitorQueryNonAllowlistedWorkspace
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-12
+
+###############################################################################
+# O · Slice 13 – Tenant-Scoped Execution Policy (STRICT)
+#
+#     Config: SafeActions:AllowedExecutionTenants:<actionType>:[0..N]
+#     Maps each action type to an explicit list of authorized tenant IDs.
+#
+#     STRICT DENY-by-default:
+#       - Action type key missing from config       → DENY
+#       - Action type key present but tenant list empty → DENY
+#       - Tenant ID not in the list                 → DENY
+#
+#     Error: 400, reasonCode = "tenant_not_authorized_for_action"
+#
+#     Precedence: EnableExecution=false (501) > tenant policy deny (400)
+#                 > executor routing
+#
+#     Requires: SafeActions:EnableExecution = true  AND  an Approved record.
+###############################################################################
+
+### O1 · Execute with authorized tenant — succeeds
+###      Pre: AllowedExecutionTenants:restart_pod:0 = tenant-verify-13
+###           Record in Approved status, actionType = restart_pod
+###      Expected: 200
+# @name executeAuthorizedTenant
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-13
+
+### O2 · Execute with unauthorized tenant — denied
+###      Pre: AllowedExecutionTenants:restart_pod does NOT include tenant-blocked
+###           Record in Approved status, actionType = restart_pod
+###      Expected: 400, body.reasonCode = "tenant_not_authorized_for_action"
+# @name executeUnauthorizedTenant
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-blocked
+
+### O3 · Execute with missing action type config — denied (strict)
+###      Pre: No AllowedExecutionTenants entry for action type "scale_up"
+###           Record in Approved status, actionType = scale_up
+###      Expected: 400, body.reasonCode = "tenant_not_authorized_for_action"
+# @name executeMissingActionTypeConfig
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-13
+
+### O4 · Rollback-execute with unauthorized tenant — denied
+###      Pre: AllowedExecutionTenants:restart_pod does NOT include tenant-blocked
+###           Record in RollbackApproved status, actionType = restart_pod
+###      Expected: 400, body.reasonCode = "tenant_not_authorized_for_action"
+# @name rollbackExecuteUnauthorizedTenant
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/rollback/execute
+Content-Type: application/json
+x-tenant-id: tenant-blocked
+
+### O5 · Execute returns 501 even when tenant would be denied — precedence
+###      Pre: SafeActions:EnableExecution = false (default)
+###      Expected: 501 (guard wins before tenant policy is evaluated)
+# @name executePrecedenceGuardWins
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-blocked
+
+## ═══════════════════════════════════════════════════════════════════
+## P · Execution Replay Guard  (Slice 14 — tenant-verify-14)
+## ═══════════════════════════════════════════════════════════════════
+
+### P1 · Execute on already-completed record → 409 Conflict
+###      Pre: Record has been approved, executed, and completed
+###      Expected: 409 — replay blocked because status is Completed
+# @name executeReplayCompleted
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-14
+
+### P2 · Execute on already-failed record → 409 Conflict
+###      Pre: Record has been approved, executed, and failed
+###      Expected: 409 — replay blocked because status is Failed
+# @name executeReplayFailed
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-14
+
+### P3 · Execute on currently-executing record → 409 Conflict
+###      Pre: Record is already in Executing status
+###      Expected: 409 — replay blocked because status is Executing
+# @name executeReplayExecuting
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-14
+
+### P4 · Rollback-execute on already-rolled-back record → 409 Conflict
+###      Pre: Record rollback has been approved and completed
+###      Expected: 409 — replay blocked because rollback status is RolledBack
+# @name rollbackReplayRolledBack
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/rollback/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-14
+
+### P5 · Rollback-execute on rollback-failed record → 409 Conflict
+###      Pre: Record rollback has been approved and failed
+###      Expected: 409 — replay blocked because rollback status is RollbackFailed
+# @name rollbackReplayRollbackFailed
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000001/rollback/execute
+Content-Type: application/json
+x-tenant-id: tenant-verify-14

@@ -31,7 +31,8 @@ public class SafeActionOrchestratorTests
     private static SafeActionOrchestrator CreateOrchestrator(
         Mock<IActionRecordRepository> repo,
         Mock<IActionExecutor>? executor = null,
-        Mock<ISafeActionPolicy>? policy = null)
+        Mock<ISafeActionPolicy>? policy = null,
+        Mock<ITenantExecutionPolicy>? tenantPolicy = null)
     {
         executor ??= new Mock<IActionExecutor>(MockBehavior.Strict);
 
@@ -42,10 +43,18 @@ public class SafeActionOrchestratorTests
                   .Returns(PolicyDecision.Allow());
         }
 
+        if (tenantPolicy is null)
+        {
+            tenantPolicy = new Mock<ITenantExecutionPolicy>(MockBehavior.Strict);
+            tenantPolicy.Setup(p => p.EvaluateExecution(It.IsAny<string>(), It.IsAny<string>()))
+                        .Returns(PolicyDecision.Allow());
+        }
+
         return new SafeActionOrchestrator(
             repo.Object,
             executor.Object,
             policy.Object,
+            tenantPolicy.Object,
             Mock.Of<ILogger<SafeActionOrchestrator>>());
     }
 
@@ -497,5 +506,212 @@ public class SafeActionOrchestratorTests
 
         Assert.Equal(RollbackStatus.RolledBack, result.RollbackStatus);
         Assert.Contains("dry-run-rollback", result.RollbackOutcomeJson!);
+    }
+
+    // ─── Tenant Execution Policy ──────────────────────────────────────
+
+    [Fact]
+    public async Task ExecuteAsync_Throws_PolicyDeniedException_When_Tenant_Not_Authorized()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var tenantPolicy = new Mock<ITenantExecutionPolicy>(MockBehavior.Strict);
+        tenantPolicy.Setup(p => p.EvaluateExecution("t-1", "restart_pod"))
+                    .Returns(PolicyDecision.Deny(
+                        "tenant_not_authorized_for_action",
+                        "Tenant t-1 is not authorized to execute restart_pod"));
+
+        var orchestrator = CreateOrchestrator(repo, tenantPolicy: tenantPolicy);
+
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        Assert.Equal("tenant_not_authorized_for_action", ex.ReasonCode);
+        Assert.Equal(ActionStatus.Approved, record.Status);
+    }
+
+    [Fact]
+    public async Task ExecuteRollbackAsync_Throws_PolicyDeniedException_When_Tenant_Not_Authorized()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{\"target\":\"pod-1\"}", "{\"ok\":true}");
+        record.RequestRollback();
+        record.ApproveRollback();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var tenantPolicy = new Mock<ITenantExecutionPolicy>(MockBehavior.Strict);
+        tenantPolicy.Setup(p => p.EvaluateExecution("t-1", "restart_pod"))
+                    .Returns(PolicyDecision.Deny(
+                        "tenant_not_authorized_for_action",
+                        "Tenant t-1 is not authorized to execute restart_pod"));
+
+        var orchestrator = CreateOrchestrator(repo, tenantPolicy: tenantPolicy);
+
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
+
+        Assert.Equal("tenant_not_authorized_for_action", ex.ReasonCode);
+        Assert.Equal(RollbackStatus.Approved, record.RollbackStatus);
+    }
+
+    // ─── Execute Replay Guard (Slice 14) ──────────────────────────────
+
+    [Fact]
+    public async Task ExecuteAsync_ReplayGuard_Throws_When_Already_Completed()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{}", "{\"ok\":true}");
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var executor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        var orchestrator = CreateOrchestrator(repo, executor);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        executor.Verify(e => e.ExecuteAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        repo.Verify(r => r.AppendExecutionLogAsync(
+            It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReplayGuard_Throws_When_Already_Failed()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.FailExecution("{}", "{\"error\":\"boom\"}");
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var executor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        var orchestrator = CreateOrchestrator(repo, executor);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        executor.Verify(e => e.ExecuteAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        repo.Verify(r => r.AppendExecutionLogAsync(
+            It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReplayGuard_Throws_When_Already_Executing()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var executor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        var orchestrator = CreateOrchestrator(repo, executor);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        executor.Verify(e => e.ExecuteAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        repo.Verify(r => r.AppendExecutionLogAsync(
+            It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReplayGuard_Throws_When_Rejected()
+    {
+        var record = CreateProposedRecord();
+        record.Reject();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var executor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        var orchestrator = CreateOrchestrator(repo, executor);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        executor.Verify(e => e.ExecuteAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        repo.Verify(r => r.AppendExecutionLogAsync(
+            It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ─── Rollback Replay Guard (Slice 14) ─────────────────────────────
+
+    [Fact]
+    public async Task ExecuteRollbackAsync_ReplayGuard_Throws_When_Already_RolledBack()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{}", "{\"ok\":true}");
+        record.RequestRollback();
+        record.ApproveRollback();
+        record.CompleteRollback("{\"rolled_back\":true}");
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var executor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        var orchestrator = CreateOrchestrator(repo, executor);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
+
+        executor.Verify(e => e.RollbackAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        repo.Verify(r => r.AppendExecutionLogAsync(
+            It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteRollbackAsync_ReplayGuard_Throws_When_RollbackFailed()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{}", "{\"ok\":true}");
+        record.RequestRollback();
+        record.ApproveRollback();
+        record.FailRollback("{\"error\":\"timeout\"}");
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var executor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        var orchestrator = CreateOrchestrator(repo, executor);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
+
+        executor.Verify(e => e.RollbackAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        repo.Verify(r => r.AppendExecutionLogAsync(
+            It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

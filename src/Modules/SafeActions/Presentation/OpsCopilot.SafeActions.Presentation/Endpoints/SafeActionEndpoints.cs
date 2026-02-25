@@ -181,6 +181,10 @@ public static class SafeActionEndpoints
                 var record = await orchestrator.ExecuteAsync(id, ct);
                 return Results.Ok(ActionRecordResponse.From(record));
             }
+            catch (PolicyDeniedException ex)
+            {
+                return Results.BadRequest(new { ex.ReasonCode, ex.Message });
+            }
             catch (KeyNotFoundException)
             {
                 return Results.NotFound();
@@ -193,6 +197,7 @@ public static class SafeActionEndpoints
         .WithName("ExecuteAction")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status501NotImplemented)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status409Conflict);
 
@@ -268,6 +273,10 @@ public static class SafeActionEndpoints
                 var record = await orchestrator.ExecuteRollbackAsync(id, ct);
                 return Results.Ok(ActionRecordResponse.From(record));
             }
+            catch (PolicyDeniedException ex)
+            {
+                return Results.BadRequest(new { ex.ReasonCode, ex.Message });
+            }
             catch (KeyNotFoundException)
             {
                 return Results.NotFound();
@@ -280,6 +289,7 @@ public static class SafeActionEndpoints
         .WithName("ExecuteRollback")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status501NotImplemented)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status409Conflict);
 

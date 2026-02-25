@@ -18,18 +18,21 @@ public sealed class SafeActionOrchestrator
     private readonly IActionRecordRepository            _repository;
     private readonly IActionExecutor                    _executor;
     private readonly ISafeActionPolicy                  _policy;
+    private readonly ITenantExecutionPolicy             _tenantExecutionPolicy;
     private readonly ILogger<SafeActionOrchestrator>    _logger;
 
     public SafeActionOrchestrator(
         IActionRecordRepository         repository,
         IActionExecutor                 executor,
         ISafeActionPolicy               policy,
+        ITenantExecutionPolicy          tenantExecutionPolicy,
         ILogger<SafeActionOrchestrator> logger)
     {
-        _repository = repository;
-        _executor   = executor;
-        _policy     = policy;
-        _logger     = logger;
+        _repository             = repository;
+        _executor               = executor;
+        _policy                 = policy;
+        _tenantExecutionPolicy  = tenantExecutionPolicy;
+        _logger                 = logger;
     }
 
     // ─── Propose ──────────────────────────────────────────────────
@@ -127,6 +130,30 @@ public sealed class SafeActionOrchestrator
         CancellationToken ct = default)
     {
         var record = await GetRequiredAsync(actionRecordId, ct);
+
+        // ── Tenant execution policy gate ────────────────────────
+        var tenantDecision = _tenantExecutionPolicy.EvaluateExecution(
+            record.TenantId, record.ActionType);
+        if (!tenantDecision.Allowed)
+        {
+            _logger.LogWarning(
+                "Tenant execution policy denied execute for action {ActionRecordId} "
+                + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
+                actionRecordId, record.ActionType, record.TenantId,
+                tenantDecision.ReasonCode);
+            throw new PolicyDeniedException(
+                tenantDecision.ReasonCode, tenantDecision.Message);
+        }
+
+        // ── Replay guard — only Approved records may begin execution ──
+        if (record.Status is not ActionStatus.Approved)
+        {
+            _logger.LogWarning(
+                "Execute replay blocked for action {ActionRecordId} — current status {Status} is not Approved",
+                actionRecordId, record.Status);
+            throw new InvalidOperationException(
+                $"Action {actionRecordId} cannot be executed because its status is {record.Status}.");
+        }
 
         // Transition to Executing (enforces approval-required invariant §2.1.3)
         record.MarkExecuting();
@@ -227,9 +254,33 @@ public sealed class SafeActionOrchestrator
     {
         var record = await GetRequiredAsync(actionRecordId, ct);
 
+        // ── Tenant execution policy gate ────────────────────────
+        var tenantDecision = _tenantExecutionPolicy.EvaluateExecution(
+            record.TenantId, record.ActionType);
+        if (!tenantDecision.Allowed)
+        {
+            _logger.LogWarning(
+                "Tenant execution policy denied rollback-execute for action {ActionRecordId} "
+                + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
+                actionRecordId, record.ActionType, record.TenantId,
+                tenantDecision.ReasonCode);
+            throw new PolicyDeniedException(
+                tenantDecision.ReasonCode, tenantDecision.Message);
+        }
+
         if (record.RollbackPayloadJson is null)
             throw new InvalidOperationException(
                 $"Action {actionRecordId} has no rollback payload.");
+
+        // ── Replay guard — only RollbackApproved records may begin rollback execution ──
+        if (record.RollbackStatus is not RollbackStatus.Approved)
+        {
+            _logger.LogWarning(
+                "Rollback replay blocked for action {ActionRecordId} — current rollback status {RollbackStatus} is not Approved",
+                actionRecordId, record.RollbackStatus);
+            throw new InvalidOperationException(
+                $"Action {actionRecordId} cannot execute rollback because its rollback status is {record.RollbackStatus}.");
+        }
 
         _logger.LogInformation(
             "Executing rollback for action {ActionRecordId} (type={ActionType}, tenant={TenantId}) — transition RollbackApproved→RollingBack",

@@ -11,6 +11,7 @@ using OpsCopilot.SafeActions.Application.Abstractions;
 using OpsCopilot.SafeActions.Application.Orchestration;
 using OpsCopilot.SafeActions.Domain.Repositories;
 using OpsCopilot.SafeActions.Presentation.Endpoints;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 
 namespace OpsCopilot.Modules.SafeActions.Tests;
 
@@ -45,6 +46,8 @@ public class SafeActionExecutionGuardTests
         builder.Services.AddSingleton(Mock.Of<IActionRecordRepository>());
         builder.Services.AddSingleton(Mock.Of<IActionExecutor>());
         builder.Services.AddSingleton(Mock.Of<ISafeActionPolicy>());
+        builder.Services.AddSingleton(Mock.Of<ITenantExecutionPolicy>(p =>
+            p.EvaluateExecution(It.IsAny<string>(), It.IsAny<string>()) == PolicyDecision.Allow()));
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();

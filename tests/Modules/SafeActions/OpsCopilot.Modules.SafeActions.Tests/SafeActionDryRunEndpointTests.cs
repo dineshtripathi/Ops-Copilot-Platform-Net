@@ -13,6 +13,7 @@ using OpsCopilot.SafeActions.Application.Orchestration;
 using OpsCopilot.SafeActions.Domain.Entities;
 using OpsCopilot.SafeActions.Domain.Enums;
 using OpsCopilot.SafeActions.Domain.Repositories;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.SafeActions.Infrastructure.Executors;
 using OpsCopilot.SafeActions.Presentation.Endpoints;
 
@@ -42,6 +43,8 @@ public class SafeActionDryRunEndpointTests
         builder.Services.AddSingleton(repository);
         builder.Services.AddSingleton<IActionExecutor, DryRunActionExecutor>();
         builder.Services.AddSingleton(Mock.Of<ISafeActionPolicy>());
+        builder.Services.AddSingleton(Mock.Of<ITenantExecutionPolicy>(p =>
+            p.EvaluateExecution(It.IsAny<string>(), It.IsAny<string>()) == PolicyDecision.Allow()));
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();
