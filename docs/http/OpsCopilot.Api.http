@@ -924,3 +924,79 @@ x-tenant-id: {{tenantT}}
 # @name executeBeforeApproval
 POST {{baseUrl}}/safe-actions/{{proposeForObservability.response.body.$.actionRecordId}}/execute
 x-tenant-id: {{tenantT}}
+
+###########################################################################
+# Section U — S19 — Execution Throttling Smoke
+# Purpose : Verify that in-process throttle guard returns 429 when limits
+#           are exceeded, and passes through when disabled or under limit.
+#           Requires appsettings EnableExecutionThrottling = true,
+#           ExecutionThrottleWindowSeconds = 60,
+#           ExecutionThrottleMaxAttemptsPerWindow = 5.
+###########################################################################
+
+@tenantU = tenant-verify-19
+
+### U1 · Propose action for throttle testing → 201 Created
+# @name proposeForThrottle
+POST {{baseUrl}}/safe-actions
+x-tenant-id: {{tenantU}}
+Content-Type: application/json
+
+{
+  "agentRunId": "{{$guid}}",
+  "actionType": "restart_pod",
+  "payloadJson": "{\"target\":\"pod-throttle-1\"}",
+  "rollbackPayloadJson": "{\"undo\":\"stop_pod\"}"
+}
+
+### U2 · Approve the proposed action → 200 OK
+# @name approveForThrottle
+POST {{baseUrl}}/safe-actions/{{proposeForThrottle.response.body.$.actionRecordId}}/approve
+x-tenant-id: {{tenantU}}
+Content-Type: application/json
+
+{
+  "reason": "Approved for throttle test"
+}
+
+### U3 · Execute (attempt 1 / within window) → 200 OK
+###      With throttling enabled and maxAttempts=5. First call should succeed.
+# @name executeThrottlePass
+POST {{baseUrl}}/safe-actions/{{proposeForThrottle.response.body.$.actionRecordId}}/execute
+x-tenant-id: {{tenantU}}
+
+### U4 · Propose + Approve another action for repeated attempts
+# @name proposeForThrottle2
+POST {{baseUrl}}/safe-actions
+x-tenant-id: {{tenantU}}
+Content-Type: application/json
+
+{
+  "agentRunId": "{{$guid}}",
+  "actionType": "restart_pod",
+  "payloadJson": "{\"target\":\"pod-throttle-2\"}",
+  "rollbackPayloadJson": "{\"undo\":\"stop_pod\"}"
+}
+
+### U5 · Approve second action
+# @name approveForThrottle2
+POST {{baseUrl}}/safe-actions/{{proposeForThrottle2.response.body.$.actionRecordId}}/approve
+x-tenant-id: {{tenantU}}
+Content-Type: application/json
+
+{
+  "reason": "Approved for throttle overflow test"
+}
+
+### U6 · Execute second action (continues window counter) → eventually 429
+###      Run U3-U6 rapidly to exceed maxAttempts=5.
+###      Expected once limit exceeded: 429 with { error, retryAfterSeconds, message }
+# @name executeThrottleDeny
+POST {{baseUrl}}/safe-actions/{{proposeForThrottle2.response.body.$.actionRecordId}}/execute
+x-tenant-id: {{tenantU}}
+
+### U7 · Rollback-execute throttle test → 429 when over limit
+###      Same tenant+actionType key counts toward the same window.
+# @name rollbackExecuteThrottleDeny
+POST {{baseUrl}}/safe-actions/{{proposeForThrottle2.response.body.$.actionRecordId}}/rollback/execute
+x-tenant-id: {{tenantU}}

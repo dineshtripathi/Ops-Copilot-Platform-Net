@@ -52,6 +52,8 @@ public class SafeActionIdentityEndpointTests
         builder.Services.AddSingleton(Mock.Of<ITenantExecutionPolicy>(p =>
             p.EvaluateExecution(It.IsAny<string>(), It.IsAny<string>()) == PolicyDecision.Allow()));
         builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
+        builder.Services.AddSingleton(Mock.Of<IExecutionThrottlePolicy>(p =>
+            p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()) == ThrottleDecision.Allow()));
         builder.Services.AddSingleton<SafeActionOrchestrator>();
         builder.Services.AddSingleton<IActorIdentityResolver, ClaimsActorIdentityResolver>();
 
@@ -79,6 +81,8 @@ public class SafeActionIdentityEndpointTests
         builder.Services.AddSingleton(Mock.Of<ITenantExecutionPolicy>(p =>
             p.EvaluateExecution(It.IsAny<string>(), It.IsAny<string>()) == PolicyDecision.Allow()));
         builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
+        builder.Services.AddSingleton(Mock.Of<IExecutionThrottlePolicy>(p =>
+            p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()) == ThrottleDecision.Allow()));
         builder.Services.AddSingleton<SafeActionOrchestrator>();
         builder.Services.AddSingleton<IActorIdentityResolver>(mockResolver);
 

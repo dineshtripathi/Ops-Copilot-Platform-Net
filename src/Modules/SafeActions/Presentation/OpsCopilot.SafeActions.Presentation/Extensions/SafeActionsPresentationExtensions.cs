@@ -10,6 +10,7 @@ using OpsCopilot.SafeActions.Application.Abstractions;
 using OpsCopilot.SafeActions.Presentation.Endpoints;
 using OpsCopilot.SafeActions.Presentation.Identity;
 using OpsCopilot.SafeActions.Presentation.Telemetry;
+using OpsCopilot.SafeActions.Presentation.Throttling;
 
 namespace OpsCopilot.SafeActions.Presentation.Extensions;
 
@@ -25,6 +26,7 @@ public static class SafeActionsPresentationExtensions
         services.AddSafeActionsInfrastructure(configuration);
         services.AddSingleton<IActorIdentityResolver, ClaimsActorIdentityResolver>();
         services.AddSingleton<ISafeActionsTelemetry, SafeActionsTelemetry>();
+        services.AddSingleton<IExecutionThrottlePolicy, InMemoryExecutionThrottlePolicy>();
         return services;
     }
 

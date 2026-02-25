@@ -284,17 +284,35 @@ public static class SafeActionEndpoints
 
         // ── POST /safe-actions/{id}/execute ─────────────────────────
         // Guarded: returns 501 unless SafeActions:EnableExecution = true.
+        // Throttled: returns 429 when execution throttle policy denies.
         group.MapPost("/{id:guid}/execute", async (
             Guid id,
             IConfiguration configuration,
             SafeActionOrchestrator orchestrator,
             [FromServices] ISafeActionsTelemetry telemetry,
+            [FromServices] IExecutionThrottlePolicy throttlePolicy,
             CancellationToken ct) =>
         {
             if (!configuration.GetValue<bool>("SafeActions:EnableExecution"))
             {
                 telemetry.RecordGuarded501("execute");
                 return Results.StatusCode(StatusCodes.Status501NotImplemented);
+            }
+
+            var actionRecord = await orchestrator.GetAsync(id, ct);
+            if (actionRecord is null)
+                return Results.NotFound();
+
+            var decision = throttlePolicy.Evaluate(
+                actionRecord.TenantId, actionRecord.ActionType, "execute");
+            if (!decision.Allowed)
+            {
+                telemetry.RecordExecutionThrottled(
+                    actionRecord.ActionType, actionRecord.TenantId, "execute");
+                return Results.Json(
+                    new { error = decision.ReasonCode, retryAfterSeconds = decision.RetryAfterSeconds, message = decision.Message },
+                    statusCode: StatusCodes.Status429TooManyRequests,
+                    contentType: "application/json");
             }
 
             try
@@ -317,6 +335,7 @@ public static class SafeActionEndpoints
         })
         .WithName("ExecuteAction")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status429TooManyRequests)
         .Produces(StatusCodes.Status501NotImplemented)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status404NotFound)
@@ -390,17 +409,35 @@ public static class SafeActionEndpoints
 
         // ── POST /safe-actions/{id}/rollback/execute ────────────────
         // Guarded: returns 501 unless SafeActions:EnableExecution = true.
+        // Throttled: returns 429 when execution throttle policy denies.
         group.MapPost("/{id:guid}/rollback/execute", async (
             Guid id,
             IConfiguration configuration,
             SafeActionOrchestrator orchestrator,
             [FromServices] ISafeActionsTelemetry telemetry,
+            [FromServices] IExecutionThrottlePolicy throttlePolicy,
             CancellationToken ct) =>
         {
             if (!configuration.GetValue<bool>("SafeActions:EnableExecution"))
             {
                 telemetry.RecordGuarded501("rollback_execute");
                 return Results.StatusCode(StatusCodes.Status501NotImplemented);
+            }
+
+            var actionRecord = await orchestrator.GetAsync(id, ct);
+            if (actionRecord is null)
+                return Results.NotFound();
+
+            var decision = throttlePolicy.Evaluate(
+                actionRecord.TenantId, actionRecord.ActionType, "rollback_execute");
+            if (!decision.Allowed)
+            {
+                telemetry.RecordExecutionThrottled(
+                    actionRecord.ActionType, actionRecord.TenantId, "rollback_execute");
+                return Results.Json(
+                    new { error = decision.ReasonCode, retryAfterSeconds = decision.RetryAfterSeconds, message = decision.Message },
+                    statusCode: StatusCodes.Status429TooManyRequests,
+                    contentType: "application/json");
             }
 
             try
@@ -423,6 +460,7 @@ public static class SafeActionEndpoints
         })
         .WithName("ExecuteRollback")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status429TooManyRequests)
         .Produces(StatusCodes.Status501NotImplemented)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status404NotFound)

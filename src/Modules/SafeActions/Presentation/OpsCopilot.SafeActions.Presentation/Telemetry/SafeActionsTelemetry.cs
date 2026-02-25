@@ -25,6 +25,7 @@ public sealed class SafeActionsTelemetry : ISafeActionsTelemetry, IDisposable
     private readonly Counter<long> _approvalDecisions;
     private readonly Counter<long> _queryRequests;
     private readonly Counter<long> _queryValidationFailures;
+    private readonly Counter<long> _executionThrottled;
 
     public SafeActionsTelemetry()
     {
@@ -69,6 +70,10 @@ public sealed class SafeActionsTelemetry : ISafeActionsTelemetry, IDisposable
         _queryValidationFailures = _meter.CreateCounter<long>(
             "safeactions.query.validation_failures",
             description: "Query validation failures");
+
+        _executionThrottled      = _meter.CreateCounter<long>(
+            "safeactions.execution.throttled",
+            description: "Execution attempts denied by throttle policy");
     }
 
     // ── Counter recording methods ────────────────────────────────
@@ -115,6 +120,12 @@ public sealed class SafeActionsTelemetry : ISafeActionsTelemetry, IDisposable
 
     public void RecordQueryValidationFailure()
         => _queryValidationFailures.Add(1);
+
+    public void RecordExecutionThrottled(string actionType, string tenantId, string operationKind)
+        => _executionThrottled.Add(1,
+            new KeyValuePair<string, object?>("action_type", actionType),
+            new KeyValuePair<string, object?>("tenant_id", tenantId),
+            new KeyValuePair<string, object?>("operation_kind", operationKind));
 
     public void Dispose() => _meter.Dispose();
 }

@@ -54,6 +54,8 @@ public class SafeActionDetailAuditEndpointTests
         builder.Services.AddSingleton(Mock.Of<ISafeActionPolicy>());
         builder.Services.AddSingleton(Mock.Of<ITenantExecutionPolicy>());
         builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
+        builder.Services.AddSingleton(Mock.Of<IExecutionThrottlePolicy>(p =>
+            p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()) == ThrottleDecision.Allow()));
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();
