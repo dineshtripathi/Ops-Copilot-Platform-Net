@@ -1000,3 +1000,51 @@ x-tenant-id: {{tenantU}}
 # @name rollbackExecuteThrottleDeny
 POST {{baseUrl}}/safe-actions/{{proposeForThrottle2.response.body.$.actionRecordId}}/rollback/execute
 x-tenant-id: {{tenantU}}
+
+###########################################################################
+# V · Slice 20 — Retry-After Header on 429 Responses
+#     Verifies that throttled (429) responses include a Retry-After HTTP
+#     header whose value matches the retryAfterSeconds JSON body field.
+#     Precondition: Set SafeActions:Throttle:MaxAttempts to 1 and
+#     SafeActions:Throttle:WindowSeconds to 60 so the second execute is
+#     guaranteed to be denied (429).
+###########################################################################
+
+@tenantV = tenant-verify-20
+
+### V1 · Propose + Approve an action for retry-after verification
+# @name proposeForRetryAfter
+POST {{baseUrl}}/safe-actions
+x-tenant-id: {{tenantV}}
+Content-Type: application/json
+
+{
+  "agentRunId": "{{$guid}}",
+  "actionType": "restart_pod",
+  "payloadJson": "{\"target\":\"pod-retry-after\"}",
+  "rollbackPayloadJson": "{\"undo\":\"stop_pod\"}"
+}
+
+### V2 · Approve the action
+# @name approveForRetryAfter
+POST {{baseUrl}}/safe-actions/{{proposeForRetryAfter.response.body.$.actionRecordId}}/approve
+x-tenant-id: {{tenantV}}
+Content-Type: application/json
+
+{
+  "reason": "Approved for Retry-After header test"
+}
+
+### V3 · Execute (burns the only attempt in the window) → 200 OK
+# @name executeRetryAfterPass
+POST {{baseUrl}}/safe-actions/{{proposeForRetryAfter.response.body.$.actionRecordId}}/execute
+x-tenant-id: {{tenantV}}
+
+### V4 · Second execute → 429 Too Many Requests
+###      Expected response headers include:
+###        Retry-After: <seconds>   (matches body retryAfterSeconds)
+###      Expected JSON body:
+###        { "reasonCode": "throttled", "message": "...", "retryAfterSeconds": <seconds> }
+# @name executeRetryAfterDeny
+POST {{baseUrl}}/safe-actions/{{proposeForRetryAfter.response.body.$.actionRecordId}}/execute
+x-tenant-id: {{tenantV}}

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using OpsCopilot.SafeActions.Application.Abstractions;
 using OpsCopilot.SafeActions.Application.Orchestration;
 using OpsCopilot.SafeActions.Domain;
@@ -287,10 +288,12 @@ public static class SafeActionEndpoints
         // Throttled: returns 429 when execution throttle policy denies.
         group.MapPost("/{id:guid}/execute", async (
             Guid id,
+            HttpContext httpContext,
             IConfiguration configuration,
             SafeActionOrchestrator orchestrator,
             [FromServices] ISafeActionsTelemetry telemetry,
             [FromServices] IExecutionThrottlePolicy throttlePolicy,
+            [FromServices] ILogger<SafeActionOrchestrator> logger,
             CancellationToken ct) =>
         {
             if (!configuration.GetValue<bool>("SafeActions:EnableExecution"))
@@ -309,6 +312,10 @@ public static class SafeActionEndpoints
             {
                 telemetry.RecordExecutionThrottled(
                     actionRecord.ActionType, actionRecord.TenantId, "execute");
+                logger.LogWarning(
+                    "Execution throttled for {ActionType} by {TenantId}, operation {OperationKind}, retry after {RetryAfterSeconds}s",
+                    actionRecord.ActionType, actionRecord.TenantId, "execute", decision.RetryAfterSeconds);
+                httpContext.Response.Headers["Retry-After"] = decision.RetryAfterSeconds.ToString();
                 return Results.Json(
                     new { reasonCode = "throttled", message = decision.Message, retryAfterSeconds = decision.RetryAfterSeconds },
                     statusCode: StatusCodes.Status429TooManyRequests,
@@ -412,10 +419,12 @@ public static class SafeActionEndpoints
         // Throttled: returns 429 when execution throttle policy denies.
         group.MapPost("/{id:guid}/rollback/execute", async (
             Guid id,
+            HttpContext httpContext,
             IConfiguration configuration,
             SafeActionOrchestrator orchestrator,
             [FromServices] ISafeActionsTelemetry telemetry,
             [FromServices] IExecutionThrottlePolicy throttlePolicy,
+            [FromServices] ILogger<SafeActionOrchestrator> logger,
             CancellationToken ct) =>
         {
             if (!configuration.GetValue<bool>("SafeActions:EnableExecution"))
@@ -434,6 +443,10 @@ public static class SafeActionEndpoints
             {
                 telemetry.RecordExecutionThrottled(
                     actionRecord.ActionType, actionRecord.TenantId, "rollback_execute");
+                logger.LogWarning(
+                    "Execution throttled for {ActionType} by {TenantId}, operation {OperationKind}, retry after {RetryAfterSeconds}s",
+                    actionRecord.ActionType, actionRecord.TenantId, "rollback_execute", decision.RetryAfterSeconds);
+                httpContext.Response.Headers["Retry-After"] = decision.RetryAfterSeconds.ToString();
                 return Results.Json(
                     new { reasonCode = "throttled", message = decision.Message, retryAfterSeconds = decision.RetryAfterSeconds },
                     statusCode: StatusCodes.Status429TooManyRequests,

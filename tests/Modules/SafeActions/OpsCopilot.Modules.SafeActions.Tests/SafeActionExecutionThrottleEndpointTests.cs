@@ -22,9 +22,34 @@ namespace OpsCopilot.Modules.SafeActions.Tests;
 /// Verifies that <see cref="IExecutionThrottlePolicy"/> is evaluated at the
 /// endpoint layer and that a deny decision produces a deterministic 429 JSON body.
 /// Slice 19 — SafeActions Execution Throttling (STRICT, In-Process).
+/// Slice 20 — Retry-After header + structured Warning logging.
 /// </summary>
 public class SafeActionExecutionThrottleEndpointTests
 {
+    // ── Lightweight test logger ─────────────────────────────────────
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        private readonly List<(LogLevel Level, string Message)> _entries = new();
+        public IReadOnlyList<(LogLevel Level, string Message)> Entries => _entries;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            _entries.Add((logLevel, formatter(state, exception)));
+        }
+    }
+
+    private sealed class CapturingLoggerProvider<T> : ILoggerProvider
+    {
+        private readonly CapturingLogger<T> _logger;
+        public CapturingLoggerProvider(CapturingLogger<T> logger) => _logger = logger;
+        public ILogger CreateLogger(string categoryName) => _logger;
+        public void Dispose() { }
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────
 
     private static ActionRecord CreateApprovedRecord()
@@ -62,11 +87,14 @@ public class SafeActionExecutionThrottleEndpointTests
     private static async Task<(WebApplication App, HttpClient Client)> CreateTestHost(
         IActionRecordRepository repository,
         IExecutionThrottlePolicy throttlePolicy,
-        ISafeActionsTelemetry? telemetry = null)
+        ISafeActionsTelemetry? telemetry = null,
+        ILoggerProvider? loggerProvider = null)
     {
         var builder = WebApplication.CreateBuilder(Array.Empty<string>());
         builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();
+        if (loggerProvider is not null)
+            builder.Logging.AddProvider(loggerProvider);
 
         builder.Configuration.AddInMemoryCollection(
             new Dictionary<string, string?>
@@ -298,6 +326,256 @@ public class SafeActionExecutionThrottleEndpointTests
                 $"/safe-actions/{Guid.NewGuid()}/execute", null);
 
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+        finally
+        {
+            await DisposeHost(app);
+        }
+    }
+
+    // ── Slice 20 — Retry-After header tests ─────────────────────────
+
+    [Fact]
+    public async Task Execute_Throttled_HasRetryAfterHeader()
+    {
+        var record = CreateApprovedRecord();
+        var repo = CreateRepoMock(record);
+        var throttle = Mock.Of<IExecutionThrottlePolicy>(p =>
+            p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>())
+                == ThrottleDecision.Deny(45));
+
+        var (app, client) = await CreateTestHost(repo.Object, throttle);
+        try
+        {
+            var response = await client.PostAsync(
+                $"/safe-actions/{record.ActionRecordId}/execute", null);
+
+            Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
+            Assert.True(response.Headers.Contains("Retry-After"),
+                "429 response must include Retry-After header");
+        }
+        finally
+        {
+            await DisposeHost(app);
+        }
+    }
+
+    [Fact]
+    public async Task RollbackExecute_Throttled_HasRetryAfterHeader()
+    {
+        var record = CreateRollbackApprovedRecord();
+        var repo = CreateRepoMock(record);
+        var throttle = Mock.Of<IExecutionThrottlePolicy>(p =>
+            p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>())
+                == ThrottleDecision.Deny(30));
+
+        var (app, client) = await CreateTestHost(repo.Object, throttle);
+        try
+        {
+            var response = await client.PostAsync(
+                $"/safe-actions/{record.ActionRecordId}/rollback/execute", null);
+
+            Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
+            Assert.True(response.Headers.Contains("Retry-After"),
+                "429 response must include Retry-After header");
+        }
+        finally
+        {
+            await DisposeHost(app);
+        }
+    }
+
+    [Fact]
+    public async Task Execute_Throttled_RetryAfterHeaderMatchesBody()
+    {
+        var record = CreateApprovedRecord();
+        var repo = CreateRepoMock(record);
+        var throttle = Mock.Of<IExecutionThrottlePolicy>(p =>
+            p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>())
+                == ThrottleDecision.Deny(45));
+
+        var (app, client) = await CreateTestHost(repo.Object, throttle);
+        try
+        {
+            var response = await client.PostAsync(
+                $"/safe-actions/{record.ActionRecordId}/execute", null);
+
+            var headerValue = response.Headers.GetValues("Retry-After").Single();
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var bodyValue = doc.RootElement.GetProperty("retryAfterSeconds").GetInt32();
+
+            Assert.Equal(bodyValue.ToString(), headerValue);
+            Assert.Equal("45", headerValue);
+        }
+        finally
+        {
+            await DisposeHost(app);
+        }
+    }
+
+    [Fact]
+    public async Task RollbackExecute_Throttled_RetryAfterHeaderMatchesBody()
+    {
+        var record = CreateRollbackApprovedRecord();
+        var repo = CreateRepoMock(record);
+        var throttle = Mock.Of<IExecutionThrottlePolicy>(p =>
+            p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>())
+                == ThrottleDecision.Deny(30));
+
+        var (app, client) = await CreateTestHost(repo.Object, throttle);
+        try
+        {
+            var response = await client.PostAsync(
+                $"/safe-actions/{record.ActionRecordId}/rollback/execute", null);
+
+            var headerValue = response.Headers.GetValues("Retry-After").Single();
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var bodyValue = doc.RootElement.GetProperty("retryAfterSeconds").GetInt32();
+
+            Assert.Equal(bodyValue.ToString(), headerValue);
+            Assert.Equal("30", headerValue);
+        }
+        finally
+        {
+            await DisposeHost(app);
+        }
+    }
+
+    [Fact]
+    public async Task Execute_ThrottleAllows_NoRetryAfterHeader()
+    {
+        var record = CreateApprovedRecord();
+        var repo = CreateRepoMock(record);
+        var throttle = Mock.Of<IExecutionThrottlePolicy>(p =>
+            p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>())
+                == ThrottleDecision.Allow());
+
+        var (app, client) = await CreateTestHost(repo.Object, throttle);
+        try
+        {
+            var response = await client.PostAsync(
+                $"/safe-actions/{record.ActionRecordId}/execute", null);
+
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, response.StatusCode);
+            Assert.False(response.Headers.Contains("Retry-After"),
+                "Non-throttled response must NOT include Retry-After header");
+        }
+        finally
+        {
+            await DisposeHost(app);
+        }
+    }
+
+    [Fact]
+    public async Task Execute_Guarded501_NoRetryAfterHeader()
+    {
+        var record = CreateApprovedRecord();
+        var repo = CreateRepoMock(record);
+        var throttle = Mock.Of<IExecutionThrottlePolicy>(p =>
+            p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>())
+                == ThrottleDecision.Allow());
+
+        // Override EnableExecution to false to trigger 501 guard
+        var builder = WebApplication.CreateBuilder(Array.Empty<string>());
+        builder.WebHost.UseTestServer();
+        builder.Logging.ClearProviders();
+        builder.Configuration.AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["SafeActions:EnableExecution"] = "False"
+            });
+        builder.Services.AddSingleton(repo.Object);
+        var executorResult = new ActionExecutionResult(true, "{\"ok\":true}", 1);
+        builder.Services.AddSingleton(Mock.Of<IActionExecutor>(e =>
+            e.ExecuteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())
+                == Task.FromResult(executorResult)));
+        builder.Services.AddSingleton(Mock.Of<ISafeActionPolicy>());
+        builder.Services.AddSingleton(Mock.Of<ITenantExecutionPolicy>(p =>
+            p.EvaluateExecution(It.IsAny<string>(), It.IsAny<string>()) == PolicyDecision.Allow()));
+        builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
+        builder.Services.AddSingleton(throttle);
+        builder.Services.AddSingleton<SafeActionOrchestrator>();
+
+        var app = builder.Build();
+        app.MapSafeActionEndpoints();
+        await app.StartAsync();
+        var client = app.GetTestClient();
+        try
+        {
+            var response = await client.PostAsync(
+                $"/safe-actions/{record.ActionRecordId}/execute", null);
+
+            Assert.Equal((HttpStatusCode)501, response.StatusCode);
+            Assert.False(response.Headers.Contains("Retry-After"),
+                "501 guarded response must NOT include Retry-After header");
+        }
+        finally
+        {
+            await DisposeHost(app);
+        }
+    }
+
+    [Fact]
+    public async Task Execute_Throttled_LogsWarning()
+    {
+        var record = CreateApprovedRecord();
+        var repo = CreateRepoMock(record);
+        var throttle = Mock.Of<IExecutionThrottlePolicy>(p =>
+            p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>())
+                == ThrottleDecision.Deny(45));
+        var capturingLogger = new CapturingLogger<SafeActionOrchestrator>();
+        var logProvider = new CapturingLoggerProvider<SafeActionOrchestrator>(capturingLogger);
+
+        var (app, client) = await CreateTestHost(repo.Object, throttle, loggerProvider: logProvider);
+        try
+        {
+            await client.PostAsync(
+                $"/safe-actions/{record.ActionRecordId}/execute", null);
+
+            var warnings = capturingLogger.Entries
+                .Where(e => e.Level == LogLevel.Warning)
+                .ToList();
+            Assert.Single(warnings);
+            Assert.Contains("Execution throttled", warnings[0].Message);
+            Assert.Contains("restart_pod", warnings[0].Message);
+            Assert.Contains("t-throttle", warnings[0].Message);
+            Assert.Contains("execute", warnings[0].Message);
+            Assert.Contains("45", warnings[0].Message);
+        }
+        finally
+        {
+            await DisposeHost(app);
+        }
+    }
+
+    [Fact]
+    public async Task RollbackExecute_Throttled_LogsWarning()
+    {
+        var record = CreateRollbackApprovedRecord();
+        var repo = CreateRepoMock(record);
+        var throttle = Mock.Of<IExecutionThrottlePolicy>(p =>
+            p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>())
+                == ThrottleDecision.Deny(30));
+        var capturingLogger = new CapturingLogger<SafeActionOrchestrator>();
+        var logProvider = new CapturingLoggerProvider<SafeActionOrchestrator>(capturingLogger);
+
+        var (app, client) = await CreateTestHost(repo.Object, throttle, loggerProvider: logProvider);
+        try
+        {
+            await client.PostAsync(
+                $"/safe-actions/{record.ActionRecordId}/rollback/execute", null);
+
+            var warnings = capturingLogger.Entries
+                .Where(e => e.Level == LogLevel.Warning)
+                .ToList();
+            Assert.Single(warnings);
+            Assert.Contains("Execution throttled", warnings[0].Message);
+            Assert.Contains("restart_pod", warnings[0].Message);
+            Assert.Contains("t-throttle", warnings[0].Message);
+            Assert.Contains("rollback_execute", warnings[0].Message);
+            Assert.Contains("30", warnings[0].Message);
         }
         finally
         {
