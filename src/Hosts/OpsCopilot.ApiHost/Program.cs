@@ -9,6 +9,8 @@ using OpsCopilot.SafeActions.Presentation.Endpoints;
 using OpsCopilot.SafeActions.Presentation.Extensions;
 using OpsCopilot.Reporting.Presentation.Endpoints;
 using OpsCopilot.Reporting.Presentation.Extensions;
+using OpsCopilot.Evaluation.Presentation.Endpoints;
+using OpsCopilot.Evaluation.Presentation.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -91,7 +93,8 @@ builder.Services
     .AddAlertIngestionModule()
     .AddGovernanceModule(builder.Configuration, startupLogger)
     .AddSafeActionsModule(builder.Configuration)
-    .AddReportingModule(builder.Configuration);
+    .AddReportingModule(builder.Configuration)
+    .AddEvaluationModule();
 
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();
@@ -112,6 +115,7 @@ app.MapAlertIngestionEndpoints();   // POST /ingest/alert
 app.MapAgentRunEndpoints();         // POST /agent/triage
 app.MapSafeActionEndpoints();       // /safe-actions/*
 app.MapReportingEndpoints();        // /reports/safe-actions/*
+app.MapEvaluationEndpoints();       // /evaluation/*
 
 app.Run();
 

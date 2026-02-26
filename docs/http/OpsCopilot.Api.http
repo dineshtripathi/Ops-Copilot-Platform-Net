@@ -20,6 +20,7 @@
 ###   P. Execution Replay Guard (Dev Slice 14)
 ###   Q. Execution Audit Querying (Dev Slice 15)
 ###   R. Action Detail Audit Enrichment (Dev Slice 16)
+###   AA. Evaluation MVP (Dev Slice 25)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -1291,3 +1292,17 @@ x-tenant-id: {{tenantZ}}
   "provider": "azure_monitor",
   "payload": ""
 }
+
+###########################################################################
+# AA · Slice 25 — Evaluation MVP
+###########################################################################
+
+### AA1 · Run all evaluation scenarios → 200 OK
+# @name evaluationRun
+GET {{baseUrl}}/evaluation/run
+Accept: application/json
+
+### AA2 · List all evaluation scenario metadata → 200 OK
+# @name evaluationScenarios
+GET {{baseUrl}}/evaluation/scenarios
+Accept: application/json
