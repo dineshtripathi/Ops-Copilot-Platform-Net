@@ -6,4 +6,13 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Application\OpsCopilot.Reporting.Application\OpsCopilot.Reporting.Application.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\OpsCopilot.Reporting.Infrastructure\OpsCopilot.Reporting.Infrastructure.csproj" />
+  </ItemGroup>
+
 </Project>

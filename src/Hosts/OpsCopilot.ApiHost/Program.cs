@@ -7,6 +7,8 @@ using OpsCopilot.BuildingBlocks.Infrastructure.Configuration;
 using OpsCopilot.Governance.Presentation.Extensions;
 using OpsCopilot.SafeActions.Presentation.Endpoints;
 using OpsCopilot.SafeActions.Presentation.Extensions;
+using OpsCopilot.Reporting.Presentation.Endpoints;
+using OpsCopilot.Reporting.Presentation.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -88,7 +90,8 @@ builder.Services
     .AddAgentRunsModule(builder.Configuration)
     .AddAlertIngestionModule()
     .AddGovernanceModule(builder.Configuration, startupLogger)
-    .AddSafeActionsModule(builder.Configuration);
+    .AddSafeActionsModule(builder.Configuration)
+    .AddReportingModule(builder.Configuration);
 
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();
@@ -108,6 +111,7 @@ app.MapGet("/healthz", () => Results.Ok("healthy"))
 app.MapAlertIngestionEndpoints();   // POST /ingest/alert
 app.MapAgentRunEndpoints();         // POST /agent/triage
 app.MapSafeActionEndpoints();       // /safe-actions/*
+app.MapReportingEndpoints();        // /reports/safe-actions/*
 
 app.Run();
 

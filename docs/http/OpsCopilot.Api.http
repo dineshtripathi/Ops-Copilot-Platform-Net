@@ -1169,3 +1169,46 @@ x-tenant-id: {{tenantX}}
   },
   "sessionId": "deadbeef-dead-beef-dead-beefdeadbeef"
 }
+
+###########################################################################
+# Y · Slice 23 — Reporting MVP (Read-Only Safe-Actions Reports)
+#     Four GET endpoints under /reports/safe-actions/*.
+#     All are read-only; optional x-tenant-id header for filtering.
+###########################################################################
+
+@tenantY = tenant-verify-23
+
+### Y1 · Summary — no filters (all tenants, all time)
+# @name summaryAll
+GET {{baseUrl}}/reports/safe-actions/summary
+
+### Y2 · Summary — filtered by tenant and date range
+# @name summaryFiltered
+GET {{baseUrl}}/reports/safe-actions/summary?fromUtc=2025-01-01&toUtc=2025-12-31
+x-tenant-id: {{tenantY}}
+
+### Y3 · Summary — invalid fromUtc → 400
+# @name summaryBadDate
+GET {{baseUrl}}/reports/safe-actions/summary?fromUtc=not-a-date
+
+### Y4 · By action type — all tenants
+# @name byActionTypeAll
+GET {{baseUrl}}/reports/safe-actions/by-action-type
+
+### Y5 · By action type — filtered by tenant
+# @name byActionTypeTenant
+GET {{baseUrl}}/reports/safe-actions/by-action-type?fromUtc=2025-01-01&toUtc=2025-12-31
+x-tenant-id: {{tenantY}}
+
+### Y6 · By tenant breakdown (leadership view)
+# @name byTenant
+GET {{baseUrl}}/reports/safe-actions/by-tenant
+
+### Y7 · Recent actions — default limit (20)
+# @name recentDefault
+GET {{baseUrl}}/reports/safe-actions/recent
+
+### Y8 · Recent actions — custom limit with tenant filter
+# @name recentFiltered
+GET {{baseUrl}}/reports/safe-actions/recent?limit=5
+x-tenant-id: {{tenantY}}
