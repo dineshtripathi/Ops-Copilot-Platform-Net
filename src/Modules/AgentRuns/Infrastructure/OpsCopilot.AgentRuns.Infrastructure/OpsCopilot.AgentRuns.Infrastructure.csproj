@@ -19,6 +19,8 @@
     </PackageReference>
     <!-- MCP stdio client — calls McpHost child process via StdioClientTransport -->
     <PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.1" />
+    <!-- Redis session store for durable multi-replica sessions -->
+    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
   </ItemGroup>
 
   <ItemGroup>

@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\..\..\src\Modules\AgentRuns\Application\OpsCopilot.AgentRuns.Application\OpsCopilot.AgentRuns.Application.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\AgentRuns\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\AgentRuns\Presentation\OpsCopilot.AgentRuns.Presentation\OpsCopilot.AgentRuns.Presentation.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\AgentRuns\Infrastructure\OpsCopilot.AgentRuns.Infrastructure\OpsCopilot.AgentRuns.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\..\src\BuildingBlocks\Domain\OpsCopilot.BuildingBlocks.Domain\OpsCopilot.BuildingBlocks.Domain.csproj" />
     <ProjectReference Include="..\..\..\..\src\BuildingBlocks\Contracts\OpsCopilot.BuildingBlocks.Contracts\OpsCopilot.BuildingBlocks.Contracts.csproj" />
   </ItemGroup>

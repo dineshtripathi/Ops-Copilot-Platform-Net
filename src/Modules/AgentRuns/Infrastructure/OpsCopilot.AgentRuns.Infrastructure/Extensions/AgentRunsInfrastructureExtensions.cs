@@ -7,6 +7,7 @@ using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Infrastructure.McpClient;
 using OpsCopilot.AgentRuns.Infrastructure.Persistence;
 using OpsCopilot.AgentRuns.Infrastructure.Sessions;
+using StackExchange.Redis;
 
 namespace OpsCopilot.AgentRuns.Infrastructure.Extensions;
 
@@ -65,12 +66,30 @@ public static class AgentRunsInfrastructureExtensions
         services.AddScoped<IAgentRunRepository, SqlAgentRunRepository>();
         services.AddScoped<BuildingBlocks.Contracts.AgentRuns.IAgentRunCreator, Adapters.AgentRunCreatorAdapter>();
 
-        // ── Session store (in-memory for MVP, swap for Redis later) ───────
-        // WARNING: Sessions are lost on process restart and are NOT shared
-        // across multiple host instances. Replace with Redis/SQL-backed
-        // implementation before multi-replica or production deployment.
+        // ── Session store (config-driven: InMemory or Redis) ──────────────
+        // Provider selection: AgentRuns:SessionStore:Provider
+        //   "Redis"    → StackExchange.Redis IConnectionMultiplexer + RedisSessionStore
+        //   "InMemory" → default; process-local ConcurrentDictionary (dev/test)
         services.AddSingleton<TimeProvider>(TimeProvider.System);
-        services.AddSingleton<ISessionStore, InMemorySessionStore>();
+
+        var sessionProvider = configuration["AgentRuns:SessionStore:Provider"];
+
+        if (string.Equals(sessionProvider, "Redis", StringComparison.OrdinalIgnoreCase))
+        {
+            var redisConn = configuration["AgentRuns:SessionStore:ConnectionString"]
+                         ?? throw new InvalidOperationException(
+                             "AgentRuns:SessionStore:Provider is 'Redis' but no ConnectionString is configured. "
+                             + "Set 'AgentRuns:SessionStore:ConnectionString' via User Secrets, Key Vault, or environment variable.");
+
+            services.AddSingleton<IConnectionMultiplexer>(
+                ConnectionMultiplexer.Connect(redisConn));
+            services.AddSingleton<ISessionStore, RedisSessionStore>();
+        }
+        else
+        {
+            // Default: in-memory — suitable for local dev and single-instance.
+            services.AddSingleton<ISessionStore, InMemorySessionStore>();
+        }
 
         // ── MCP stdio client ──────────────────────────────────────────────────
         var mcpOptions = BuildMcpKqlServerOptions(configuration);

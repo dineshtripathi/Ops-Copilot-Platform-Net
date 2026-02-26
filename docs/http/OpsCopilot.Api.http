@@ -1089,3 +1089,83 @@ x-tenant-id: {{tenantW}}
 # @name listWithRiskTier
 GET {{baseUrl}}/safe-actions
 x-tenant-id: {{tenantW}}
+
+###########################################################################
+# X · Slice 22 — AgentRuns Redis Session Store (Durable Session Hardening)
+#     Verifies that the session contract is preserved regardless of the
+#     backing store (InMemory default or Redis when configured).
+#     These requests exercise the same session lifecycle as Section G but
+#     under a dedicated tenant to prove session durability behaviour.
+###########################################################################
+
+@tenantX = tenant-verify-22
+
+### X1 · New triage — omit sessionId → new session created → 200 OK
+###      Expected: isNewSession=true, sessionId present, sessionExpiresAtUtc present
+# @name triageNewSessionX
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantX}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "redis-session-new-01",
+    "title": "Slice 22 — new session test",
+    "severity": "Medium"
+  },
+  "timeRangeMinutes": 120,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### X2 · Resume triage — reuse sessionId from X1 → same session → 200 OK
+###      Expected: isNewSession=false, same sessionId returned,
+###      sessionExpiresAtUtc extended (sliding TTL)
+# @name triageResumeSessionX
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantX}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "redis-session-resume-01",
+    "title": "Slice 22 — resume session test",
+    "severity": "Medium"
+  },
+  "timeRangeMinutes": 120,
+  "workspaceId": "{{workspaceId}}",
+  "sessionId": "{{triageNewSessionX.response.body.$.sessionId}}"
+}
+
+### X3 · Cross-tenant isolation — use X1's sessionId with different tenant → new session
+###      Expected: 200 OK, isNewSession=true (session belongs to tenantX, not tenantX-other)
+# @name triageCrossTenantX
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantX}}-other
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "redis-session-cross-tenant-01",
+    "title": "Slice 22 — cross-tenant isolation test"
+  },
+  "sessionId": "{{triageNewSessionX.response.body.$.sessionId}}"
+}
+
+### X4 · Non-existent sessionId → creates new session gracefully → 200 OK
+###      Expected: isNewSession=true, new sessionId (not the bogus one)
+# @name triageBogusSessionX
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantX}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "redis-session-bogus-01",
+    "title": "Slice 22 — bogus sessionId fallback"
+  },
+  "sessionId": "deadbeef-dead-beef-dead-beefdeadbeef"
+}
