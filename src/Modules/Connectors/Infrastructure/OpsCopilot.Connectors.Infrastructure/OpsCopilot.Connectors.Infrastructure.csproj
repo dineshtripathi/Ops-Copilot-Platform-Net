@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Application\OpsCopilot.Connectors.Application\OpsCopilot.Connectors.Application.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -31,6 +31,8 @@
   <!-- Module facades — hosts reference only Presentation; inner layers are hidden -->
   <ItemGroup>
     <ProjectReference Include="..\..\Modules\AgentRuns\Presentation\OpsCopilot.AgentRuns.Presentation\OpsCopilot.AgentRuns.Presentation.csproj" />
+    <!-- Connectors is an internal module (no Presentation layer) — ApiHost refs Infrastructure directly -->
+    <ProjectReference Include="..\..\Modules\Connectors\Infrastructure\OpsCopilot.Connectors.Infrastructure\OpsCopilot.Connectors.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\AlertIngestion\Presentation\OpsCopilot.AlertIngestion.Presentation\OpsCopilot.AlertIngestion.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Governance\Presentation\OpsCopilot.Governance.Presentation\OpsCopilot.Governance.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\SafeActions\Presentation\OpsCopilot.SafeActions.Presentation\OpsCopilot.SafeActions.Presentation.csproj" />

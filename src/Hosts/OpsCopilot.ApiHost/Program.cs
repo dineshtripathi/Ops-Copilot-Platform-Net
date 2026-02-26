@@ -11,6 +11,7 @@ using OpsCopilot.Reporting.Presentation.Endpoints;
 using OpsCopilot.Reporting.Presentation.Extensions;
 using OpsCopilot.Evaluation.Presentation.Endpoints;
 using OpsCopilot.Evaluation.Presentation.Extensions;
+using OpsCopilot.Connectors.Infrastructure.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -94,7 +95,8 @@ builder.Services
     .AddGovernanceModule(builder.Configuration, startupLogger)
     .AddSafeActionsModule(builder.Configuration)
     .AddReportingModule(builder.Configuration)
-    .AddEvaluationModule();
+    .AddEvaluationModule()
+    .AddConnectorsModule();
 
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();

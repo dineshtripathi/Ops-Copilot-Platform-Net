@@ -21,6 +21,7 @@
 ###   Q. Execution Audit Querying (Dev Slice 15)
 ###   R. Action Detail Audit Enrichment (Dev Slice 16)
 ###   AA. Evaluation MVP (Dev Slice 25)
+###   AB. Connectors MVP — internal-only (Dev Slice 26)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -1306,3 +1307,11 @@ Accept: application/json
 # @name evaluationScenarios
 GET {{baseUrl}}/evaluation/scenarios
 Accept: application/json
+
+###########################################################################
+# AB · Slice 26 — Connectors MVP
+#
+# Internal-only module — no HTTP endpoints exposed.
+# Connectors are resolved via IConnectorRegistry through DI.
+# See tests/Modules/Connectors for coverage.
+###########################################################################
