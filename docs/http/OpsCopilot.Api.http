@@ -1212,3 +1212,82 @@ GET {{baseUrl}}/reports/safe-actions/recent
 # @name recentFiltered
 GET {{baseUrl}}/reports/safe-actions/recent?limit=5
 x-tenant-id: {{tenantY}}
+
+### ════════════════════════════════════════════════════════════════
+# Z · Slice 24 — AlertIngestion Hardening + Provider Normalization
+#
+# Tests the new IngestAlertRequest { Provider, Payload } contract:
+#   - Z1: AzureMonitor happy path  → 200
+#   - Z2: Datadog happy path       → 200
+#   - Z3: Generic happy path       → 200
+#   - Z4: Unsupported provider     → 400 unsupported_provider
+#   - Z5: Missing x-tenant-id      → 400 missing_tenant
+#   - Z6: Empty payload            → 400 invalid_alert_payload
+### ════════════════════════════════════════════════════════════════
+
+@tenantZ = tenant-verify-24
+
+### Z1 · AzureMonitor — happy path → 200
+# @name azMonitorIngest
+POST {{baseUrl}}/ingest/alert
+Content-Type: application/json
+x-tenant-id: {{tenantZ}}
+
+{
+  "provider": "azure_monitor",
+  "payload": "{\"data\":{\"essentials\":{\"alertId\":\"az-alert-z1\",\"alertRule\":\"HighCpu\",\"severity\":\"Sev1\",\"firedDateTime\":\"2025-06-01T12:00:00Z\",\"targetResourceIds\":[\"/subscriptions/abc/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1\"],\"monitoringService\":\"Metric\",\"description\":\"CPU > 90%\",\"targetResourceType\":\"Microsoft.Compute/virtualMachines\",\"monitorCondition\":\"Fired\"}}}"
+}
+
+### Z2 · Datadog — happy path → 200
+# @name datadogIngest
+POST {{baseUrl}}/ingest/alert
+Content-Type: application/json
+x-tenant-id: {{tenantZ}}
+
+{
+  "provider": "datadog",
+  "payload": "{\"id\":\"dd-z2\",\"title\":\"Disk Full\",\"body\":\"Disk usage above 95%\",\"priority\":\"p2\",\"date_happened\":1717243200,\"host\":\"web-01.prod\",\"alert_type\":\"Metric\",\"tags\":[\"env:production\",\"team:ops\"]}"
+}
+
+### Z3 · Generic — happy path → 200
+# @name genericIngest
+POST {{baseUrl}}/ingest/alert
+Content-Type: application/json
+x-tenant-id: {{tenantZ}}
+
+{
+  "provider": "generic",
+  "payload": "{\"id\":\"gen-z3\",\"title\":\"Generic Alert\",\"severity\":\"Warning\",\"resourceId\":\"host-42\",\"sourceType\":\"Event\",\"description\":\"Something happened\"}"
+}
+
+### Z4 · Unsupported provider → 400 unsupported_provider
+# @name unsupportedProvider
+POST {{baseUrl}}/ingest/alert
+Content-Type: application/json
+x-tenant-id: {{tenantZ}}
+
+{
+  "provider": "splunk",
+  "payload": "{\"id\":\"splunk-z4\",\"title\":\"Some alert\"}"
+}
+
+### Z5 · Missing x-tenant-id header → 400 missing_tenant
+# @name missingTenant
+POST {{baseUrl}}/ingest/alert
+Content-Type: application/json
+
+{
+  "provider": "azure_monitor",
+  "payload": "{\"data\":{\"essentials\":{\"alertId\":\"az-z5\",\"alertRule\":\"MemHigh\",\"severity\":\"Sev2\",\"firedDateTime\":\"2025-06-01T13:00:00Z\",\"targetResourceIds\":[\"/subscriptions/abc/vm/vm2\"],\"monitoringService\":\"Metric\",\"description\":\"Mem > 80%\",\"targetResourceType\":\"Microsoft.Compute/virtualMachines\",\"monitorCondition\":\"Fired\"}}}"
+}
+
+### Z6 · Empty payload → 400 invalid_alert_payload
+# @name emptyPayload
+POST {{baseUrl}}/ingest/alert
+Content-Type: application/json
+x-tenant-id: {{tenantZ}}
+
+{
+  "provider": "azure_monitor",
+  "payload": ""
+}

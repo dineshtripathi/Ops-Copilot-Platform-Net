@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using OpsCopilot.AlertIngestion.Application.Commands;
 using OpsCopilot.AlertIngestion.Application.Handlers;
+using OpsCopilot.AlertIngestion.Application.Services;
 using OpsCopilot.AlertIngestion.Presentation.Contracts;
 
 namespace OpsCopilot.AlertIngestion.Presentation.Endpoints;
@@ -14,26 +15,32 @@ public static class AlertIngestionEndpoints
     {
         // POST /ingest/alert
         // Required header : x-tenant-id
-        // Optional headers: x-subscription-id, x-correlation-id
-        // Body (JSON)     : IngestAlertRequest
+        // Required body   : IngestAlertRequest { Provider, Payload }
         app.MapPost("/ingest/alert", async (
             HttpContext              httpContext,
             IngestAlertRequest       request,
             IngestAlertCommandHandler handler,
+            AlertNormalizerRouter    router,
             CancellationToken        ct) =>
         {
             var tenantId = httpContext.Request.Headers["x-tenant-id"].FirstOrDefault();
             if (string.IsNullOrWhiteSpace(tenantId))
-                return Results.BadRequest("Missing required header: x-tenant-id");
+                return Results.BadRequest(new IngestAlertErrorResponse(
+                    "missing_tenant", "Missing required header: x-tenant-id"));
 
-            if (string.IsNullOrWhiteSpace(request.Payload))
-                return Results.BadRequest("Payload must not be empty.");
+            // Validate payload
+            var payloadResult = AlertValidationService.ValidatePayload(request.Payload);
+            if (!payloadResult.IsValid)
+                return Results.BadRequest(new IngestAlertErrorResponse(
+                    payloadResult.ReasonCode!, payloadResult.Message!));
 
-            // Optional tracing headers are available for future use.
-            // var subscriptionId = httpContext.Request.Headers["x-subscription-id"].FirstOrDefault();
-            // var correlationId  = httpContext.Request.Headers["x-correlation-id"].FirstOrDefault();
+            // Validate provider
+            var providerResult = AlertValidationService.ValidateProvider(request.Provider, router);
+            if (!providerResult.IsValid)
+                return Results.BadRequest(new IngestAlertErrorResponse(
+                    providerResult.ReasonCode!, providerResult.Message!));
 
-            var command = new IngestAlertCommand(tenantId, request.Payload);
+            var command = new IngestAlertCommand(tenantId, request.Provider, request.Payload);
             var result  = await handler.HandleAsync(command, ct);
 
             return Results.Ok(new IngestAlertResponse(result.RunId, result.Fingerprint));
@@ -42,7 +49,7 @@ public static class AlertIngestionEndpoints
         .WithTags("AlertIngestion")
         .Accepts<IngestAlertRequest>("application/json")
         .Produces<IngestAlertResponse>(StatusCodes.Status200OK)
-        .ProducesProblem(StatusCodes.Status400BadRequest);
+        .Produces<IngestAlertErrorResponse>(StatusCodes.Status400BadRequest);
 
         return app;
     }
