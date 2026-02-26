@@ -57,11 +57,15 @@ public class SafeActionsTelemetryTests
                         .Returns(PolicyDecision.Allow());
         }
 
+        var catalog = new Mock<IActionTypeCatalog>(MockBehavior.Strict);
+        catalog.Setup(c => c.IsAllowlisted(It.IsAny<string>())).Returns(true);
+
         return new SafeActionOrchestrator(
             repo.Object,
             executor.Object,
             policy.Object,
             tenantPolicy.Object,
+            catalog.Object,
             telemetry.Object,
             Mock.Of<ILogger<SafeActionOrchestrator>>());
     }

@@ -114,6 +114,7 @@ public class SafeActionExecutionThrottleEndpointTests
             p.EvaluateExecution(It.IsAny<string>(), It.IsAny<string>()) == PolicyDecision.Allow()));
         builder.Services.AddSingleton(telemetry ?? Mock.Of<ISafeActionsTelemetry>());
         builder.Services.AddSingleton(throttlePolicy);
+        builder.Services.AddSingleton(Mock.Of<IActionTypeCatalog>(c => c.IsAllowlisted(It.IsAny<string>()) == true));
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();
@@ -496,6 +497,7 @@ public class SafeActionExecutionThrottleEndpointTests
             p.EvaluateExecution(It.IsAny<string>(), It.IsAny<string>()) == PolicyDecision.Allow()));
         builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
         builder.Services.AddSingleton(throttle);
+        builder.Services.AddSingleton(Mock.Of<IActionTypeCatalog>(c => c.IsAllowlisted(It.IsAny<string>()) == true));
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();

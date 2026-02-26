@@ -34,6 +34,7 @@ public class SafeActionOrchestratorTests
         Mock<IActionExecutor>? executor = null,
         Mock<ISafeActionPolicy>? policy = null,
         Mock<ITenantExecutionPolicy>? tenantPolicy = null,
+        Mock<IActionTypeCatalog>? catalog = null,
         Mock<ISafeActionsTelemetry>? telemetry = null)
     {
         executor ??= new Mock<IActionExecutor>(MockBehavior.Strict);
@@ -52,11 +53,18 @@ public class SafeActionOrchestratorTests
                         .Returns(PolicyDecision.Allow());
         }
 
+        if (catalog is null)
+        {
+            catalog = new Mock<IActionTypeCatalog>(MockBehavior.Strict);
+            catalog.Setup(c => c.IsAllowlisted(It.IsAny<string>())).Returns(true);
+        }
+
         return new SafeActionOrchestrator(
             repo.Object,
             executor.Object,
             policy.Object,
             tenantPolicy.Object,
+            catalog.Object,
             (telemetry ?? new Mock<ISafeActionsTelemetry>()).Object,
             Mock.Of<ILogger<SafeActionOrchestrator>>());
     }
@@ -808,5 +816,54 @@ public class SafeActionOrchestratorTests
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         repo.Verify(r => r.AppendExecutionLogAsync(
             It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ─── Catalog Allowlist Tests (Slice 21) ──────────────────────────
+
+    [Fact]
+    public async Task ProposeAsync_CatalogDenies_ThrowsPolicyDenied_ActionTypeNotAllowed()
+    {
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        var catalog = new Mock<IActionTypeCatalog>(MockBehavior.Strict);
+        catalog.Setup(c => c.IsAllowlisted("restart_pod")).Returns(false);
+
+        var orchestrator = CreateOrchestrator(repo, catalog: catalog);
+
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ProposeAsync("t-1", Guid.NewGuid(), "restart_pod", "{}", null, null));
+
+        Assert.Equal("action_type_not_allowed", ex.ReasonCode);
+
+        repo.Verify(r => r.CreateActionRecordAsync(
+            It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeAsync_CatalogAllows_ProceedsToNextPolicy()
+    {
+        var expected = CreateProposedRecord();
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.CreateActionRecordAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var catalog = new Mock<IActionTypeCatalog>(MockBehavior.Strict);
+        catalog.Setup(c => c.IsAllowlisted("restart_pod")).Returns(true);
+
+        var orchestrator = CreateOrchestrator(repo, catalog: catalog);
+
+        var result = await orchestrator.ProposeAsync("t-1", Guid.NewGuid(), "restart_pod", "{}", null, null);
+
+        Assert.Equal("restart_pod", result.ActionType);
+        Assert.Equal(ActionStatus.Proposed, result.Status);
+
+        repo.Verify(r => r.CreateActionRecordAsync(
+            It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 }

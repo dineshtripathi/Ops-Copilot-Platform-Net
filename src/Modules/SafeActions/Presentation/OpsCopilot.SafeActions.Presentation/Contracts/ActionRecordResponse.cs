@@ -25,6 +25,9 @@ public sealed class ActionRecordResponse
     public DateTimeOffset? CompletedAtUtc         { get; init; }
     public DateTimeOffset? RolledBackAtUtc        { get; init; }
 
+    // ── Catalog-derived risk tier (null when catalog is empty) ──
+    public string?         RiskTier               { get; init; }
+
     // ── Audit-summary enrichment fields ─────────────────────────
     public int             ExecutionLogCount      { get; init; }
     public DateTimeOffset? LastExecutionAtUtc      { get; init; }
@@ -37,17 +40,18 @@ public sealed class ActionRecordResponse
     public IReadOnlyList<ApprovalDetailResponse>      Approvals     { get; init; } = Array.Empty<ApprovalDetailResponse>();
     public IReadOnlyList<ExecutionLogDetailResponse>   ExecutionLogs { get; init; } = Array.Empty<ExecutionLogDetailResponse>();
 
-    public static ActionRecordResponse From(ActionRecord record)
-        => From(record, AuditSummary.Empty);
+    public static ActionRecordResponse From(ActionRecord record, string? riskTier = null)
+        => From(record, AuditSummary.Empty, riskTier);
 
-    public static ActionRecordResponse From(ActionRecord record, AuditSummary audit)
-        => From(record, audit, Array.Empty<ApprovalRecord>(), Array.Empty<ExecutionLog>());
+    public static ActionRecordResponse From(ActionRecord record, AuditSummary audit, string? riskTier = null)
+        => From(record, audit, Array.Empty<ApprovalRecord>(), Array.Empty<ExecutionLog>(), riskTier);
 
     public static ActionRecordResponse From(
-        ActionRecord                record,
-        AuditSummary                audit,
+        ActionRecord                  record,
+        AuditSummary                  audit,
         IReadOnlyList<ApprovalRecord> approvals,
-        IReadOnlyList<ExecutionLog>   executionLogs)
+        IReadOnlyList<ExecutionLog>   executionLogs,
+        string?                       riskTier = null)
         => new()
         {
             ActionRecordId         = record.ActionRecordId,
@@ -66,6 +70,7 @@ public sealed class ActionRecordResponse
             ExecutedAtUtc          = record.ExecutedAtUtc,
             CompletedAtUtc         = record.CompletedAtUtc,
             RolledBackAtUtc        = record.RolledBackAtUtc,
+            RiskTier               = riskTier,
             ExecutionLogCount      = audit.ExecutionLogCount,
             LastExecutionAtUtc     = audit.LastExecutionAtUtc,
             LastExecutionSuccess   = audit.LastExecutionSuccess,

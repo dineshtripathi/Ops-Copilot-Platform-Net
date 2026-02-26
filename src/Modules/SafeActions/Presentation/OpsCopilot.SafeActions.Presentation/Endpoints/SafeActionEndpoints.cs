@@ -53,9 +53,12 @@ public static class SafeActionEndpoints
                     request.ProposedPayloadJson, request.RollbackPayloadJson,
                     request.ManualRollbackGuidance, ct);
 
+                var catalog  = ctx.RequestServices.GetService<IActionTypeCatalog>();
+                var riskTier = catalog?.Get(record.ActionType)?.RiskTier.ToString();
+
                 return Results.Created(
                     $"/safe-actions/{record.ActionRecordId}",
-                    ActionRecordResponse.From(record));
+                    ActionRecordResponse.From(record, riskTier));
             }
             catch (PolicyDeniedException ex)
             {
@@ -69,6 +72,7 @@ public static class SafeActionEndpoints
 
         // ── GET /safe-actions/{id} ──────────────────────────────────
         group.MapGet("/{id:guid}", async (
+            HttpContext ctx,
             Guid id,
             SafeActionOrchestrator orchestrator,
             [FromServices] ISafeActionsTelemetry telemetry,
@@ -86,7 +90,10 @@ public static class SafeActionEndpoints
             var approvals     = await orchestrator.GetApprovalsForActionAsync(record.ActionRecordId, ct);
             var executionLogs = await orchestrator.GetExecutionLogsForActionAsync(record.ActionRecordId, ct);
 
-            return Results.Ok(ActionRecordResponse.From(record, audit, approvals, executionLogs));
+            var catalog  = ctx.RequestServices.GetService<IActionTypeCatalog>();
+            var riskTier = catalog?.Get(record.ActionType)?.RiskTier.ToString();
+
+            return Results.Ok(ActionRecordResponse.From(record, audit, approvals, executionLogs, riskTier));
         })
         .WithName("GetAction")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
@@ -189,10 +196,13 @@ public static class SafeActionEndpoints
             var ids = records.Select(r => r.ActionRecordId).ToList();
             var summaries = await orchestrator.GetAuditSummariesAsync(ids, ct);
 
+            var catalog = ctx.RequestServices.GetService<IActionTypeCatalog>();
+
             var response = records.Select(r =>
             {
                 summaries.TryGetValue(r.ActionRecordId, out var audit);
-                return ActionRecordResponse.From(r, audit ?? AuditSummary.Empty);
+                var riskTier = catalog?.Get(r.ActionType)?.RiskTier.ToString();
+                return ActionRecordResponse.From(r, audit ?? AuditSummary.Empty, riskTier);
             });
 
             return Results.Ok(response);

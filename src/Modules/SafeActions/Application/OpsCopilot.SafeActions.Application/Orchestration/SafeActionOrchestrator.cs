@@ -20,6 +20,7 @@ public sealed class SafeActionOrchestrator
     private readonly IActionExecutor                    _executor;
     private readonly ISafeActionPolicy                  _policy;
     private readonly ITenantExecutionPolicy             _tenantExecutionPolicy;
+    private readonly IActionTypeCatalog                 _catalog;
     private readonly ISafeActionsTelemetry              _telemetry;
     private readonly ILogger<SafeActionOrchestrator>    _logger;
 
@@ -28,6 +29,7 @@ public sealed class SafeActionOrchestrator
         IActionExecutor                 executor,
         ISafeActionPolicy               policy,
         ITenantExecutionPolicy          tenantExecutionPolicy,
+        IActionTypeCatalog              catalog,
         ISafeActionsTelemetry           telemetry,
         ILogger<SafeActionOrchestrator> logger)
     {
@@ -35,6 +37,7 @@ public sealed class SafeActionOrchestrator
         _executor               = executor;
         _policy                 = policy;
         _tenantExecutionPolicy  = tenantExecutionPolicy;
+        _catalog                = catalog;
         _telemetry              = telemetry;
         _logger                 = logger;
     }
@@ -50,6 +53,18 @@ public sealed class SafeActionOrchestrator
         string? manualRollbackGuidance,
         CancellationToken ct = default)
     {
+        // ── Catalog allowlist — unknown / disabled types are rejected before any policy check ───
+        if (!_catalog.IsAllowlisted(actionType))
+        {
+            _telemetry.RecordPolicyDenied(actionType, tenantId);
+            _logger.LogWarning(
+                "Catalog denied action {ActionType} for tenant {TenantId}: action_type_not_allowed",
+                actionType, tenantId);
+            throw new PolicyDeniedException(
+                "action_type_not_allowed",
+                $"Action type '{actionType}' is not enabled in the catalog.");
+        }
+
         // ── Policy gate — denials never create a database row ───
         var decision = _policy.Evaluate(tenantId, actionType);
         if (!decision.Allowed)

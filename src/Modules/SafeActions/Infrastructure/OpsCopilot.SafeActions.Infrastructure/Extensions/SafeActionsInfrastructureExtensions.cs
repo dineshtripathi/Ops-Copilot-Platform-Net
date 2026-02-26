@@ -88,6 +88,9 @@ public static class SafeActionsInfrastructureExtensions
         // ── Tenant execution policy (strict: empty/missing = DENY) ──
         services.AddSingleton<ITenantExecutionPolicy, ConfigDrivenTenantExecutionPolicy>();
 
+        // ── ActionType catalog (allow-all when config empty) ────────
+        services.AddSingleton<IActionTypeCatalog, ConfigActionTypeCatalog>();
+
         // ── Startup diagnostics (counts only, no tenant names) ──────
         using var sp = services.BuildServiceProvider();
         var logger = sp.GetRequiredService<ILoggerFactory>()
@@ -101,6 +104,17 @@ public static class SafeActionsInfrastructureExtensions
                 + "{TenantEntryCount} total tenant entries",
                 tenantPolicy.ConfiguredActionTypeCount,
                 tenantPolicy.TotalTenantEntryCount);
+        }
+
+        var catalogInstance = sp.GetRequiredService<IActionTypeCatalog>()
+                                 as ConfigActionTypeCatalog;
+        if (catalogInstance is not null)
+        {
+            logger.LogInformation(
+                "ActionType catalog loaded: {DefinitionCount} definition(s), "
+                + "{EnabledCount} enabled",
+                catalogInstance.DefinitionCount,
+                catalogInstance.EnabledCount);
         }
 
         return services;

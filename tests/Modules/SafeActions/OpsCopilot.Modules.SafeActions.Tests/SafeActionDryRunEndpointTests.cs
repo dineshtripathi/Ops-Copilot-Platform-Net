@@ -48,6 +48,7 @@ public class SafeActionDryRunEndpointTests
         builder.Services.AddSingleton(Mock.Of<ISafeActionsTelemetry>());
         builder.Services.AddSingleton(Mock.Of<IExecutionThrottlePolicy>(p =>
             p.Evaluate(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()) == ThrottleDecision.Allow()));
+        builder.Services.AddSingleton(Mock.Of<IActionTypeCatalog>(c => c.IsAllowlisted(It.IsAny<string>()) == true));
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();

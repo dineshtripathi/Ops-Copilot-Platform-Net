@@ -1048,3 +1048,44 @@ x-tenant-id: {{tenantV}}
 # @name executeRetryAfterDeny
 POST {{baseUrl}}/safe-actions/{{proposeForRetryAfter.response.body.$.actionRecordId}}/execute
 x-tenant-id: {{tenantV}}
+
+###########################################################################
+# W · Slice 21 — ActionType Catalog + Allowlist + Risk Tiering
+###########################################################################
+
+@tenantW = tenant-verify-21
+
+### W1 · Propose a known, enabled action type → 200 OK with riskTier
+# @name proposeAllowedType
+POST {{baseUrl}}/safe-actions
+x-tenant-id: {{tenantW}}
+Content-Type: application/json
+
+{
+  "agentRunId": "{{$guid}}",
+  "actionType": "restart_pod",
+  "payloadJson": "{\"target\":\"pod-catalog-w1\"}",
+  "rollbackPayloadJson": "{\"undo\":\"stop_pod\"}"
+}
+
+### W2 · Propose an unknown action type → 400 Bad Request, action_type_not_allowed
+# @name proposeDeniedType
+POST {{baseUrl}}/safe-actions
+x-tenant-id: {{tenantW}}
+Content-Type: application/json
+
+{
+  "agentRunId": "{{$guid}}",
+  "actionType": "delete_universe",
+  "payloadJson": "{\"target\":\"everything\"}"
+}
+
+### W3 · GET detail by id → verify riskTier in response
+# @name getDetailWithRiskTier
+GET {{baseUrl}}/safe-actions/{{proposeAllowedType.response.body.$.actionRecordId}}
+x-tenant-id: {{tenantW}}
+
+### W4 · GET list → verify riskTier on each item
+# @name listWithRiskTier
+GET {{baseUrl}}/safe-actions
+x-tenant-id: {{tenantW}}
