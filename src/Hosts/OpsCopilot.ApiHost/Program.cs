@@ -12,6 +12,7 @@ using OpsCopilot.Reporting.Presentation.Extensions;
 using OpsCopilot.Evaluation.Presentation.Endpoints;
 using OpsCopilot.Evaluation.Presentation.Extensions;
 using OpsCopilot.Connectors.Infrastructure.Extensions;
+using OpsCopilot.Tenancy.Presentation.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -96,7 +97,8 @@ builder.Services
     .AddSafeActionsModule(builder.Configuration)
     .AddReportingModule(builder.Configuration)
     .AddEvaluationModule()
-    .AddConnectorsModule();
+    .AddConnectorsModule()
+    .AddTenancyModule(builder.Configuration);
 
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();
@@ -106,6 +108,7 @@ var app = builder.Build();
 // ── Database bootstrap ────────────────────────────────────────────────────────
 await app.UseAgentRunsMigrations();
 await app.UseSafeActionsMigrations();
+await app.UseTenancyMigrations();
 
 // ── Health probe ──────────────────────────────────────────────────────────────
 app.MapGet("/healthz", () => Results.Ok("healthy"))
@@ -119,6 +122,7 @@ app.MapSafeActionEndpoints();       // /safe-actions/*
 app.MapReportingEndpoints();            // /reports/safe-actions/*
 app.MapPlatformReportingEndpoints();    // /reports/platform/*
 app.MapEvaluationEndpoints();           // /evaluation/*
+app.MapTenancyEndpoints();              // /tenants/*
 
 app.Run();
 

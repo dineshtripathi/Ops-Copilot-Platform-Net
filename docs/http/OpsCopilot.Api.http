@@ -22,6 +22,8 @@
 ###   R. Action Detail Audit Enrichment (Dev Slice 16)
 ###   AA. Evaluation MVP (Dev Slice 25)
 ###   AB. Connectors MVP — internal-only (Dev Slice 26)
+###   AC. Platform Reporting (Dev Slice 27)
+###   AD. Tenancy + Governance Config Store (Dev Slice 28)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -1333,4 +1335,61 @@ Accept: application/json
 ### AC3 · Platform readiness report → 200 OK
 # @name platformReadinessReport
 GET {{baseUrl}}/reports/platform/readiness
+Accept: application/json
+
+###########################################################################
+# AD · Slice 28 — Tenancy + Governance Config Store MVP
+#
+# DB-backed tenant registry + per-tenant config entries with
+# governance-default fallback resolution.
+#   - AD1: Create tenant               → 201 Created
+#   - AD2: List tenants                 → 200 OK
+#   - AD3: Get tenant by ID             → 200 OK
+#   - AD4: Upsert tenant setting        → 200 OK
+#   - AD5: Get raw tenant settings      → 200 OK
+#   - AD6: Get resolved (merged) config → 200 OK
+###########################################################################
+
+@tenantDisplayName = Contoso-Ops
+
+### AD1 · Create tenant → 201 Created
+# @name createTenant
+POST {{baseUrl}}/tenants
+Content-Type: application/json
+x-identity: admin@contoso.com
+
+{
+  "displayName": "{{tenantDisplayName}}"
+}
+
+### AD2 · List tenants → 200 OK
+# @name listTenants
+GET {{baseUrl}}/tenants
+Accept: application/json
+
+### AD3 · Get tenant by ID → 200 OK
+### (paste the tenantId from the AD1 response)
+# @name getTenant
+GET {{baseUrl}}/tenants/{{createTenant.response.body.tenantId}}
+Accept: application/json
+
+### AD4 · Upsert tenant setting → 200 OK
+# @name upsertSetting
+PUT {{baseUrl}}/tenants/{{createTenant.response.body.tenantId}}/settings
+Content-Type: application/json
+x-identity: admin@contoso.com
+
+{
+  "key": "TriageEnabled",
+  "value": "true"
+}
+
+### AD5 · Get raw tenant settings → 200 OK
+# @name getRawSettings
+GET {{baseUrl}}/tenants/{{createTenant.response.body.tenantId}}/settings
+Accept: application/json
+
+### AD6 · Get resolved (merged) config → 200 OK
+# @name getResolvedConfig
+GET {{baseUrl}}/tenants/{{createTenant.response.body.tenantId}}/settings/resolved
 Accept: application/json

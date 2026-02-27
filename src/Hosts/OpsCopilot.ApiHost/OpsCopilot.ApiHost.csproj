@@ -38,6 +38,7 @@
     <ProjectReference Include="..\..\Modules\SafeActions\Presentation\OpsCopilot.SafeActions.Presentation\OpsCopilot.SafeActions.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Reporting\Presentation\OpsCopilot.Reporting.Presentation\OpsCopilot.Reporting.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Evaluation\Presentation\OpsCopilot.Evaluation.Presentation\OpsCopilot.Evaluation.Presentation.csproj" />
+    <ProjectReference Include="..\..\Modules\Tenancy\Presentation\OpsCopilot.Tenancy.Presentation\OpsCopilot.Tenancy.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

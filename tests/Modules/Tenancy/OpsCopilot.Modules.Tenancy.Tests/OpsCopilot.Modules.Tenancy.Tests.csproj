@@ -4,6 +4,31 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
   </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.3" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\src\Modules\Tenancy\Domain\OpsCopilot.Tenancy.Domain\OpsCopilot.Tenancy.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\Tenancy\Application\OpsCopilot.Tenancy.Application\OpsCopilot.Tenancy.Application.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\Tenancy\Infrastructure\OpsCopilot.Tenancy.Infrastructure\OpsCopilot.Tenancy.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\Tenancy\Presentation\OpsCopilot.Tenancy.Presentation\OpsCopilot.Tenancy.Presentation.csproj" />
+  </ItemGroup>
 
 </Project>
