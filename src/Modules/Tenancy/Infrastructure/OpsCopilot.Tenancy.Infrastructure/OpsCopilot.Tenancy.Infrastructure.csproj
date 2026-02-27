@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Application\OpsCopilot.Tenancy.Application\OpsCopilot.Tenancy.Application.csproj" />
     <ProjectReference Include="..\..\Domain\OpsCopilot.Tenancy.Domain\OpsCopilot.Tenancy.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\BuildingBlocks\Contracts\OpsCopilot.BuildingBlocks.Contracts\OpsCopilot.BuildingBlocks.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

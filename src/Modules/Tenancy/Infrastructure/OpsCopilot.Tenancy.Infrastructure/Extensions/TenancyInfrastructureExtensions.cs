@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using OpsCopilot.BuildingBlocks.Contracts.Tenancy;
 using OpsCopilot.Tenancy.Application.Abstractions;
 using OpsCopilot.Tenancy.Application.Configuration;
 using OpsCopilot.Tenancy.Infrastructure.Persistence;
@@ -37,6 +38,7 @@ public static class TenancyInfrastructureExtensions
         services.AddScoped<ITenantRegistry, SqlTenantRegistry>();
         services.AddScoped<ITenantConfigStore, SqlTenantConfigStore>();
         services.AddScoped<ITenantConfigResolver, TenantConfigResolver>();
+        services.AddScoped<ITenantConfigProvider, TenantConfigProviderAdapter>();
 
         return services;
     }

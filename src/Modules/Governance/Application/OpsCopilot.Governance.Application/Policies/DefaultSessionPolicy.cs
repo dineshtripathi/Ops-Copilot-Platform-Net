@@ -1,36 +1,24 @@
-using Microsoft.Extensions.Options;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
-using OpsCopilot.Governance.Application.Configuration;
+using OpsCopilot.Governance.Application.Services;
 
 namespace OpsCopilot.Governance.Application.Policies;
 
 /// <summary>
-/// Config-driven session policy. Resolves TTL from GovernanceOptions
-/// with per-tenant override support.
+/// Config-driven session policy. Resolves TTL using tenant-aware resolution.
+/// Uses <see cref="ITenantAwareGovernanceOptionsResolver"/> for tenant-aware resolution.
 /// </summary>
 public sealed class DefaultSessionPolicy : ISessionPolicy
 {
-    private readonly GovernanceOptions _options;
+    private readonly ITenantAwareGovernanceOptionsResolver _resolver;
 
-    public DefaultSessionPolicy(IOptions<GovernanceOptions> options)
+    public DefaultSessionPolicy(ITenantAwareGovernanceOptionsResolver resolver)
     {
-        _options = options.Value;
+        _resolver = resolver;
     }
 
     public TimeSpan GetSessionTtl(string tenantId)
     {
-        var minutes = ResolveSessionTtlMinutes(tenantId);
-        return TimeSpan.FromMinutes(minutes);
-    }
-
-    private int ResolveSessionTtlMinutes(string tenantId)
-    {
-        if (_options.TenantOverrides.TryGetValue(tenantId, out var tenantOverride)
-            && tenantOverride.SessionTtlMinutes is not null)
-        {
-            return tenantOverride.SessionTtlMinutes.Value;
-        }
-
-        return _options.Defaults.SessionTtlMinutes;
+        var resolved = _resolver.Resolve(tenantId);
+        return TimeSpan.FromMinutes(resolved.SessionTtlMinutes);
     }
 }

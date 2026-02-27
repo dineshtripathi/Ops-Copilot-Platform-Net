@@ -1393,3 +1393,98 @@ Accept: application/json
 # @name getResolvedConfig
 GET {{baseUrl}}/tenants/{{createTenant.response.body.tenantId}}/settings/resolved
 Accept: application/json
+
+###########################################################################
+# AE · Slice 29 — Tenant-Aware Governance Resolution
+#
+# No new routes. This slice wires Governance policy evaluation to use
+# Tenancy's SQL-backed per-tenant config, falling back through:
+#   Priority 1: SQL-backed tenant config (ITenantConfigProvider)
+#   Priority 2: Config-file TenantOverrides in GovernanceOptions
+#   Priority 3: GovernanceOptions.Defaults
+#
+# The requests below use EXISTING endpoints to demonstrate that
+# governance policies now resolve per-tenant at runtime.
+#   - AE1: Create tenant for governance testing
+#   - AE2: Set AllowedTools override for tenant
+#   - AE3: Set TokenBudget override for tenant
+#   - AE4: Verify resolved config reflects overrides
+#   - AE5: Triage with tenant-specific governance → allowed tools apply
+#   - AE6: Triage without tenant → governance defaults apply
+###########################################################################
+
+@tenantAE_name = acme-governance-29
+
+### AE1 · Create a tenant for governance resolution testing → 201 Created
+# @name createGovTenant
+POST {{baseUrl}}/tenants
+Content-Type: application/json
+
+{
+  "name": "{{tenantAE_name}}",
+  "displayName": "Acme Governance Slice-29"
+}
+
+### AE2 · Set AllowedTools override → 200 OK
+# Restricts this tenant to only kql_query (no runbook_search)
+# @name setAllowedTools
+PUT {{baseUrl}}/tenants/{{createGovTenant.response.body.tenantId}}/settings
+Content-Type: application/json
+x-identity: admin@acme.com
+
+{
+  "key": "AllowedTools",
+  "value": "[\"kql_query\"]"
+}
+
+### AE3 · Set TokenBudget override → 200 OK
+# Caps token budget to 500 for this tenant
+# @name setTokenBudget
+PUT {{baseUrl}}/tenants/{{createGovTenant.response.body.tenantId}}/settings
+Content-Type: application/json
+x-identity: admin@acme.com
+
+{
+  "key": "TokenBudget",
+  "value": "500"
+}
+
+### AE4 · Verify resolved config shows overrides → 200 OK
+# Should show AllowedTools=["kql_query"], TokenBudget=500,
+# and defaults for remaining fields (SessionTtlMinutes=30)
+# @name verifyResolvedGov
+GET {{baseUrl}}/tenants/{{createGovTenant.response.body.tenantId}}/settings/resolved
+Accept: application/json
+
+### AE5 · Triage with tenant → tenant-specific governance applies
+# The x-tenant-id header routes governance to the SQL-backed config.
+# AllowedTools=["kql_query"] from AE2, TokenBudget=500 from AE3.
+# @name triageWithTenant
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{createGovTenant.response.body.tenantId}}
+
+{
+  "alert": {
+    "severity": "Sev2",
+    "alertSource": "Azure Monitor",
+    "fingerprint": "slice29-gov-tenant-01",
+    "title": "Slice 29 — triage with tenant-aware governance"
+  }
+}
+
+### AE6 · Triage without tenant → governance defaults apply
+# No x-tenant-id header, so policies fall back to GovernanceOptions.Defaults.
+# AllowedTools=["kql_query","runbook_search"], TokenBudget=null (unlimited).
+# @name triageNoTenant
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+
+{
+  "alert": {
+    "severity": "Sev3",
+    "alertSource": "Azure Monitor",
+    "fingerprint": "slice29-gov-default-01",
+    "title": "Slice 29 — triage with governance defaults (no tenant)"
+  }
+}

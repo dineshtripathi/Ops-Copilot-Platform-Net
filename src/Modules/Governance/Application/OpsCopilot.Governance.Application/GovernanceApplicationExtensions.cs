@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.Governance.Application.Configuration;
 using OpsCopilot.Governance.Application.Policies;
+using OpsCopilot.Governance.Application.Services;
 
 namespace OpsCopilot.Governance.Application;
 
@@ -15,10 +16,16 @@ public static class GovernanceApplicationExtensions
         services.Configure<GovernanceOptions>(
             configuration.GetSection(GovernanceOptions.SectionName));
 
-        services.AddSingleton<IToolAllowlistPolicy, DefaultToolAllowlistPolicy>();
-        services.AddSingleton<ITokenBudgetPolicy, DefaultTokenBudgetPolicy>();
+        // Tenant-aware resolver: SQL → config-file overrides → defaults
+        services.AddScoped<ITenantAwareGovernanceOptionsResolver, TenantAwareGovernanceOptionsResolver>();
+
+        // Scoped policies — depend on the scoped resolver for tenant-aware config
+        services.AddScoped<IToolAllowlistPolicy, DefaultToolAllowlistPolicy>();
+        services.AddScoped<ITokenBudgetPolicy, DefaultTokenBudgetPolicy>();
+        services.AddScoped<ISessionPolicy, DefaultSessionPolicy>();
+
+        // DegradedModePolicy has no config dependency — stays singleton
         services.AddSingleton<IDegradedModePolicy, DefaultDegradedModePolicy>();
-        services.AddSingleton<ISessionPolicy, DefaultSessionPolicy>();
 
         return services;
     }

@@ -1,6 +1,5 @@
-using Microsoft.Extensions.Options;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
-using OpsCopilot.Governance.Application.Configuration;
+using OpsCopilot.Governance.Application.Services;
 
 namespace OpsCopilot.Governance.Application.Policies;
 
@@ -8,37 +7,27 @@ namespace OpsCopilot.Governance.Application.Policies;
 /// Config-driven token budget check. Always allows unless a budget is configured
 /// and the run would exceed it. Skeleton implementation — actual token tracking
 /// will be added in a future slice.
+/// Uses <see cref="ITenantAwareGovernanceOptionsResolver"/> for tenant-aware resolution.
 /// </summary>
 public sealed class DefaultTokenBudgetPolicy : ITokenBudgetPolicy
 {
-    private readonly GovernanceOptions _options;
+    private readonly ITenantAwareGovernanceOptionsResolver _resolver;
 
-    public DefaultTokenBudgetPolicy(IOptions<GovernanceOptions> options)
+    public DefaultTokenBudgetPolicy(ITenantAwareGovernanceOptionsResolver resolver)
     {
-        _options = options.Value;
+        _resolver = resolver;
     }
 
     public BudgetDecision CheckRunBudget(string tenantId, Guid runId)
     {
-        var maxTokens = ResolveTokenBudget(tenantId);
+        var resolved = _resolver.Resolve(tenantId);
 
         // No budget configured = unlimited
-        if (maxTokens is null)
+        if (resolved.TokenBudget is null)
             return BudgetDecision.Allow();
 
         // Skeleton: always allow but pass the cap forward.
         // Future slices will track actual token usage per run.
-        return BudgetDecision.Allow(maxTokens);
-    }
-
-    private int? ResolveTokenBudget(string tenantId)
-    {
-        if (_options.TenantOverrides.TryGetValue(tenantId, out var tenantOverride)
-            && tenantOverride.TokenBudget is not null)
-        {
-            return tenantOverride.TokenBudget;
-        }
-
-        return _options.Defaults.TokenBudget;
+        return BudgetDecision.Allow(resolved.TokenBudget);
     }
 }

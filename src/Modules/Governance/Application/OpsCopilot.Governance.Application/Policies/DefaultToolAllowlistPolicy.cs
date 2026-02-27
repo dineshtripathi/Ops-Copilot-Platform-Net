@@ -1,45 +1,34 @@
-using Microsoft.Extensions.Options;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
-using OpsCopilot.Governance.Application.Configuration;
+using OpsCopilot.Governance.Application.Services;
 
 namespace OpsCopilot.Governance.Application.Policies;
 
 /// <summary>
 /// Config-driven tool allowlist. Denies tools not in the allowlist.
 /// An empty allowlist means all tools are allowed.
+/// Uses <see cref="ITenantAwareGovernanceOptionsResolver"/> for tenant-aware resolution.
 /// </summary>
 public sealed class DefaultToolAllowlistPolicy : IToolAllowlistPolicy
 {
-    private readonly GovernanceOptions _options;
+    private readonly ITenantAwareGovernanceOptionsResolver _resolver;
 
-    public DefaultToolAllowlistPolicy(IOptions<GovernanceOptions> options)
+    public DefaultToolAllowlistPolicy(ITenantAwareGovernanceOptionsResolver resolver)
     {
-        _options = options.Value;
+        _resolver = resolver;
     }
 
     public PolicyDecision CanUseTool(string tenantId, string toolName)
     {
-        var allowedTools = ResolveAllowedTools(tenantId);
+        var resolved = _resolver.Resolve(tenantId);
 
         // Empty allowlist = everything is allowed
-        if (allowedTools.Count == 0)
+        if (resolved.AllowedTools.Count == 0)
             return PolicyDecision.Allow();
 
-        if (allowedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+        if (resolved.AllowedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase))
             return PolicyDecision.Allow();
 
         return PolicyDecision.Deny("TOOL_DENIED",
             $"Tool '{toolName}' is not in the allowlist for tenant '{tenantId}'.");
-    }
-
-    private List<string> ResolveAllowedTools(string tenantId)
-    {
-        if (_options.TenantOverrides.TryGetValue(tenantId, out var tenantOverride)
-            && tenantOverride.AllowedTools is not null)
-        {
-            return tenantOverride.AllowedTools;
-        }
-
-        return _options.Defaults.AllowedTools;
     }
 }

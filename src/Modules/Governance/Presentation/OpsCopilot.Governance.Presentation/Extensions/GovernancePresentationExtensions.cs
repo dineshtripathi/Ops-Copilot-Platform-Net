@@ -42,5 +42,9 @@ public static class GovernancePresentationExtensions
             govOpts.Defaults.TriageEnabled,
             govOpts.Defaults.TokenBudget?.ToString() ?? "unlimited",
             govOpts.TenantOverrides.Count);
+
+        logger.LogInformation(
+            "[Startup] Governance  Tenant-aware resolution active — priority: SQL-backed → config-file TenantOverrides → Defaults | SessionTtlMinutes={Ttl}",
+            govOpts.Defaults.SessionTtlMinutes);
     }
 }
