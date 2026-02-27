@@ -1,5 +1,11 @@
 # Slice 30 — Tenant-Aware Governance End-to-End Verification (STRICT) — Evidence
 
+> **Corrections (post-commit reconciliation)**
+>
+> 1. **Test totals**: Originally reported 352 — actual `dotnet test` total is **572** (all passing).
+> 2. **Section AF routes**: AF2/AF3 used non-existent `PUT /tenants/{id}/config/…` routes — corrected to `PUT /tenants/{id}/settings` with `{ key, value }` body. AF4 used `GET /tenants/{id}/config` — corrected to `GET /tenants/{id}/settings/resolved`.
+> 3. **SafeActions wording**: Section renamed from “SafeActions Proof Tests” to “Contract Compatibility Proof — PolicyDecision” to clarify that no SafeActions runtime behavior was altered.
+
 ## Summary
 
 Pure verification slice — no new production code. Proves that tenant config
@@ -20,10 +26,10 @@ Test-only and documentation additions.
 | # | Acceptance Criteria | Status | Evidence |
 |---|---------------------|--------|----------|
 | 1 | Cross-module integration tests (≥ 10) | ✅ | **12 tests** in `TenantGovernanceEndToEndTests.cs` |
-| 2 | SafeActions proof tests (≥ 2) | ✅ | **3 tests** in `SafeActionsGovernanceProofTests.cs` |
+| 2 | Contract compatibility proof tests (≥ 2) | ✅ | **3 tests** in `SafeActionsGovernanceProofTests.cs` |
 | 3 | `.http` Section AF (tenant-verify-30) with ≥ 6 requests | ✅ | `OpsCopilot.Api.http` — Section AF (AF1–AF6) |
 | 4 | Evidence document at `docs/dev-slice-30-evidence.md` | ✅ | This file |
-| 5 | Build 0 warnings/errors, all tests pass | ✅ | **352 tests**, 0 failures, 0 warnings |
+| 5 | Build 0 warnings/errors, all tests pass | ✅ | **572 tests**, 0 failures, 0 warnings |
 | 6 | No new production code, routes, DTOs, or schema changes | ✅ | Only test files and docs added/modified |
 
 ---
@@ -62,9 +68,9 @@ All tests wire **Mock `ITenantConfigResolver` → real `TenantConfigProviderAdap
 | 11 | `Adapter_DropsTriageEnabled_MapsRemainingFields` | 4-field `EffectiveTenantConfig` → 3-field `TenantGovernanceConfig` |
 | 12 | `FullChain_SqlOverridesConfigFile_SqlWins` | SQL values trump config-file override values |
 
-## SafeActions Proof Tests (3)
+## Contract Compatibility Proof — PolicyDecision (3)
 
-Prove the shared `PolicyDecision` contract from `BuildingBlocks.Contracts.Governance` works for SafeActions consumption. Uses the same governance chain to produce `PolicyDecision` values matching `ISafeActionPolicy`'s return type.
+Prove the shared `PolicyDecision` contract from `BuildingBlocks.Contracts.Governance` is compatible with SafeActions' consumption pattern. Uses the governance resolution chain to produce `PolicyDecision` values whose shape matches `ISafeActionPolicy`'s return type. **These tests do NOT alter SafeActions runtime decisions** — `DefaultSafeActionPolicy` (always-allow stub) remains unchanged.
 
 | # | Test Name | What It Proves |
 |---|-----------|----------------|
@@ -79,9 +85,9 @@ Prove the shared `PolicyDecision` contract from `BuildingBlocks.Contracts.Govern
 | # | Request | Purpose |
 |---|---------|---------|
 | AF1 | `POST /tenants` | Create second tenant `contoso-governance-30` |
-| AF2 | `PUT /tenants/{id}/config/AllowedTools` | Set `["runbook_search"]` (contrast with AE's `kql_query`) |
-| AF3 | `PUT /tenants/{id}/config/TokenBudget` | Set `10000` (contrast with AE's `500`) |
-| AF4 | `GET /tenants/{id}/config` | Verify second tenant's overrides |
+| AF2 | `PUT /tenants/{id}/settings` | Set `{ key: "Governance:AllowedTools", value: "[\"runbook_search\"]" }` |
+| AF3 | `PUT /tenants/{id}/settings` | Set `{ key: "Governance:TokenBudget", value: "10000" }` |
+| AF4 | `GET /tenants/{id}/settings/resolved` | Verify second tenant's resolved overrides |
 | AF5 | Triage with second tenant | Second tenant's restricted governance applies |
 | AF6 | Triage with first tenant (AE) | First tenant's governance isolation preserved |
 
@@ -90,12 +96,10 @@ Prove the shared `PolicyDecision` contract from `BuildingBlocks.Contracts.Govern
 ## Test Results
 
 ```
-Total tests:  352 (320 unit + 24 integration + 8 MCP contract)
-Failed:       0
-Warnings:     0
+Total tests:  572, failed: 0, succeeded: 572, skipped: 0
 Build:        0 Warning(s) 0 Error(s)
 
-Governance tests: 31 (12 cross-module + 3 SafeActions proof + 16 from Slice 29)
+Governance tests: 31 (12 cross-module + 3 contract-proof + 16 from Slice 29)
 ```
 
 ---
@@ -104,7 +108,7 @@ Governance tests: 31 (12 cross-module + 3 SafeActions proof + 16 from Slice 29)
 
 - **Test-only verification slice**: No production code was modified. All 15 new tests (12 integration + 3 proof) validate existing Slice 29 wiring without introducing new behavior.
 - **Governance test project hosts all cross-module tests**: Tests live in `OpsCopilot.Modules.Governance.Tests/CrossModule/` because they verify governance policy outcomes. The test project already has project references to Tenancy.Infrastructure and Contracts (added in Slice 29).
-- **SafeActions proof via shared `PolicyDecision`**: Instead of modifying SafeActions' always-allow `DefaultSafeActionPolicy` stub, proof tests demonstrate that the governance resolution chain produces `PolicyDecision` values (with `IsAllowed`, `ReasonCode`) compatible with SafeActions' consumption pattern. The shared `PolicyDecision` record in `BuildingBlocks.Contracts.Governance` bridges both modules.
+- **Contract compatibility proof via shared `PolicyDecision`**: `DefaultSafeActionPolicy` (always-allow stub) was NOT modified. Proof tests demonstrate that the governance resolution chain produces `PolicyDecision` values (with `IsAllowed`, `ReasonCode`) whose shape is compatible with SafeActions' consumption pattern. The shared `PolicyDecision` record in `BuildingBlocks.Contracts.Governance` bridges both modules. No SafeActions runtime decisions were altered.
 - **Full chain, no mocking of internal layers**: Tests mock only the outermost boundary (`ITenantConfigResolver`, representing the SQL data store) and use real implementations for adapter, resolver, and policies. This maximizes integration coverage.
 - **Cross-tenant isolation pattern**: Multiple tests verify that configuring governance for Tenant A does not affect Tenant B's policy evaluation, proving per-request tenant isolation.
 - **3-tier fallback demonstrated**: Tests cover all three tiers — SQL available (P1), SQL unavailable with config-file fallback (P2), and default fallback (P3) — proving the cascade works end-to-end.

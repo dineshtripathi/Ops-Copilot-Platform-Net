@@ -1523,20 +1523,24 @@ Content-Type: application/json
 # Only runbook_search is allowed — kql_query is NOT.
 # Contrast with AE2 which allowed only kql_query.
 # @name setAllowedToolsAF
-PUT {{baseUrl}}/tenants/{{createGovTenantAF.response.body.tenantId}}/config/Governance:AllowedTools
+PUT {{baseUrl}}/tenants/{{createGovTenantAF.response.body.tenantId}}/settings
 Content-Type: application/json
+x-identity: admin@contoso.com
 
 {
+  "key": "Governance:AllowedTools",
   "value": "[\"runbook_search\"]"
 }
 
 ### AF3 · Set high TokenBudget for the second tenant → 200 OK
 # 10000 tokens — contrast with AE3's 500.
 # @name setTokenBudgetAF
-PUT {{baseUrl}}/tenants/{{createGovTenantAF.response.body.tenantId}}/config/Governance:TokenBudget
+PUT {{baseUrl}}/tenants/{{createGovTenantAF.response.body.tenantId}}/settings
 Content-Type: application/json
+x-identity: admin@contoso.com
 
 {
+  "key": "Governance:TokenBudget",
   "value": "10000"
 }
 
@@ -1544,7 +1548,8 @@ Content-Type: application/json
 # Should show AllowedTools=["runbook_search"], TokenBudget=10000.
 # NOT the first tenant's kql_query/500.
 # @name verifyGovTenantAF
-GET {{baseUrl}}/tenants/{{createGovTenantAF.response.body.tenantId}}/config
+GET {{baseUrl}}/tenants/{{createGovTenantAF.response.body.tenantId}}/settings/resolved
+Accept: application/json
 
 ### AF5 · Triage with second tenant → second tenant's governance applies
 # The x-tenant-id header routes governance to the second tenant SQL config.
