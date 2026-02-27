@@ -24,6 +24,8 @@
 ###   AB. Connectors MVP — internal-only (Dev Slice 26)
 ###   AC. Platform Reporting (Dev Slice 27)
 ###   AD. Tenancy + Governance Config Store (Dev Slice 28)
+###   AE. Tenant-Aware Governance Resolution (Dev Slice 29)
+###   AF. Tenant-Aware Governance Verification (Dev Slice 30)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -1486,5 +1488,94 @@ Content-Type: application/json
     "alertSource": "Azure Monitor",
     "fingerprint": "slice29-gov-default-01",
     "title": "Slice 29 — triage with governance defaults (no tenant)"
+  }
+}
+
+###########################################################################
+# AF · Slice 30 — Tenant-Aware Governance End-to-End Verification
+#
+# Pure verification — no new routes, no schema changes.
+# Re-uses existing endpoints to PROVE that tenant-specific governance
+# config (SQL → adapter → resolver → policy) drives runtime behavior.
+#
+# Requests reference the tenant created in AE1 to demonstrate
+# isolation, fallback, and multi-tenant differentiation.
+#   - AF1: Create a second tenant for cross-tenant comparison
+#   - AF2: Set restrictive AllowedTools for the second tenant
+#   - AF3: Set high TokenBudget for the second tenant
+#   - AF4: Verify second tenant config reflects its own overrides
+#   - AF5: Triage with second tenant → its restricted governance applies
+#   - AF6: Triage with first tenant → still uses AE overrides (isolation)
+###########################################################################
+
+@tenantAF_name = contoso-governance-30
+
+### AF1 · Create a second tenant for cross-tenant governance verification → 201 Created
+# @name createGovTenantAF
+POST {{baseUrl}}/tenants
+Content-Type: application/json
+
+{
+  "name": "{{tenantAF_name}}"
+}
+
+### AF2 · Set restrictive AllowedTools for the second tenant → 200 OK
+# Only runbook_search is allowed — kql_query is NOT.
+# Contrast with AE2 which allowed only kql_query.
+# @name setAllowedToolsAF
+PUT {{baseUrl}}/tenants/{{createGovTenantAF.response.body.tenantId}}/config/Governance:AllowedTools
+Content-Type: application/json
+
+{
+  "value": "[\"runbook_search\"]"
+}
+
+### AF3 · Set high TokenBudget for the second tenant → 200 OK
+# 10000 tokens — contrast with AE3's 500.
+# @name setTokenBudgetAF
+PUT {{baseUrl}}/tenants/{{createGovTenantAF.response.body.tenantId}}/config/Governance:TokenBudget
+Content-Type: application/json
+
+{
+  "value": "10000"
+}
+
+### AF4 · Verify second tenant config shows its own overrides → 200 OK
+# Should show AllowedTools=["runbook_search"], TokenBudget=10000.
+# NOT the first tenant's kql_query/500.
+# @name verifyGovTenantAF
+GET {{baseUrl}}/tenants/{{createGovTenantAF.response.body.tenantId}}/config
+
+### AF5 · Triage with second tenant → second tenant's governance applies
+# The x-tenant-id header routes governance to the second tenant SQL config.
+# AllowedTools=["runbook_search"] from AF2, TokenBudget=10000 from AF3.
+# @name triageWithTenantAF
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{createGovTenantAF.response.body.tenantId}}
+
+{
+  "alert": {
+    "severity": "Sev1",
+    "alertSource": "Azure Monitor",
+    "fingerprint": "slice30-gov-tenant-af-01",
+    "title": "Slice 30 — triage with second tenant's governance (runbook_search only)"
+  }
+}
+
+### AF6 · Triage with first tenant → first tenant's AE overrides still apply (isolation)
+# The first tenant (from AE1) retains AllowedTools=["kql_query"], TokenBudget=500.
+# Proves tenant isolation — second tenant's config does not bleed over.
+# @name triageFirstTenantIsolation
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{createGovTenant.response.body.tenantId}}
+
+{
+  "alert": {
+    "severity": "Sev2",
+    "alertSource": "Azure Monitor",
+    "fingerprint": "slice30-gov-isolation-01",
+    "title": "Slice 30 — triage with first tenant proves isolation from second tenant"
   }
 }
