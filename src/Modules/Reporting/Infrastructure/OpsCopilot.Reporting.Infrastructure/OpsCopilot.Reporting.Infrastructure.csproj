@@ -19,6 +19,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Application\OpsCopilot.Reporting.Application\OpsCopilot.Reporting.Application.csproj" />
     <ProjectReference Include="..\..\Domain\OpsCopilot.Reporting.Domain\OpsCopilot.Reporting.Domain.csproj" />
+    <ProjectReference Include="..\..\..\Connectors\Abstractions\OpsCopilot.Connectors.Abstractions\OpsCopilot.Connectors.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Evaluation\Application\OpsCopilot.Evaluation.Application\OpsCopilot.Evaluation.Application.csproj" />
+    <ProjectReference Include="..\..\..\SafeActions\Application\OpsCopilot.SafeActions.Application\OpsCopilot.SafeActions.Application.csproj" />
   </ItemGroup>
 
 </Project>

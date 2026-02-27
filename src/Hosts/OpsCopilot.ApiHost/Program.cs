@@ -116,8 +116,9 @@ app.MapGet("/healthz", () => Results.Ok("healthy"))
 app.MapAlertIngestionEndpoints();   // POST /ingest/alert
 app.MapAgentRunEndpoints();         // POST /agent/triage
 app.MapSafeActionEndpoints();       // /safe-actions/*
-app.MapReportingEndpoints();        // /reports/safe-actions/*
-app.MapEvaluationEndpoints();       // /evaluation/*
+app.MapReportingEndpoints();            // /reports/safe-actions/*
+app.MapPlatformReportingEndpoints();    // /reports/platform/*
+app.MapEvaluationEndpoints();           // /evaluation/*
 
 app.Run();
 

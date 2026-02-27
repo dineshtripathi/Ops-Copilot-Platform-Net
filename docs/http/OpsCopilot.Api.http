@@ -1315,3 +1315,22 @@ Accept: application/json
 # Connectors are resolved via IConnectorRegistry through DI.
 # See tests/Modules/Connectors for coverage.
 ###########################################################################
+
+###########################################################################
+# AC · Slice 27 — Platform Reporting (Evaluation + Connector Awareness)
+###########################################################################
+
+### AC1 · Evaluation summary report → 200 OK
+# @name evaluationSummaryReport
+GET {{baseUrl}}/reports/platform/evaluation-summary
+Accept: application/json
+
+### AC2 · Connector inventory report → 200 OK
+# @name connectorInventoryReport
+GET {{baseUrl}}/reports/platform/connectors
+Accept: application/json
+
+### AC3 · Platform readiness report → 200 OK
+# @name platformReadinessReport
+GET {{baseUrl}}/reports/platform/readiness
+Accept: application/json

@@ -25,6 +25,7 @@ public static class ReportingInfrastructureExtensions
             }));
 
         services.AddScoped<IReportingQueryService, ReportingQueryService>();
+        services.AddSingleton<IPlatformReportingQueryService, PlatformReportingQueryService>();
 
         return services;
     }
