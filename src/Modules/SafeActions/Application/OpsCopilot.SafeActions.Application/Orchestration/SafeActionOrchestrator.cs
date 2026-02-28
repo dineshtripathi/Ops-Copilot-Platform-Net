@@ -22,6 +22,7 @@ public sealed class SafeActionOrchestrator
     private readonly ITenantExecutionPolicy             _tenantExecutionPolicy;
     private readonly IActionTypeCatalog                 _catalog;
     private readonly ISafeActionsTelemetry              _telemetry;
+    private readonly IGovernancePolicyClient            _governanceClient;
     private readonly ILogger<SafeActionOrchestrator>    _logger;
 
     public SafeActionOrchestrator(
@@ -31,6 +32,7 @@ public sealed class SafeActionOrchestrator
         ITenantExecutionPolicy          tenantExecutionPolicy,
         IActionTypeCatalog              catalog,
         ISafeActionsTelemetry           telemetry,
+        IGovernancePolicyClient         governanceClient,
         ILogger<SafeActionOrchestrator> logger)
     {
         _repository             = repository;
@@ -39,6 +41,7 @@ public sealed class SafeActionOrchestrator
         _tenantExecutionPolicy  = tenantExecutionPolicy;
         _catalog                = catalog;
         _telemetry              = telemetry;
+        _governanceClient       = governanceClient;
         _logger                 = logger;
     }
 
@@ -74,6 +77,17 @@ public sealed class SafeActionOrchestrator
                 "Policy denied action {ActionType} for tenant {TenantId}: {ReasonCode}",
                 actionType, tenantId, decision.ReasonCode);
             throw new PolicyDeniedException(decision.ReasonCode, decision.Message);
+        }
+
+        // ── Governance tool allowlist — denied tools never reach proposal ───
+        var govToolDecision = _governanceClient.EvaluateToolAllowlist(tenantId, actionType);
+        if (!govToolDecision.Allowed)
+        {
+            _telemetry.RecordPolicyDenied(actionType, tenantId);
+            _logger.LogWarning(
+                "Governance tool allowlist denied {ActionType} for tenant {TenantId}: {ReasonCode}",
+                actionType, tenantId, govToolDecision.ReasonCode);
+            throw new PolicyDeniedException("governance_tool_denied", govToolDecision.Message);
         }
 
         _logger.LogInformation(
@@ -165,6 +179,37 @@ public sealed class SafeActionOrchestrator
                 tenantDecision.ReasonCode);
             throw new PolicyDeniedException(
                 tenantDecision.ReasonCode, tenantDecision.Message);
+        }
+
+        // ── Governance tool allowlist ────────────────────────────
+        var govToolDecision = _governanceClient.EvaluateToolAllowlist(
+            record.TenantId, record.ActionType);
+        if (!govToolDecision.Allowed)
+        {
+            _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
+            _logger.LogWarning(
+                "Governance tool allowlist denied execute for action {ActionRecordId} "
+                + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
+                actionRecordId, record.ActionType, record.TenantId,
+                govToolDecision.ReasonCode);
+            throw new PolicyDeniedException(
+                "governance_tool_denied", govToolDecision.Message);
+        }
+
+        // ── Governance token budget ─────────────────────────────
+        var requestedTokens = Math.Min(8192, record.ProposedPayloadJson.Length / 4);
+        var govBudgetDecision = _governanceClient.EvaluateTokenBudget(
+            record.TenantId, record.ActionType, requestedTokens);
+        if (!govBudgetDecision.Allowed)
+        {
+            _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
+            _logger.LogWarning(
+                "Governance token budget denied execute for action {ActionRecordId} "
+                + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
+                actionRecordId, record.ActionType, record.TenantId,
+                govBudgetDecision.ReasonCode);
+            throw new PolicyDeniedException(
+                "governance_budget_exceeded", govBudgetDecision.Message);
         }
 
         // ── Replay guard — only Approved records may begin execution ──
@@ -299,9 +344,40 @@ public sealed class SafeActionOrchestrator
                 tenantDecision.ReasonCode, tenantDecision.Message);
         }
 
+        // ── Governance tool allowlist ────────────────────────────
+        var govToolDecision = _governanceClient.EvaluateToolAllowlist(
+            record.TenantId, record.ActionType);
+        if (!govToolDecision.Allowed)
+        {
+            _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
+            _logger.LogWarning(
+                "Governance tool allowlist denied rollback-execute for action {ActionRecordId} "
+                + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
+                actionRecordId, record.ActionType, record.TenantId,
+                govToolDecision.ReasonCode);
+            throw new PolicyDeniedException(
+                "governance_tool_denied", govToolDecision.Message);
+        }
+
         if (record.RollbackPayloadJson is null)
             throw new InvalidOperationException(
                 $"Action {actionRecordId} has no rollback payload.");
+
+        // ── Governance token budget ─────────────────────────────
+        var rollbackTokens = Math.Min(8192, record.RollbackPayloadJson.Length / 4);
+        var govBudgetDecision = _governanceClient.EvaluateTokenBudget(
+            record.TenantId, record.ActionType, rollbackTokens);
+        if (!govBudgetDecision.Allowed)
+        {
+            _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
+            _logger.LogWarning(
+                "Governance token budget denied rollback-execute for action {ActionRecordId} "
+                + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
+                actionRecordId, record.ActionType, record.TenantId,
+                govBudgetDecision.ReasonCode);
+            throw new PolicyDeniedException(
+                "governance_budget_exceeded", govBudgetDecision.Message);
+        }
 
         // ── Replay guard — only RollbackApproved records may begin rollback execution ──
         if (record.RollbackStatus is not RollbackStatus.Approved)

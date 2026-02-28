@@ -1584,3 +1584,79 @@ x-tenant-id: {{createGovTenant.response.body.tenantId}}
     "title": "Slice 30 — triage with first tenant proves isolation from second tenant"
   }
 }
+
+###############################################################################
+# Section AG — Slice 31: SafeActions Governance Enforcement
+###############################################################################
+
+### AG1 — Propose an action (governance tool allow-listed → 200 Proposed)
+# @name proposeGovAction
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "correlationId": "{{$guid}}",
+  "actionType": "restart_pod",
+  "proposedPayloadJson": "{\"target\":\"pod-gov-1\"}",
+  "rollbackPayloadJson": "{\"undo\":\"stop_pod\"}",
+  "dryRun": false
+}
+
+### AG2 — Approve, then execute (governance allows both tool + budget → 200 Completed)
+# @name approveGovAction
+POST {{baseUrl}}/safe-actions/{{proposeGovAction.response.body.id}}/approve
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+###
+# @name executeGovAction
+POST {{baseUrl}}/safe-actions/{{proposeGovAction.response.body.id}}/execute
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+### AG3 — Propose + approve + execute + request-rollback + approve-rollback + rollback
+# @name proposeGovRollback
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "correlationId": "{{$guid}}",
+  "actionType": "restart_pod",
+  "proposedPayloadJson": "{\"target\":\"pod-gov-2\"}",
+  "rollbackPayloadJson": "{\"undo\":\"stop_pod\"}",
+  "dryRun": false
+}
+
+###
+POST {{baseUrl}}/safe-actions/{{proposeGovRollback.response.body.id}}/approve
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+###
+POST {{baseUrl}}/safe-actions/{{proposeGovRollback.response.body.id}}/execute
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+###
+POST {{baseUrl}}/safe-actions/{{proposeGovRollback.response.body.id}}/request-rollback
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+###
+POST {{baseUrl}}/safe-actions/{{proposeGovRollback.response.body.id}}/approve-rollback
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+###
+# @name rollbackGovAction
+POST {{baseUrl}}/safe-actions/{{proposeGovRollback.response.body.id}}/rollback
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+### AG4 — Verify governance audit trail via query
+# @name queryGovActions
+GET {{baseUrl}}/safe-actions?tenantId={{tenantId}}&actionType=restart_pod
+Content-Type: application/json
+x-tenant-id: {{tenantId}}

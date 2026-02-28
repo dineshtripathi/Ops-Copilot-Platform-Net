@@ -67,6 +67,9 @@ public class SafeActionsTelemetryTests
             tenantPolicy.Object,
             catalog.Object,
             telemetry.Object,
+            Mock.Of<IGovernancePolicyClient>(g =>
+                g.EvaluateToolAllowlist(It.IsAny<string>(), It.IsAny<string>()) == PolicyDecision.Allow() &&
+                g.EvaluateTokenBudget(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>()) == BudgetDecision.Allow(8192)),
             Mock.Of<ILogger<SafeActionOrchestrator>>());
     }
 

@@ -91,6 +91,9 @@ public static class SafeActionsInfrastructureExtensions
         // ── ActionType catalog (allow-all when config empty) ────────
         services.AddSingleton<IActionTypeCatalog, ConfigActionTypeCatalog>();
 
+        // ── Governance bridge (delegates to BuildingBlocks contracts) ────
+        services.AddScoped<IGovernancePolicyClient, GovernancePolicyClient>();
+
         // ── Startup diagnostics (counts only, no tenant names) ──────
         using var sp = services.BuildServiceProvider();
         var logger = sp.GetRequiredService<ILoggerFactory>()

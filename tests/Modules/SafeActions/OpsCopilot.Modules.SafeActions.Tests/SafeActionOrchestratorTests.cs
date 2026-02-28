@@ -35,7 +35,8 @@ public class SafeActionOrchestratorTests
         Mock<ISafeActionPolicy>? policy = null,
         Mock<ITenantExecutionPolicy>? tenantPolicy = null,
         Mock<IActionTypeCatalog>? catalog = null,
-        Mock<ISafeActionsTelemetry>? telemetry = null)
+        Mock<ISafeActionsTelemetry>? telemetry = null,
+        Mock<IGovernancePolicyClient>? governanceClient = null)
     {
         executor ??= new Mock<IActionExecutor>(MockBehavior.Strict);
 
@@ -59,6 +60,15 @@ public class SafeActionOrchestratorTests
             catalog.Setup(c => c.IsAllowlisted(It.IsAny<string>())).Returns(true);
         }
 
+        if (governanceClient is null)
+        {
+            governanceClient = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+            governanceClient.Setup(g => g.EvaluateToolAllowlist(It.IsAny<string>(), It.IsAny<string>()))
+                            .Returns(PolicyDecision.Allow());
+            governanceClient.Setup(g => g.EvaluateTokenBudget(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>()))
+                            .Returns(BudgetDecision.Allow(8192));
+        }
+
         return new SafeActionOrchestrator(
             repo.Object,
             executor.Object,
@@ -66,6 +76,7 @@ public class SafeActionOrchestratorTests
             tenantPolicy.Object,
             catalog.Object,
             (telemetry ?? new Mock<ISafeActionsTelemetry>()).Object,
+            governanceClient.Object,
             Mock.Of<ILogger<SafeActionOrchestrator>>());
     }
 
@@ -865,5 +876,437 @@ public class SafeActionOrchestratorTests
             It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ── Governance: ProposeAsync ─────────────────────────────────────
+
+    [Fact]
+    public async Task ProposeAsync_Throws_PolicyDenied_When_Governance_Tool_Denied()
+    {
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked by governance"));
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ProposeAsync("t-1", Guid.NewGuid(), "restart_pod", "{}", null, null));
+
+        Assert.Equal("governance_tool_denied", ex.ReasonCode);
+    }
+
+    [Fact]
+    public async Task ProposeAsync_Governance_Tool_Denied_Never_Creates_Record()
+    {
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked"));
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ProposeAsync("t-1", Guid.NewGuid(), "restart_pod", "{}", null, null));
+
+        repo.Verify(r => r.CreateActionRecordAsync(
+            It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeAsync_Governance_Tool_Denied_Records_Telemetry()
+    {
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        var telemetry = new Mock<ISafeActionsTelemetry>();
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked"));
+
+        var orchestrator = CreateOrchestrator(repo, telemetry: telemetry, governanceClient: gov);
+
+        await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ProposeAsync("t-1", Guid.NewGuid(), "restart_pod", "{}", null, null));
+
+        telemetry.Verify(t => t.RecordPolicyDenied("restart_pod", "t-1"), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProposeAsync_Governance_Tool_Allowed_Proceeds_To_Create()
+    {
+        var expected = CreateProposedRecord();
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.CreateActionRecordAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        var result = await orchestrator.ProposeAsync("t-1", Guid.NewGuid(), "restart_pod", "{}", null, null);
+
+        Assert.Equal(ActionStatus.Proposed, result.Status);
+    }
+
+    // ── Governance: ExecuteAsync ─────────────────────────────────────
+
+    [Fact]
+    public async Task ExecuteAsync_Throws_PolicyDenied_When_Governance_Tool_Denied()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked by governance"));
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        Assert.Equal("governance_tool_denied", ex.ReasonCode);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Throws_PolicyDenied_When_Governance_Budget_Exceeded()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns(BudgetDecision.Deny("governance_budget_exceeded", "Token budget exhausted"));
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        Assert.Equal("governance_budget_exceeded", ex.ReasonCode);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Governance_Budget_Denied_Records_Telemetry()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var telemetry = new Mock<ISafeActionsTelemetry>();
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns(BudgetDecision.Deny("governance_budget_exceeded", "Token budget exhausted"));
+
+        var orchestrator = CreateOrchestrator(repo, telemetry: telemetry, governanceClient: gov);
+
+        await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        telemetry.Verify(t => t.RecordPolicyDenied("restart_pod", "t-1"), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Governance_Both_Allowed_Proceeds_To_Execute()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+        repo.Setup(r => r.SaveAsync(record, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.AppendExecutionLogAsync(It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var executor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        executor.Setup(e => e.ExecuteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ActionExecutionResult(true, "{\"ok\":true}", 42));
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns(BudgetDecision.Allow(8192));
+
+        var orchestrator = CreateOrchestrator(repo, executor, governanceClient: gov);
+
+        var result = await orchestrator.ExecuteAsync(record.ActionRecordId);
+
+        Assert.Equal(ActionStatus.Completed, result.Status);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Governance_Tool_Check_Runs_Before_Budget_Check()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var callOrder = new List<string>();
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(() =>
+           {
+               callOrder.Add("tool");
+               return PolicyDecision.Deny("governance_tool_denied", "Tool blocked");
+           });
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns(() =>
+           {
+               callOrder.Add("budget");
+               return BudgetDecision.Deny("governance_budget_exceeded", "Budget exceeded");
+           });
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        Assert.Single(callOrder);
+        Assert.Equal("tool", callOrder[0]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Governance_Budget_Uses_Correct_Token_Count()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var expectedTokens = Math.Min(8192, record.ProposedPayloadJson.Length / 4);
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        int? capturedTokens = null;
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns((string _, string _, int? tokens) =>
+           {
+               capturedTokens = tokens;
+               return BudgetDecision.Deny("governance_budget_exceeded", "Denied");
+           });
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        Assert.Equal(expectedTokens, capturedTokens);
+    }
+
+    // ── Governance: ExecuteRollbackAsync ─────────────────────────────
+
+    [Fact]
+    public async Task ExecuteRollbackAsync_Throws_PolicyDenied_When_Governance_Tool_Denied()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{}", "{\"ok\":true}");
+        record.RequestRollback();
+        record.ApproveRollback();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked by governance"));
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
+
+        Assert.Equal("governance_tool_denied", ex.ReasonCode);
+    }
+
+    [Fact]
+    public async Task ExecuteRollbackAsync_Throws_PolicyDenied_When_Governance_Budget_Exceeded()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{}", "{\"ok\":true}");
+        record.RequestRollback();
+        record.ApproveRollback();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns(BudgetDecision.Deny("governance_budget_exceeded", "Token budget exhausted"));
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
+
+        Assert.Equal("governance_budget_exceeded", ex.ReasonCode);
+    }
+
+    [Fact]
+    public async Task ExecuteRollbackAsync_Governance_Budget_Denied_Records_Telemetry()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{}", "{\"ok\":true}");
+        record.RequestRollback();
+        record.ApproveRollback();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var telemetry = new Mock<ISafeActionsTelemetry>();
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns(BudgetDecision.Deny("governance_budget_exceeded", "Token budget exhausted"));
+
+        var orchestrator = CreateOrchestrator(repo, telemetry: telemetry, governanceClient: gov);
+
+        await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
+
+        telemetry.Verify(t => t.RecordPolicyDenied("restart_pod", "t-1"), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteRollbackAsync_Governance_Both_Allowed_Proceeds_To_Rollback()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{}", "{\"ok\":true}");
+        record.RequestRollback();
+        record.ApproveRollback();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+        repo.Setup(r => r.SaveAsync(record, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.AppendExecutionLogAsync(It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var executor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        executor.Setup(e => e.RollbackAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ActionExecutionResult(true, "{\"rolled_back\":true}", 10));
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns(BudgetDecision.Allow(8192));
+
+        var orchestrator = CreateOrchestrator(repo, executor, governanceClient: gov);
+
+        var result = await orchestrator.ExecuteRollbackAsync(record.ActionRecordId);
+
+        Assert.Equal(RollbackStatus.RolledBack, result.RollbackStatus);
+    }
+
+    [Fact]
+    public async Task ExecuteRollbackAsync_Governance_Tool_Check_Runs_Before_Null_Payload_Check()
+    {
+        // Record created WITHOUT rollback payload -> RollbackPayloadJson is null, RollbackStatus is None
+        var record = ActionRecord.Create("t-1", Guid.NewGuid(), "restart_pod", "{\"target\":\"pod-1\"}");
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{}", "{\"ok\":true}");
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked"));
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        // Should get PolicyDeniedException for tools, NOT InvalidOperationException for null payload
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
+
+        Assert.Equal("governance_tool_denied", ex.ReasonCode);
+    }
+
+    [Fact]
+    public async Task ExecuteRollbackAsync_Governance_Budget_Uses_Correct_Token_Count()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{}", "{\"ok\":true}");
+        record.RequestRollback();
+        record.ApproveRollback();
+
+        var expectedTokens = Math.Min(8192, record.RollbackPayloadJson!.Length / 4);
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        int? capturedTokens = null;
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns((string _, string _, int? tokens) =>
+           {
+               capturedTokens = tokens;
+               return BudgetDecision.Deny("governance_budget_exceeded", "Denied");
+           });
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
+
+        Assert.Equal(expectedTokens, capturedTokens);
     }
 }
