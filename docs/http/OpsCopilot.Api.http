@@ -26,6 +26,8 @@
 ###   AD. Tenancy + Governance Config Store (Dev Slice 28)
 ###   AE. Tenant-Aware Governance Resolution (Dev Slice 29)
 ###   AF. Tenant-Aware Governance Verification (Dev Slice 30)
+###   AG. SafeActions Governance Enforcement (Dev Slice 31)
+###   AH. SafeActions Governance Denial Normalization (Dev Slice 31.1)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -1660,3 +1662,92 @@ x-tenant-id: {{tenantId}}
 GET {{baseUrl}}/safe-actions?tenantId={{tenantId}}&actionType=restart_pod
 Content-Type: application/json
 x-tenant-id: {{tenantId}}
+
+###############################################################################
+# Section AH — Slice 31.1: SafeActions Governance Denial Normalization
+#
+# GovernanceDenialMapper now produces structured, frozen reason codes
+# regardless of what the upstream governance service returns:
+#
+#   Tool deny  → reasonCode = "governance_tool_denied"
+#     Message : "Denied by governance tool allowlist (policyReason=<raw>): <msg>"
+#
+#   Budget deny → reasonCode = "governance_budget_exceeded"
+#     Message : "Denied by governance token budget (policyReason=<raw>,
+#                requestedTokens=<n>, maxTokens=<m|null>): <msg>"
+#
+#   MaxTokens enforcement → reasonCode = "governance_budget_exceeded"
+#     Fires when BudgetDecision.Allowed=true but requestedTokens > MaxTokens.
+#     Message : same budget-deny format with policyReason=ALLOWED.
+#
+# All denial scenarios below return HTTP 422 with a ProblemDetails body
+# containing the frozen reasonCode and the structured message.
+###############################################################################
+
+### AH1 — Propose denied by governance tool allowlist
+# Action type "forbidden_action" is not in the tenant's tool allowlist.
+# Expected: 422 with reasonCode="governance_tool_denied"
+#           message contains "Denied by governance tool allowlist (policyReason=governance_tool_denied)"
+# @name proposeGovToolDeny
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "correlationId": "{{$guid}}",
+  "actionType": "forbidden_action",
+  "proposedPayloadJson": "{\"target\":\"pod-deny-1\"}",
+  "rollbackPayloadJson": "{\"undo\":\"stop_pod\"}",
+  "dryRun": false
+}
+
+### AH2 — Execute denied by governance token budget
+# Tenant's token budget is exhausted.
+# Expected: 422 with reasonCode="governance_budget_exceeded"
+#           message contains "Denied by governance token budget"
+#           message contains "requestedTokens=" and "maxTokens=null"
+# Prerequisite: first propose + approve a valid action (use AG1 + AG2 approve)
+# @name executeGovBudgetDeny
+POST {{baseUrl}}/safe-actions/{{proposeGovAction.response.body.id}}/execute
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+### AH3 — Execute denied by MaxTokens cap (budget allowed but tokens exceed cap)
+# Tenant's budget allows the action but caps MaxTokens below the payload size.
+# BudgetDecision.Allowed=true, MaxTokens=1, but payload needs ~4 tokens.
+# Expected: 422 with reasonCode="governance_budget_exceeded"
+#           message contains "policyReason=ALLOWED"
+#           message contains "maxTokens=1"
+# @name executeGovMaxTokensDeny
+POST {{baseUrl}}/safe-actions/{{proposeGovAction.response.body.id}}/execute
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+### AH4 — Rollback denied by governance token budget
+# Same budget-deny as AH2, but on rollback path.
+# Expected: 422 with reasonCode="governance_budget_exceeded"
+#           message contains "Denied by governance token budget"
+# Prerequisite: full lifecycle up to approved-rollback state (use AG3)
+# @name rollbackGovBudgetDeny
+POST {{baseUrl}}/safe-actions/{{proposeGovRollback.response.body.id}}/rollback
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+### AH5 — Tool deny preserves arbitrary upstream policyReason in message
+# Even when governance returns a custom reason like "CUSTOM_TOOL_BLOCK_42",
+# the HTTP response still uses the frozen reasonCode "governance_tool_denied".
+# The original policyReason appears only inside the structured message.
+# Expected: 422 with reasonCode="governance_tool_denied"
+#           message contains "policyReason=CUSTOM_TOOL_BLOCK_42"
+# @name proposeGovArbitraryDeny
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "correlationId": "{{$guid}}",
+  "actionType": "custom_blocked_action",
+  "proposedPayloadJson": "{\"target\":\"pod-custom-1\"}",
+  "rollbackPayloadJson": "{\"undo\":\"stop_pod\"}",
+  "dryRun": false
+}

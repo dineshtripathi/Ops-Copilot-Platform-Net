@@ -895,6 +895,8 @@ public class SafeActionOrchestratorTests
             () => orchestrator.ProposeAsync("t-1", Guid.NewGuid(), "restart_pod", "{}", null, null));
 
         Assert.Equal("governance_tool_denied", ex.ReasonCode);
+        Assert.Contains("Denied by governance tool allowlist", ex.Message);
+        Assert.Contains("policyReason=governance_tool_denied", ex.Message);
     }
 
     [Fact]
@@ -979,6 +981,8 @@ public class SafeActionOrchestratorTests
             () => orchestrator.ExecuteAsync(record.ActionRecordId));
 
         Assert.Equal("governance_tool_denied", ex.ReasonCode);
+        Assert.Contains("Denied by governance tool allowlist", ex.Message);
+        Assert.Contains("policyReason=governance_tool_denied", ex.Message);
     }
 
     [Fact]
@@ -1003,6 +1007,120 @@ public class SafeActionOrchestratorTests
             () => orchestrator.ExecuteAsync(record.ActionRecordId));
 
         Assert.Equal("governance_budget_exceeded", ex.ReasonCode);
+        Assert.Contains("Denied by governance token budget", ex.Message);
+        Assert.Contains("policyReason=governance_budget_exceeded", ex.Message);
+        Assert.Contains("requestedTokens=", ex.Message);
+        Assert.Contains("maxTokens=null", ex.Message);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Throws_PolicyDenied_When_Budget_Allowed_But_MaxTokens_Exceeded()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns(BudgetDecision.Allow(1)); // MaxTokens=1, requestedTokens will exceed
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        Assert.Equal("governance_budget_exceeded", ex.ReasonCode);
+        Assert.Contains("Denied by governance token budget", ex.Message);
+        Assert.Contains("policyReason=ALLOWED", ex.Message);
+        Assert.Contains("maxTokens=1", ex.Message);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MaxTokens_Enforcement_Records_Telemetry()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var telemetry = new Mock<ISafeActionsTelemetry>();
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns(BudgetDecision.Allow(1)); // MaxTokens=1, will be exceeded
+
+        var orchestrator = CreateOrchestrator(repo, telemetry: telemetry, governanceClient: gov);
+
+        await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        telemetry.Verify(t => t.RecordPolicyDenied("restart_pod", "t-1"), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Budget_Allowed_Null_MaxTokens_Skips_Enforcement()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+        repo.Setup(r => r.SaveAsync(record, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.AppendExecutionLogAsync(It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var executor = new Mock<IActionExecutor>(MockBehavior.Strict);
+        executor.Setup(e => e.ExecuteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ActionExecutionResult(true, "{\"ok\":true}", 42));
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns(BudgetDecision.Allow()); // MaxTokens=null → enforcement skipped
+
+        var orchestrator = CreateOrchestrator(repo, executor, governanceClient: gov);
+
+        var result = await orchestrator.ExecuteAsync(record.ActionRecordId);
+
+        Assert.Equal(ActionStatus.Completed, result.Status);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Tool_Deny_Normalizes_Arbitrary_PolicyReason()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Deny("CUSTOM_TOOL_BLOCK_42", "Arbitrary deny reason"));
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteAsync(record.ActionRecordId));
+
+        // Frozen code — always "governance_tool_denied" regardless of raw policy reason
+        Assert.Equal("governance_tool_denied", ex.ReasonCode);
+        // Raw policy reason preserved in structured message
+        Assert.Contains("policyReason=CUSTOM_TOOL_BLOCK_42", ex.Message);
+        Assert.Contains("Arbitrary deny reason", ex.Message);
     }
 
     [Fact]
@@ -1154,6 +1272,8 @@ public class SafeActionOrchestratorTests
             () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
 
         Assert.Equal("governance_tool_denied", ex.ReasonCode);
+        Assert.Contains("Denied by governance tool allowlist", ex.Message);
+        Assert.Contains("policyReason=governance_tool_denied", ex.Message);
     }
 
     [Fact]
@@ -1182,6 +1302,41 @@ public class SafeActionOrchestratorTests
             () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
 
         Assert.Equal("governance_budget_exceeded", ex.ReasonCode);
+        Assert.Contains("Denied by governance token budget", ex.Message);
+        Assert.Contains("policyReason=governance_budget_exceeded", ex.Message);
+        Assert.Contains("requestedTokens=", ex.Message);
+        Assert.Contains("maxTokens=null", ex.Message);
+    }
+
+    [Fact]
+    public async Task ExecuteRollbackAsync_Throws_PolicyDenied_When_Budget_Allowed_But_MaxTokens_Exceeded()
+    {
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{}", "{\"ok\":true}");
+        record.RequestRollback();
+        record.ApproveRollback();
+
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
+        gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
+           .Returns(PolicyDecision.Allow());
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+           .Returns(BudgetDecision.Allow(1)); // MaxTokens=1, rollbackTokens will exceed
+
+        var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
+
+        var ex = await Assert.ThrowsAsync<PolicyDeniedException>(
+            () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
+
+        Assert.Equal("governance_budget_exceeded", ex.ReasonCode);
+        Assert.Contains("Denied by governance token budget", ex.Message);
+        Assert.Contains("policyReason=ALLOWED", ex.Message);
+        Assert.Contains("maxTokens=1", ex.Message);
     }
 
     [Fact]
@@ -1273,6 +1428,8 @@ public class SafeActionOrchestratorTests
             () => orchestrator.ExecuteRollbackAsync(record.ActionRecordId));
 
         Assert.Equal("governance_tool_denied", ex.ReasonCode);
+        Assert.Contains("Denied by governance tool allowlist", ex.Message);
+        Assert.Contains("policyReason=governance_tool_denied", ex.Message);
     }
 
     [Fact]

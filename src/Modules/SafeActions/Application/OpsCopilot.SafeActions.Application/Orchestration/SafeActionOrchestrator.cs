@@ -87,7 +87,7 @@ public sealed class SafeActionOrchestrator
             _logger.LogWarning(
                 "Governance tool allowlist denied {ActionType} for tenant {TenantId}: {ReasonCode}",
                 actionType, tenantId, govToolDecision.ReasonCode);
-            throw new PolicyDeniedException("governance_tool_denied", govToolDecision.Message);
+            throw GovernanceDenialMapper.ToolDenied(govToolDecision);
         }
 
         _logger.LogInformation(
@@ -192,8 +192,7 @@ public sealed class SafeActionOrchestrator
                 + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
                 actionRecordId, record.ActionType, record.TenantId,
                 govToolDecision.ReasonCode);
-            throw new PolicyDeniedException(
-                "governance_tool_denied", govToolDecision.Message);
+            throw GovernanceDenialMapper.ToolDenied(govToolDecision);
         }
 
         // ── Governance token budget ─────────────────────────────
@@ -208,8 +207,18 @@ public sealed class SafeActionOrchestrator
                 + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
                 actionRecordId, record.ActionType, record.TenantId,
                 govBudgetDecision.ReasonCode);
-            throw new PolicyDeniedException(
-                "governance_budget_exceeded", govBudgetDecision.Message);
+            throw GovernanceDenialMapper.BudgetDenied(govBudgetDecision, requestedTokens);
+        }
+
+        // ── Deterministic MaxTokens enforcement ─────────────────
+        if (govBudgetDecision.MaxTokens is not null && requestedTokens > govBudgetDecision.MaxTokens.Value)
+        {
+            _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
+            _logger.LogWarning(
+                "Governance MaxTokens exceeded for action {ActionRecordId} "
+                + "(requested={RequestedTokens}, max={MaxTokens})",
+                actionRecordId, requestedTokens, govBudgetDecision.MaxTokens.Value);
+            throw GovernanceDenialMapper.BudgetDenied(govBudgetDecision, requestedTokens);
         }
 
         // ── Replay guard — only Approved records may begin execution ──
@@ -355,8 +364,7 @@ public sealed class SafeActionOrchestrator
                 + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
                 actionRecordId, record.ActionType, record.TenantId,
                 govToolDecision.ReasonCode);
-            throw new PolicyDeniedException(
-                "governance_tool_denied", govToolDecision.Message);
+            throw GovernanceDenialMapper.ToolDenied(govToolDecision);
         }
 
         if (record.RollbackPayloadJson is null)
@@ -375,8 +383,18 @@ public sealed class SafeActionOrchestrator
                 + "(type={ActionType}, tenant={TenantId}): {ReasonCode}",
                 actionRecordId, record.ActionType, record.TenantId,
                 govBudgetDecision.ReasonCode);
-            throw new PolicyDeniedException(
-                "governance_budget_exceeded", govBudgetDecision.Message);
+            throw GovernanceDenialMapper.BudgetDenied(govBudgetDecision, rollbackTokens);
+        }
+
+        // ── Deterministic MaxTokens enforcement ─────────────────
+        if (govBudgetDecision.MaxTokens is not null && rollbackTokens > govBudgetDecision.MaxTokens.Value)
+        {
+            _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
+            _logger.LogWarning(
+                "Governance MaxTokens exceeded for rollback {ActionRecordId} "
+                + "(requested={RollbackTokens}, max={MaxTokens})",
+                actionRecordId, rollbackTokens, govBudgetDecision.MaxTokens.Value);
+            throw GovernanceDenialMapper.BudgetDenied(govBudgetDecision, rollbackTokens);
         }
 
         // ── Replay guard — only RollbackApproved records may begin rollback execution ──
