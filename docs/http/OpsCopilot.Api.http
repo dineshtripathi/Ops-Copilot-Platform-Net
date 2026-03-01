@@ -1680,13 +1680,13 @@ x-tenant-id: {{tenantId}}
 #     Fires when BudgetDecision.Allowed=true but requestedTokens > MaxTokens.
 #     Message : same budget-deny format with policyReason=ALLOWED.
 #
-# All denial scenarios below return HTTP 422 with a ProblemDetails body
+# All denial scenarios below return HTTP 400 with a ProblemDetails body
 # containing the frozen reasonCode and the structured message.
 ###############################################################################
 
 ### AH1 — Propose denied by governance tool allowlist
 # Action type "forbidden_action" is not in the tenant's tool allowlist.
-# Expected: 422 with reasonCode="governance_tool_denied"
+# Expected: 400 with reasonCode="governance_tool_denied"
 #           message contains "Denied by governance tool allowlist (policyReason=governance_tool_denied)"
 # @name proposeGovToolDeny
 POST {{baseUrl}}/safe-actions/propose
@@ -1703,7 +1703,7 @@ x-tenant-id: {{tenantId}}
 
 ### AH2 — Execute denied by governance token budget
 # Tenant's token budget is exhausted.
-# Expected: 422 with reasonCode="governance_budget_exceeded"
+# Expected: 400 with reasonCode="governance_budget_exceeded"
 #           message contains "Denied by governance token budget"
 #           message contains "requestedTokens=" and "maxTokens=null"
 # Prerequisite: first propose + approve a valid action (use AG1 + AG2 approve)
@@ -1715,7 +1715,7 @@ x-tenant-id: {{tenantId}}
 ### AH3 — Execute denied by MaxTokens cap (budget allowed but tokens exceed cap)
 # Tenant's budget allows the action but caps MaxTokens below the payload size.
 # BudgetDecision.Allowed=true, MaxTokens=1, but payload needs ~4 tokens.
-# Expected: 422 with reasonCode="governance_budget_exceeded"
+# Expected: 400 with reasonCode="governance_budget_exceeded"
 #           message contains "policyReason=ALLOWED"
 #           message contains "maxTokens=1"
 # @name executeGovMaxTokensDeny
@@ -1725,7 +1725,7 @@ x-tenant-id: {{tenantId}}
 
 ### AH4 — Rollback denied by governance token budget
 # Same budget-deny as AH2, but on rollback path.
-# Expected: 422 with reasonCode="governance_budget_exceeded"
+# Expected: 400 with reasonCode="governance_budget_exceeded"
 #           message contains "Denied by governance token budget"
 # Prerequisite: full lifecycle up to approved-rollback state (use AG3)
 # @name rollbackGovBudgetDeny
@@ -1737,7 +1737,7 @@ x-tenant-id: {{tenantId}}
 # Even when governance returns a custom reason like "CUSTOM_TOOL_BLOCK_42",
 # the HTTP response still uses the frozen reasonCode "governance_tool_denied".
 # The original policyReason appears only inside the structured message.
-# Expected: 422 with reasonCode="governance_tool_denied"
+# Expected: 400 with reasonCode="governance_tool_denied"
 #           message contains "policyReason=CUSTOM_TOOL_BLOCK_42"
 # @name proposeGovArbitraryDeny
 POST {{baseUrl}}/safe-actions/propose

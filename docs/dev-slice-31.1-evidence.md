@@ -106,11 +106,11 @@ denial tests:
 
 | # | Test Name | Assertions Added |
 |---|---|---|
-| 1 | `ProposeAsync_Throws_PolicyDenied_When_Governance_Tool_Denied` | `"Denied by governance tool allowlist"`, `"policyReason=governance_tool_denied"` in message |
+| 1 | `ProposeAsync_Throws_PolicyDenied_When_Governance_Tool_Denied` | `"Denied by governance tool allowlist"`, `"policyReason=TOOL_NOT_ALLOWED"` in message |
 | 2 | `ExecuteAsync_Throws_PolicyDenied_When_Governance_Tool_Denied` | Same tool-deny message assertions |
 | 3 | `ExecuteRollbackAsync_Throws_PolicyDenied_When_Governance_Tool_Denied` | Same tool-deny message assertions |
 | 4 | `ExecuteRollbackAsync_Throws_PolicyDenied_Null_Payload_Check_After_Tool_Deny` | Same tool-deny message assertions |
-| 5 | `ExecuteAsync_Throws_PolicyDenied_When_Governance_Budget_Exceeded` | `"Denied by governance token budget"`, `"policyReason=governance_budget_exceeded"`, `"requestedTokens="`, `"maxTokens=null"` |
+| 5 | `ExecuteAsync_Throws_PolicyDenied_When_Governance_Budget_Exceeded` | `"Denied by governance token budget"`, `"policyReason=BUDGET_EXHAUSTED"`, `"requestedTokens="`, `"maxTokens=null"` |
 | 6 | `ExecuteRollbackAsync_Throws_PolicyDenied_When_Governance_Budget_Exceeded` | Same budget-deny message assertions |
 
 ### New Tests Added (5 tests)
@@ -133,11 +133,11 @@ denial tests:
 
 | # | Request | Scenario | Expected |
 |---|---|---|---|
-| AH1 | `POST /safe-actions/propose` (`forbidden_action`) | Tool not in allowlist | 422, `governance_tool_denied` |
-| AH2 | `POST /safe-actions/{id}/execute` | Budget exhausted | 422, `governance_budget_exceeded` |
-| AH3 | `POST /safe-actions/{id}/execute` | Budget allowed but MaxTokens=1 | 422, `governance_budget_exceeded`, `maxTokens=1` |
-| AH4 | `POST /safe-actions/{id}/rollback` | Budget denied on rollback | 422, `governance_budget_exceeded` |
-| AH5 | `POST /safe-actions/propose` (`custom_blocked_action`) | Arbitrary upstream policyReason | 422, frozen `governance_tool_denied`, raw reason in message |
+| AH1 | `POST /safe-actions/propose` (`forbidden_action`) | Tool not in allowlist | 400, `governance_tool_denied` |
+| AH2 | `POST /safe-actions/{id}/execute` | Budget exhausted | 400, `governance_budget_exceeded` |
+| AH3 | `POST /safe-actions/{id}/execute` | Budget allowed but MaxTokens=1 | 400, `governance_budget_exceeded`, `maxTokens=1` |
+| AH4 | `POST /safe-actions/{id}/rollback` | Budget denied on rollback | 400, `governance_budget_exceeded` |
+| AH5 | `POST /safe-actions/propose` (`custom_blocked_action`) | Arbitrary upstream policyReason | 400, frozen `governance_tool_denied`, raw reason in message |
 
 TOC updated with entries for AG (Slice 31) and AH (Slice 31.1).
 
@@ -152,3 +152,27 @@ TOC updated with entries for AG (Slice 31) and AH (Slice 31.1).
 | Total tests | **593** (588 pre-Slice 31.1 + 5 new) |
 | Test failures | **0** |
 | Skipped tests | **0** |
+---
+
+## Reconciliation Patch (post-commit 1f67002)
+
+Fixes documentation/test discrepancies found after initial commit — **no production code changes**.
+
+### Changes Applied
+
+| # | File | What changed | Lines affected |
+|---|---|---|---|
+| B | `src/Hosts/OpsCopilot.ApiHost/OpsCopilot.Api.http` (Section AH) | Expected status comments `422` → `400` | 6 comment lines |
+| C | `docs/dev-slice-31.1-evidence.md` | Deliverable C: policyReason values corrected; Deliverable D: `422` → `400` | 2 tables |
+| D | `tests/.../SafeActionOrchestratorTests.cs` | Mock upstream reasons changed from frozen codes to realistic raw codes; policyReason assertions updated | 14 mock + 6 assertion sites |
+
+### Verification
+
+| Metric | Result |
+|---|---|
+| `dotnet build` warnings | **0** |
+| `dotnet build` errors | **0** |
+| Total tests | **593** (unchanged) |
+| Test failures | **0** |
+| Skipped tests | **0** |
+| SafeActions tests | **341 passed** |

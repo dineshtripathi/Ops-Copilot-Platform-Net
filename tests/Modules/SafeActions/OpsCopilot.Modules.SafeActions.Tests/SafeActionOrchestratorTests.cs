@@ -887,7 +887,7 @@ public class SafeActionOrchestratorTests
 
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
-           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked by governance"));
+           .Returns(PolicyDecision.Deny("TOOL_NOT_ALLOWED", "Tool blocked by governance"));
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
 
@@ -896,7 +896,7 @@ public class SafeActionOrchestratorTests
 
         Assert.Equal("governance_tool_denied", ex.ReasonCode);
         Assert.Contains("Denied by governance tool allowlist", ex.Message);
-        Assert.Contains("policyReason=governance_tool_denied", ex.Message);
+        Assert.Contains("policyReason=TOOL_NOT_ALLOWED", ex.Message);
     }
 
     [Fact]
@@ -906,7 +906,7 @@ public class SafeActionOrchestratorTests
 
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
-           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked"));
+           .Returns(PolicyDecision.Deny("TOOL_NOT_ALLOWED", "Tool blocked"));
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
 
@@ -927,7 +927,7 @@ public class SafeActionOrchestratorTests
 
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
-           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked"));
+           .Returns(PolicyDecision.Deny("TOOL_NOT_ALLOWED", "Tool blocked"));
 
         var orchestrator = CreateOrchestrator(repo, telemetry: telemetry, governanceClient: gov);
 
@@ -973,7 +973,7 @@ public class SafeActionOrchestratorTests
 
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
-           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked by governance"));
+           .Returns(PolicyDecision.Deny("TOOL_NOT_ALLOWED", "Tool blocked by governance"));
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
 
@@ -982,7 +982,7 @@ public class SafeActionOrchestratorTests
 
         Assert.Equal("governance_tool_denied", ex.ReasonCode);
         Assert.Contains("Denied by governance tool allowlist", ex.Message);
-        Assert.Contains("policyReason=governance_tool_denied", ex.Message);
+        Assert.Contains("policyReason=TOOL_NOT_ALLOWED", ex.Message);
     }
 
     [Fact]
@@ -999,7 +999,7 @@ public class SafeActionOrchestratorTests
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
         gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
-           .Returns(BudgetDecision.Deny("governance_budget_exceeded", "Token budget exhausted"));
+           .Returns(BudgetDecision.Deny("BUDGET_EXHAUSTED", "Token budget exhausted"));
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
 
@@ -1008,7 +1008,7 @@ public class SafeActionOrchestratorTests
 
         Assert.Equal("governance_budget_exceeded", ex.ReasonCode);
         Assert.Contains("Denied by governance token budget", ex.Message);
-        Assert.Contains("policyReason=governance_budget_exceeded", ex.Message);
+        Assert.Contains("policyReason=BUDGET_EXHAUSTED", ex.Message);
         Assert.Contains("requestedTokens=", ex.Message);
         Assert.Contains("maxTokens=null", ex.Message);
     }
@@ -1139,7 +1139,7 @@ public class SafeActionOrchestratorTests
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
         gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
-           .Returns(BudgetDecision.Deny("governance_budget_exceeded", "Token budget exhausted"));
+           .Returns(BudgetDecision.Deny("BUDGET_EXHAUSTED", "Token budget exhausted"));
 
         var orchestrator = CreateOrchestrator(repo, telemetry: telemetry, governanceClient: gov);
 
@@ -1197,13 +1197,13 @@ public class SafeActionOrchestratorTests
            .Returns(() =>
            {
                callOrder.Add("tool");
-               return PolicyDecision.Deny("governance_tool_denied", "Tool blocked");
+               return PolicyDecision.Deny("TOOL_NOT_ALLOWED", "Tool blocked");
            });
         gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
            .Returns(() =>
            {
                callOrder.Add("budget");
-               return BudgetDecision.Deny("governance_budget_exceeded", "Budget exceeded");
+               return BudgetDecision.Deny("BUDGET_EXHAUSTED", "Budget exceeded");
            });
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
@@ -1235,7 +1235,7 @@ public class SafeActionOrchestratorTests
            .Returns((string _, string _, int? tokens) =>
            {
                capturedTokens = tokens;
-               return BudgetDecision.Deny("governance_budget_exceeded", "Denied");
+               return BudgetDecision.Deny("BUDGET_EXHAUSTED", "Denied");
            });
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
@@ -1264,7 +1264,7 @@ public class SafeActionOrchestratorTests
 
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
-           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked by governance"));
+           .Returns(PolicyDecision.Deny("TOOL_NOT_ALLOWED", "Tool blocked by governance"));
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
 
@@ -1273,7 +1273,7 @@ public class SafeActionOrchestratorTests
 
         Assert.Equal("governance_tool_denied", ex.ReasonCode);
         Assert.Contains("Denied by governance tool allowlist", ex.Message);
-        Assert.Contains("policyReason=governance_tool_denied", ex.Message);
+        Assert.Contains("policyReason=TOOL_NOT_ALLOWED", ex.Message);
     }
 
     [Fact]
@@ -1294,7 +1294,7 @@ public class SafeActionOrchestratorTests
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
         gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
-           .Returns(BudgetDecision.Deny("governance_budget_exceeded", "Token budget exhausted"));
+           .Returns(BudgetDecision.Deny("BUDGET_EXHAUSTED", "Token budget exhausted"));
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
 
@@ -1303,7 +1303,7 @@ public class SafeActionOrchestratorTests
 
         Assert.Equal("governance_budget_exceeded", ex.ReasonCode);
         Assert.Contains("Denied by governance token budget", ex.Message);
-        Assert.Contains("policyReason=governance_budget_exceeded", ex.Message);
+        Assert.Contains("policyReason=BUDGET_EXHAUSTED", ex.Message);
         Assert.Contains("requestedTokens=", ex.Message);
         Assert.Contains("maxTokens=null", ex.Message);
     }
@@ -1359,7 +1359,7 @@ public class SafeActionOrchestratorTests
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
         gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
-           .Returns(BudgetDecision.Deny("governance_budget_exceeded", "Token budget exhausted"));
+           .Returns(BudgetDecision.Deny("BUDGET_EXHAUSTED", "Token budget exhausted"));
 
         var orchestrator = CreateOrchestrator(repo, telemetry: telemetry, governanceClient: gov);
 
@@ -1419,7 +1419,7 @@ public class SafeActionOrchestratorTests
 
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
-           .Returns(PolicyDecision.Deny("governance_tool_denied", "Tool blocked"));
+           .Returns(PolicyDecision.Deny("TOOL_NOT_ALLOWED", "Tool blocked"));
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
 
@@ -1429,7 +1429,7 @@ public class SafeActionOrchestratorTests
 
         Assert.Equal("governance_tool_denied", ex.ReasonCode);
         Assert.Contains("Denied by governance tool allowlist", ex.Message);
-        Assert.Contains("policyReason=governance_tool_denied", ex.Message);
+        Assert.Contains("policyReason=TOOL_NOT_ALLOWED", ex.Message);
     }
 
     [Fact]
@@ -1456,7 +1456,7 @@ public class SafeActionOrchestratorTests
            .Returns((string _, string _, int? tokens) =>
            {
                capturedTokens = tokens;
-               return BudgetDecision.Deny("governance_budget_exceeded", "Denied");
+               return BudgetDecision.Deny("BUDGET_EXHAUSTED", "Denied");
            });
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
