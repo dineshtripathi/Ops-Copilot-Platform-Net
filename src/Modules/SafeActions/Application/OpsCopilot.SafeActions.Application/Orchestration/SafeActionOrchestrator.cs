@@ -198,7 +198,7 @@ public sealed class SafeActionOrchestrator
         // ── Governance token budget ─────────────────────────────
         var requestedTokens = Math.Min(8192, record.ProposedPayloadJson.Length / 4);
         var govBudgetDecision = _governanceClient.EvaluateTokenBudget(
-            record.TenantId, record.ActionType, requestedTokens);
+            record.TenantId, record.ActionType, actionRecordId, requestedTokens);
         if (!govBudgetDecision.Allowed)
         {
             _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
@@ -374,7 +374,7 @@ public sealed class SafeActionOrchestrator
         // ── Governance token budget ─────────────────────────────
         var rollbackTokens = Math.Min(8192, record.RollbackPayloadJson.Length / 4);
         var govBudgetDecision = _governanceClient.EvaluateTokenBudget(
-            record.TenantId, record.ActionType, rollbackTokens);
+            record.TenantId, record.ActionType, actionRecordId, rollbackTokens);
         if (!govBudgetDecision.Allowed)
         {
             _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);

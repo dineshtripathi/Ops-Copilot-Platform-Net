@@ -1751,3 +1751,179 @@ x-tenant-id: {{tenantId}}
   "rollbackPayloadJson": "{\"undo\":\"stop_pod\"}",
   "dryRun": false
 }
+
+###########################################################################
+# Section AI — SafeActions Tenant-Aware Governance Wiring (Dev Slice 32)
+#
+# Validates the tenant-aware governance pipeline wired in Slice 32:
+#   1. DI order: Tenancy → Governance → SafeActions (Program.cs)
+#   2. CorrelationId propagation via IGovernancePolicyClient.EvaluateTokenBudget
+#   3. Tenant-isolated governance outcomes through the bridge chain
+#
+# Resolution chain:
+#   SafeActionOrchestrator
+#     → GovernancePolicyClient (bridge, passes correlationId)
+#       → DefaultToolAllowlistPolicy / DefaultTokenBudgetPolicy
+#         → TenantAwareGovernanceOptionsResolver (SQL → config → defaults)
+#           → TenantConfigProviderAdapter → ITenantConfigResolver
+#
+# Test topology:
+#   AI1 – Tenant A restricted allowlist ⇒ tool denied
+#   AI2 – Tenant A allowed tool ⇒ propose succeeds
+#   AI3 – Tenant B different allowlist ⇒ tenant isolation proof
+#   AI4 – Budget-capped tenant ⇒ MaxTokens honoured
+#   AI5 – CorrelationId propagation ⇒ explicit GUID in budget check
+###########################################################################
+
+### AI1 — Restricted-tenant propose denied by allowlist
+# Tenant's allowed_tools = ["kql_query"] only.
+# Proposing "restart_pod" must be denied by governance allowlist.
+# Expected: 400 with reasonCode="governance_tool_denied"
+#           message contains "restart_pod"
+# @name proposeAI1Denied
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "correlationId": "{{$guid}}",
+  "actionType": "restart_pod",
+  "proposedPayloadJson": "{\"target\":\"pod-ai1\"}",
+  "rollbackPayloadJson": "{\"undo\":\"stop_pod\"}",
+  "dryRun": false
+}
+
+### AI2 — Restricted-tenant propose allowed for listed tool
+# Same tenant, but action is "kql_query" which IS in the allowlist.
+# Expected: 200 with status="proposed"
+# @name proposeAI2Allowed
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "correlationId": "{{$guid}}",
+  "actionType": "kql_query",
+  "proposedPayloadJson": "{\"query\":\"AzureDiagnostics | take 10\"}",
+  "rollbackPayloadJson": "{}",
+  "dryRun": false
+}
+
+### AI3 — Different tenant different allowlist ⇒ isolation
+# Tenant B allows ["restart_pod"] but NOT "kql_query".
+# Expected: 400 with reasonCode="governance_tool_denied"
+#           message contains "kql_query"
+# Requires x-tenant-id to be a tenant B id with the appropriate config.
+# @name proposeAI3Isolation
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: tenant-b-id
+
+{
+  "correlationId": "{{$guid}}",
+  "actionType": "kql_query",
+  "proposedPayloadJson": "{\"query\":\"AzureDiagnostics | take 5\"}",
+  "rollbackPayloadJson": "{}",
+  "dryRun": false
+}
+
+### AI4 — Budget-capped tenant ⇒ MaxTokens cap honoured on execute
+# Tenant has TokenBudget=2048. After propose+approve, execute checks budget.
+# If requested tokens exceed cap: 400 with reasonCode="governance_budget_exceeded"
+# If within cap: 200 with successful execution.
+# Prerequisite: propose and approve an action first (use AI2 + approve flow).
+# @name executeAI4BudgetCap
+POST {{baseUrl}}/safe-actions/{{proposeAI2Allowed.response.body.id}}/execute
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+### AI5 — CorrelationId propagated through budget check
+# Propose action with explicit correlationId.
+# The orchestrator passes this as the correlationId parameter to
+# GovernancePolicyClient.EvaluateTokenBudget (Slice 32 fix).
+# Expected: 200 with status="proposed" (budget check passes with explicit GUID)
+# @name proposeAI5CorrelationId
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "correlationId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "actionType": "kql_query",
+  "proposedPayloadJson": "{\"query\":\"HeartbeatMetrics | take 1\"}",
+  "rollbackPayloadJson": "{}",
+  "dryRun": false
+}
+
+###########################################################################
+# Section AJ — Slice 33: SafeActions Governance-Backed Policy
+#   Proves the replaced ISafeActionPolicy gate (GovernanceBackedSafeActionPolicy)
+#   denies/allows proposals based on tenant governance and preserves the
+#   frozen reason code "governance_tool_denied" through the HTTP layer.
+###########################################################################
+
+### AJ1 — Propose denied by governance-backed policy ⇒ 400
+# Tenant whose governance allowlist does NOT include the requested action.
+# Expected: 400 Bad Request with reasonCode="governance_tool_denied"
+#           and message containing "policyReason="
+# @name proposeAJ1Denied
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: tenant-restricted-33
+
+{
+  "correlationId": "{{$guid}}",
+  "actionType": "restart_pod",
+  "proposedPayloadJson": "{\"target\":\"pod-1\"}",
+  "rollbackPayloadJson": "{}",
+  "dryRun": false
+}
+
+### AJ2 — Propose allowed by governance-backed policy ⇒ 201
+# Tenant whose governance allowlist includes "kql_query".
+# Expected: 201 Created with status="proposed"
+# @name proposeAJ2Allowed
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "correlationId": "{{$guid}}",
+  "actionType": "kql_query",
+  "proposedPayloadJson": "{\"query\":\"AzureDiagnostics | take 5\"}",
+  "rollbackPayloadJson": "{}",
+  "dryRun": false
+}
+
+### AJ3 — Tenant isolation: same action, different tenants ⇒ different outcomes
+# tenant-restricted-33 denies "kql_query", default tenant allows it.
+# Expected: 400 Bad Request with reasonCode="governance_tool_denied"
+# @name proposeAJ3Isolation
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: tenant-restricted-33
+
+{
+  "correlationId": "{{$guid}}",
+  "actionType": "kql_query",
+  "proposedPayloadJson": "{\"query\":\"Heartbeat | take 1\"}",
+  "rollbackPayloadJson": "{}",
+  "dryRun": false
+}
+
+### AJ4 — Frozen reason code preserved through HTTP layer
+# Repeats AJ1 scenario; explicitly asserts the JSON body shape:
+#   { "reasonCode": "governance_tool_denied", "message": "...policyReason=..." }
+# Expected: 400 Bad Request, body contains "governance_tool_denied" and "policyReason="
+# @name proposeAJ4FrozenCode
+POST {{baseUrl}}/safe-actions/propose
+Content-Type: application/json
+x-tenant-id: tenant-restricted-33
+
+{
+  "correlationId": "{{$guid}}",
+  "actionType": "scale_down_vm",
+  "proposedPayloadJson": "{\"vmName\":\"vm-prod-01\",\"targetSize\":\"Standard_B1s\"}",
+  "rollbackPayloadJson": "{\"vmName\":\"vm-prod-01\",\"targetSize\":\"Standard_D4s_v3\"}",
+  "dryRun": false
+}

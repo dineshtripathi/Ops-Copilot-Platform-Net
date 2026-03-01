@@ -117,7 +117,7 @@ public class SafeActionExecutionThrottleEndpointTests
         builder.Services.AddSingleton(Mock.Of<IActionTypeCatalog>(c => c.IsAllowlisted(It.IsAny<string>()) == true));
         builder.Services.AddSingleton(Mock.Of<IGovernancePolicyClient>(g =>
             g.EvaluateToolAllowlist(It.IsAny<string>(), It.IsAny<string>()) == PolicyDecision.Allow() &&
-            g.EvaluateTokenBudget(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>()) == BudgetDecision.Allow(8192)));
+            g.EvaluateTokenBudget(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<int?>()) == BudgetDecision.Allow(8192)));
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();
@@ -503,7 +503,7 @@ public class SafeActionExecutionThrottleEndpointTests
         builder.Services.AddSingleton(Mock.Of<IActionTypeCatalog>(c => c.IsAllowlisted(It.IsAny<string>()) == true));
         builder.Services.AddSingleton(Mock.Of<IGovernancePolicyClient>(g =>
             g.EvaluateToolAllowlist(It.IsAny<string>(), It.IsAny<string>()) == PolicyDecision.Allow() &&
-            g.EvaluateTokenBudget(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>()) == BudgetDecision.Allow(8192)));
+            g.EvaluateTokenBudget(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<int?>()) == BudgetDecision.Allow(8192)));
         builder.Services.AddSingleton<SafeActionOrchestrator>();
 
         var app = builder.Build();

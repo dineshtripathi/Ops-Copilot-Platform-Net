@@ -27,14 +27,13 @@ public sealed class GovernancePolicyClient : IGovernancePolicyClient
         => _toolPolicy.CanUseTool(tenantId, actionType);
 
     /// <inheritdoc />
-    public BudgetDecision EvaluateTokenBudget(string tenantId, string actionType, int? requestedTokens = null)
+    public BudgetDecision EvaluateTokenBudget(string tenantId, string actionType, Guid? correlationId = null, int? requestedTokens = null)
     {
-        // Delegate to the budget policy using a deterministic run-id derived from
-        // the actionType so the policy can correlate.  The current DefaultTokenBudgetPolicy
-        // implementation ignores runId and checks only the tenant's budget cap,
-        // so a deterministic GUID is safe and forward-compatible.
-        var syntheticRunId = DeterministicGuid(tenantId, actionType);
-        return _budgetPolicy.CheckRunBudget(tenantId, syntheticRunId);
+        // When a real action-record id is supplied, use it directly for budget tracking.
+        // Otherwise fall back to a deterministic GUID so repeated calls for the
+        // same tenant + actionType pair still correlate.
+        var runId = correlationId ?? DeterministicGuid(tenantId, actionType);
+        return _budgetPolicy.CheckRunBudget(tenantId, runId);
     }
 
     /// <summary>

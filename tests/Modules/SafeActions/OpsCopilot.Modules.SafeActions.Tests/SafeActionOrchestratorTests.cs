@@ -65,7 +65,7 @@ public class SafeActionOrchestratorTests
             governanceClient = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
             governanceClient.Setup(g => g.EvaluateToolAllowlist(It.IsAny<string>(), It.IsAny<string>()))
                             .Returns(PolicyDecision.Allow());
-            governanceClient.Setup(g => g.EvaluateTokenBudget(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>()))
+            governanceClient.Setup(g => g.EvaluateTokenBudget(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<int?>()))
                             .Returns(BudgetDecision.Allow(8192));
         }
 
@@ -998,7 +998,7 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
            .Returns(BudgetDecision.Deny("BUDGET_EXHAUSTED", "Token budget exhausted"));
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
@@ -1026,7 +1026,7 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
            .Returns(BudgetDecision.Allow(1)); // MaxTokens=1, requestedTokens will exceed
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
@@ -1056,7 +1056,7 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
            .Returns(BudgetDecision.Allow(1)); // MaxTokens=1, will be exceeded
 
         var orchestrator = CreateOrchestrator(repo, telemetry: telemetry, governanceClient: gov);
@@ -1088,7 +1088,7 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
            .Returns(BudgetDecision.Allow()); // MaxTokens=null → enforcement skipped
 
         var orchestrator = CreateOrchestrator(repo, executor, governanceClient: gov);
@@ -1139,7 +1139,7 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
            .Returns(BudgetDecision.Deny("BUDGET_EXHAUSTED", "Token budget exhausted"));
 
         var orchestrator = CreateOrchestrator(repo, telemetry: telemetry, governanceClient: gov);
@@ -1171,7 +1171,7 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
            .Returns(BudgetDecision.Allow(8192));
 
         var orchestrator = CreateOrchestrator(repo, executor, governanceClient: gov);
@@ -1200,7 +1200,7 @@ public class SafeActionOrchestratorTests
                callOrder.Add("tool");
                return PolicyDecision.Deny("TOOL_NOT_ALLOWED", "Tool blocked");
            });
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
            .Returns(() =>
            {
                callOrder.Add("budget");
@@ -1232,8 +1232,8 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
-           .Returns((string _, string _, int? tokens) =>
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
+           .Returns((string _, string _, Guid? _, int? tokens) =>
            {
                capturedTokens = tokens;
                return BudgetDecision.Deny("BUDGET_EXHAUSTED", "Denied");
@@ -1294,7 +1294,7 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
            .Returns(BudgetDecision.Deny("BUDGET_EXHAUSTED", "Token budget exhausted"));
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
@@ -1326,7 +1326,7 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
            .Returns(BudgetDecision.Allow(1)); // MaxTokens=1, rollbackTokens will exceed
 
         var orchestrator = CreateOrchestrator(repo, governanceClient: gov);
@@ -1360,7 +1360,7 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
            .Returns(BudgetDecision.Deny("BUDGET_EXHAUSTED", "Token budget exhausted"));
 
         var orchestrator = CreateOrchestrator(repo, telemetry: telemetry, governanceClient: gov);
@@ -1396,7 +1396,7 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
            .Returns(BudgetDecision.Allow(8192));
 
         var orchestrator = CreateOrchestrator(repo, executor, governanceClient: gov);
@@ -1454,8 +1454,8 @@ public class SafeActionOrchestratorTests
         var gov = new Mock<IGovernancePolicyClient>(MockBehavior.Strict);
         gov.Setup(g => g.EvaluateToolAllowlist("t-1", "restart_pod"))
            .Returns(PolicyDecision.Allow());
-        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<int?>()))
-           .Returns((string _, string _, int? tokens) =>
+        gov.Setup(g => g.EvaluateTokenBudget("t-1", "restart_pod", It.IsAny<Guid?>(), It.IsAny<int?>()))
+           .Returns((string _, string _, Guid? _, int? tokens) =>
            {
                capturedTokens = tokens;
                return BudgetDecision.Deny("BUDGET_EXHAUSTED", "Denied");

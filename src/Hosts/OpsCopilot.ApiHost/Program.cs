@@ -90,15 +90,17 @@ builder.Configuration.AddOpsCopilotKeyVault(
 
 // ── Module registrations ──────────────────────────────────────────────────────
 // Each Presentation facade hides Application + Infrastructure wiring.
+// Tenancy must precede Governance so ITenantConfigProvider is available when
+// TenantAwareGovernanceOptionsResolver is resolved.
 builder.Services
     .AddAgentRunsModule(builder.Configuration)
     .AddAlertIngestionModule()
+    .AddTenancyModule(builder.Configuration)
     .AddGovernanceModule(builder.Configuration, startupLogger)
     .AddSafeActionsModule(builder.Configuration)
     .AddReportingModule(builder.Configuration)
     .AddEvaluationModule()
-    .AddConnectorsModule()
-    .AddTenancyModule(builder.Configuration);
+    .AddConnectorsModule();
 
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();

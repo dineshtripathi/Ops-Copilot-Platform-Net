@@ -16,5 +16,7 @@ public interface IGovernancePolicyClient
     /// <summary>
     /// Checks whether the tenant's token budget permits the estimated token cost.
     /// </summary>
-    BudgetDecision EvaluateTokenBudget(string tenantId, string actionType, int? requestedTokens = null);
+    /// <param name="correlationId">Optional real action-record id used as the run-id for budget tracking.
+    /// When null the implementation falls back to a deterministic GUID derived from tenantId + actionType.</param>
+    BudgetDecision EvaluateTokenBudget(string tenantId, string actionType, Guid? correlationId = null, int? requestedTokens = null);
 }

@@ -82,8 +82,8 @@ public static class SafeActionsInfrastructureExtensions
         // Everything else (or flags=false)                     → dry-run
         services.AddSingleton<IActionExecutor, RoutingActionExecutor>();
 
-        // ── Policy (default = allow-all; swap per-tenant later) ─────
-        services.AddSingleton<ISafeActionPolicy, DefaultSafeActionPolicy>();
+        // ── Policy (tenant-aware governance-backed) ─────────────────
+        services.AddScoped<ISafeActionPolicy, GovernanceBackedSafeActionPolicy>();
 
         // ── Tenant execution policy (strict: empty/missing = DENY) ──
         services.AddSingleton<ITenantExecutionPolicy, ConfigDrivenTenantExecutionPolicy>();

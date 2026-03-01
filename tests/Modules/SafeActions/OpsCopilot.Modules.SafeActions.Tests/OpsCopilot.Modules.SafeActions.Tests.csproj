@@ -30,6 +30,10 @@
     <ProjectReference Include="..\..\..\..\src\BuildingBlocks\Domain\OpsCopilot.BuildingBlocks.Domain\OpsCopilot.BuildingBlocks.Domain.csproj" />
     <ProjectReference Include="..\..\..\..\src\BuildingBlocks\Contracts\OpsCopilot.BuildingBlocks.Contracts\OpsCopilot.BuildingBlocks.Contracts.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\SafeActions\Infrastructure\OpsCopilot.SafeActions.Infrastructure\OpsCopilot.SafeActions.Infrastructure.csproj" />
+    <!-- Slice 32: Cross-module references for tenant-aware governance integration tests -->
+    <ProjectReference Include="..\..\..\..\src\Modules\Governance\Application\OpsCopilot.Governance.Application\OpsCopilot.Governance.Application.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\Tenancy\Application\OpsCopilot.Tenancy.Application\OpsCopilot.Tenancy.Application.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\Tenancy\Infrastructure\OpsCopilot.Tenancy.Infrastructure\OpsCopilot.Tenancy.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
