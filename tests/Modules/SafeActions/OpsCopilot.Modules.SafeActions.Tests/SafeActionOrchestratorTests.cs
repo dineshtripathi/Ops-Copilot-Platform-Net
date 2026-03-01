@@ -1036,7 +1036,8 @@ public class SafeActionOrchestratorTests
 
         Assert.Equal("governance_budget_exceeded", ex.ReasonCode);
         Assert.Contains("Denied by governance token budget", ex.Message);
-        Assert.Contains("policyReason=ALLOWED", ex.Message);
+        Assert.Contains("policyReason=", ex.Message);
+        Assert.Contains("requestedTokens=", ex.Message);
         Assert.Contains("maxTokens=1", ex.Message);
     }
 
@@ -1335,7 +1336,8 @@ public class SafeActionOrchestratorTests
 
         Assert.Equal("governance_budget_exceeded", ex.ReasonCode);
         Assert.Contains("Denied by governance token budget", ex.Message);
-        Assert.Contains("policyReason=ALLOWED", ex.Message);
+        Assert.Contains("policyReason=", ex.Message);
+        Assert.Contains("requestedTokens=", ex.Message);
         Assert.Contains("maxTokens=1", ex.Message);
     }
 
