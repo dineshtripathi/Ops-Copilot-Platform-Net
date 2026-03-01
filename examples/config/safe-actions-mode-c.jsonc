@@ -1,0 +1,50 @@
+// ────────────────────────────────────────────────────────────
+// SafeActions — Mode C (Controlled Execution)
+//
+// Full execution is enabled with all action types active,
+// including high-risk restart_pod.  Use this only when you
+// have governance, throttling, and tenant allow-lists fully
+// configured.
+//
+// Copy this block into appsettings.json under the root object.
+// ────────────────────────────────────────────────────────────
+{
+  "SafeActions": {
+    // ── Global kill-switch — ON ─────────────────────────────
+    "EnableExecution": true,
+
+    // ── All feature flags enabled ───────────────────────────
+    "EnableRealHttpProbe":              true,
+    "EnableAzureReadExecutions":        true,
+    "EnableAzureMonitorReadExecutions": true,
+
+    // ── Tenant allow-list (restrict who can execute) ────────
+    "AllowedExecutionTenants": {
+      "tenant-prod-ops":  true,
+      "tenant-contoso":   true
+    },
+
+    // ── Subscription & workspace restrictions ───────────────
+    "AllowedAzureSubscriptionIds": [
+      "00000000-0000-0000-0000-000000000000",
+      "22222222-2222-2222-2222-222222222222"
+    ],
+    "AllowedLogAnalyticsWorkspaceIds": [
+      "11111111-1111-1111-1111-111111111111"
+    ],
+
+    // ── Throttling — tighter limits for production ──────────
+    "EnableExecutionThrottling": true,
+    "ExecutionThrottleWindowSeconds":          60,
+    "ExecutionThrottleMaxAttemptsPerWindow":    5,
+
+    // ── All 5 action types enabled ──────────────────────────
+    "ActionTypes": [
+      { "ActionType": "restart_pod",        "RiskTier": "High",   "Enabled": true },
+      { "ActionType": "http_probe",          "RiskTier": "Low",    "Enabled": true },
+      { "ActionType": "dry_run",             "RiskTier": "Low",    "Enabled": true },
+      { "ActionType": "azure_resource_get",  "RiskTier": "Medium", "Enabled": true },
+      { "ActionType": "azure_monitor_query", "RiskTier": "Medium", "Enabled": true }
+    ]
+  }
+}

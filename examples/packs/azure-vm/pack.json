@@ -1,0 +1,35 @@
+{
+  "id":                 "azure-vm",
+  "name":               "Azure VM Pack",
+  "version":            "1.0.0",
+  "description":        "Runbooks, KQL queries and governance defaults for Azure VM workloads.",
+  "authors":            ["ops-team"],
+  "minPlatformVersion": "0.5.0",
+
+  "actionTypes": [
+    { "actionType": "restart_pod",        "riskTier": "High"   },
+    { "actionType": "http_probe",          "riskTier": "Low"    },
+    { "actionType": "azure_resource_get",  "riskTier": "Medium" },
+    { "actionType": "azure_monitor_query", "riskTier": "Medium" }
+  ],
+
+  "requiredTools": ["kql_query", "runbook_search"],
+
+  "governance": {
+    "allowedTools":  ["kql_query", "runbook_search", "safe_action_execute"],
+    "triageEnabled": true,
+    "tokenBudget":   8000
+  },
+
+  "connectors": [
+    {
+      "connectorId": "azure-monitor",
+      "config": {
+        "resourceGroup": "rg-prod",
+        "workspaceId":   "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  ],
+
+  "tags": ["azure", "vm", "compute"]
+}

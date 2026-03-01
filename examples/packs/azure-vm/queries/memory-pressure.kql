@@ -1,0 +1,11 @@
+// Azure VM – Memory Pressure Detection
+// Surfaces VMs where available memory dropped below 10 % of total
+// in the last 30 minutes, indicating potential OOM risk.
+
+Perf
+| where TimeGenerated > ago(30m)
+| where ObjectName == "Memory"
+    and CounterName == "% Committed Bytes In Use"
+| where CounterValue > 90
+| summarize AvgMemPct = avg(CounterValue) by Computer, bin(TimeGenerated, 5m)
+| order by AvgMemPct desc

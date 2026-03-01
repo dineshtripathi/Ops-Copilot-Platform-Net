@@ -1,0 +1,10 @@
+{
+  "allowedTools": [
+    "kql_query",
+    "runbook_search",
+    "safe_action_execute"
+  ],
+  "triageEnabled": true,
+  "tokenBudget": 8000,
+  "sessionTtlMinutes": 30
+}

@@ -1,0 +1,11 @@
+// Azure VM – CPU Spike Detection
+// Returns VMs whose average CPU exceeded 90 % in the last 30 minutes.
+// Used by the triage agent to identify compute-bound hosts.
+
+Perf
+| where TimeGenerated > ago(30m)
+| where ObjectName == "Processor"
+    and CounterName == "% Processor Time"
+| where CounterValue > 90
+| summarize AvgCpu = avg(CounterValue) by Computer, bin(TimeGenerated, 5m)
+| order by AvgCpu desc

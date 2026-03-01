@@ -1,0 +1,63 @@
+# -------------------------------------------------------
+# OpsCopilot – Infrastructure Deployment Template
+# -------------------------------------------------------
+# Copy this file to .github/workflows/deploy-infra.yml
+# and fill in the <PLACEHOLDER> values.
+#
+# Uses federated OIDC credentials — no secrets stored in
+# the repository.  See docs/deploying-on-azure.md for the
+# full walkthrough.
+# -------------------------------------------------------
+
+name: Deploy Azure Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'azure-infra/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: false
+        default: dev
+        type: choice
+        options:
+          - dev
+          - sandbox
+          - prod
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_CLIENT_ID:       ${{ vars.AZURE_CLIENT_ID }}       # <PLACEHOLDER>
+  AZURE_TENANT_ID:       ${{ vars.AZURE_TENANT_ID }}       # <PLACEHOLDER>
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }} # <PLACEHOLDER>
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ env.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep
+        run: |
+          ENV=${{ github.event.inputs.environment || 'dev' }}
+          az deployment sub create \
+            --location uksouth \
+            --template-file azure-infra/bicep/main.bicep \
+            --parameters @azure-infra/bicep/env/${ENV}/platform.parameters.json \
+            --parameters location=uksouth environment=${ENV}

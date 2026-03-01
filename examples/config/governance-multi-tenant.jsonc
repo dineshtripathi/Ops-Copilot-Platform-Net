@@ -1,0 +1,54 @@
+// ────────────────────────────────────────────────────────────
+// Governance configuration — multi-tenant example
+//
+// Copy this block into appsettings.Development.json (or
+// appsettings.json for production) under the root object.
+//
+// 3-tier resolution order:
+//   1. SQL tenant settings   (highest — runtime API)
+//   2. TenantOverrides       (this file)
+//   3. Defaults              (fallback)
+//
+// Only non-null override properties replace the Defaults.
+// ────────────────────────────────────────────────────────────
+{
+  "Governance": {
+    // ── Global fallback (tier 3) ────────────────────────────
+    "Defaults": {
+      "AllowedTools":      ["kql_query", "runbook_search"],
+      "TriageEnabled":     true,
+      "TokenBudget":       null,        // null = unlimited
+      "SessionTtlMinutes": 30
+    },
+
+    // ── Per-tenant overrides (tier 2) ───────────────────────
+    "TenantOverrides": {
+
+      // Full-access ops team — can execute safe-actions
+      "tenant-prod-ops": {
+        "AllowedTools":  ["kql_query", "runbook_search", "safe_action_execute"],
+        "TokenBudget":   10000
+        // TriageEnabled & SessionTtlMinutes inherit from Defaults
+      },
+
+      // Read-only analyst — no triage, tight budget
+      "tenant-read-only": {
+        "AllowedTools":      ["kql_query"],
+        "TriageEnabled":     false,
+        "TokenBudget":       2000,
+        "SessionTtlMinutes": 15
+      },
+
+      // Dev/test tenant — wide-open tools for local testing
+      "tenant-dev-sandbox": {
+        "AllowedTools": [
+          "kql_query",
+          "runbook_search",
+          "safe_action_execute",
+          "alert_ingest"
+        ],
+        "TokenBudget": 50000
+      }
+    }
+  }
+}

@@ -1,24 +1,70 @@
 # Ops Copilot Platform
 
-Ops Copilot is a modular .NET platform for operations triage, alert ingestion, governance, reporting, and safe action orchestration. It uses the **Model Context Protocol (MCP)** to query Azure Log Analytics via a dedicated MCP stdio tool server, keeping a strict boundary between the API surface and Azure SDK dependencies.
+<!-- TODO: Add CI badge, coverage badge, license badge once CI and license are finalised -->
+
+Ops Copilot is a governed, auditable .NET platform for operations incident triage, safe remediation actions, multi-tenant governance, and AI-assisted KQL observability — built as a **modular monolith** with Clean Architecture, the **Model Context Protocol (MCP)** for Azure Log Analytics queries, and a pluggable **connector + pack** system designed for enterprise extensibility.
 
 ---
 
-## Solution Layout
+## Architecture Overview
 
+```mermaid
+graph LR
+    subgraph Hosts
+        API[ApiHost<br/>HTTP / Minimal APIs]
+        MCP[McpHost<br/>MCP stdio / KQL]
+        WRK[WorkerHost<br/>Background Jobs]
+    end
+
+    subgraph Modules
+        AI[AlertIngestion]
+        AR[AgentRuns]
+        SA[SafeActions]
+        GOV[Governance]
+        TEN[Tenancy]
+        RPT[Reporting]
+        EVAL[Evaluation]
+        CON[Connectors]
+        RAG[Rag]
+        PRMT[Prompting]
+    end
+
+    subgraph BuildingBlocks
+        BB_APP[Application]
+        BB_DOM[Domain]
+        BB_INF[Infrastructure]
+        BB_CON[Contracts]
+    end
+
+    API --> AI
+    API --> AR
+    API --> SA
+    API --> GOV
+    API --> TEN
+    API --> RPT
+    API --> EVAL
+    API --> CON
+    MCP --> RAG
+    AR -->|MCP stdio| MCP
+    SA --> GOV
+    SA --> TEN
+    GOV --> TEN
+    Modules --> BuildingBlocks
 ```
-src/
-  BuildingBlocks/       Shared cross-cutting libraries (Application, Contracts, Domain, Infrastructure)
-  Hosts/
-    OpsCopilot.ApiHost/   Main API host (HTTP, Minimal APIs)
-    OpsCopilot.McpHost/   MCP tool server (stdio transport, KQL queries)
-    OpsCopilot.WorkerHost/ Background processing host
-  Modules/              Bounded modules (AgentRuns, AlertIngestion, Connectors, Evaluation,
-                        Governance, Prompting, Rag, Reporting, SafeActions, Tenancy)
-tests/                  Integration, module, and MCP contract test projects
-infrastructure/         Azure deployment artifacts (Bicep)
-docs/                   Developer guides & product vision
-```
+
+---
+
+## Deployment Modes
+
+OpsCopilot ships with three pre-defined deployment modes that progressively enable execution capabilities:
+
+| Mode | Name | Description | `EnableExecution` | Real HTTP Probes | Azure Read | Azure Monitor Read |
+|------|------|-------------|:-----------------:|:----------------:|:----------:|:------------------:|
+| **A** | Local Dev | All execution off — triage and governance only | `false` | `false` | `false` | `false` |
+| **B** | Azure Read-Only | Probes + AzureMonitor read queries enabled; no mutations | `true` | `true` | `true` | `true` |
+| **C** | Controlled Execution | Full execution with approval gates and throttling | `true` | `true` | `true` | `true` |
+
+> Mode A is the default in `appsettings.Development.json`. Transition to B or C by toggling the `SafeActions:*` flags documented below.
 
 ---
 
@@ -29,204 +75,251 @@ docs/                   Developer guides & product vision
 | .NET SDK | **10.0+** | `dotnet --version` to verify |
 | PowerShell | 5.1+ or 7+ | Required for `AzurePowerShellCredential` |
 | SQL Server LocalDB | any | Ships with Visual Studio; used for local EF Core persistence |
-| Azure CLI **or** Azure PowerShell | latest | At least one is needed for Azure Log Analytics authentication |
-
----
-
-## Required Configuration
-
-The ApiHost requires two secrets that must **never** be committed to source control.  
-Set them via [.NET User Secrets](https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets) (local dev) or Azure Key Vault (deployed environments).
-
-### 1. Set User Secrets (one-time, local dev)
-
-```powershell
-cd src/Hosts/OpsCopilot.ApiHost
-
-# Log Analytics workspace GUID — obtain from Azure Portal → Log Analytics → Properties
-dotnet user-secrets set "WORKSPACE_ID" "<your-workspace-guid>"
-
-# SQL Server connection string — LocalDB for local development
-dotnet user-secrets set "SQL_CONNECTION_STRING" "Server=(localdb)\mssqllocaldb;Database=OpsCopilot;Trusted_Connection=True;MultipleActiveResultSets=true"
-```
-
-### 2. Verify secrets are set
-
-```powershell
-dotnet user-secrets list
-# Expected:
-#   WORKSPACE_ID = <guid>
-#   SQL_CONNECTION_STRING = Server=(localdb)\...
-```
-
-### 3. Authenticate to Azure (for KQL queries)
-
-The McpHost authenticates to Azure Log Analytics. In Development mode it uses `ExplicitChain` credential resolution (Azure CLI + Azure PowerShell). You need at least one active session:
-
-```powershell
-# Option A — Azure CLI (recommended)
-az login --tenant <YOUR_TENANT_ID>
-
-# Option B — Azure PowerShell
-Connect-AzAccount -Tenant <YOUR_TENANT_ID>
-Enable-AzContextAutosave -Scope CurrentUser   # persist token for child processes
-```
-
-Your identity must have the **Log Analytics Reader** role on the target workspace.
-
-> See [docs/local-dev-auth.md](docs/local-dev-auth.md) for full troubleshooting and credential configuration.  
-> See [docs/local-dev-secrets.md](docs/local-dev-secrets.md) for Key Vault integration and production secrets.
-
----
-
-## Configuration Reference
-
-### ApiHost (`appsettings.json` / User Secrets / env vars)
-
-| Key | Required | Default | Description |
-|---|:---:|---|---|
-| `WORKSPACE_ID` | **Yes** | — | Azure Log Analytics workspace GUID |
-| `SQL_CONNECTION_STRING` | **Yes** | — | SQL Server connection string (EF Core persistence) |
-| `McpKql:ServerCommand` | No | `dotnet run --project src/Hosts/OpsCopilot.McpHost/OpsCopilot.McpHost.csproj` | Command to launch the MCP tool server |
-| `McpKql:TimeoutSeconds` | No | `90` | Per-call MCP request timeout (seconds) |
-| `KeyVault:VaultUri` | No | *(empty)* | Azure Key Vault URI — when set, secrets are loaded from the vault |
-
-### McpHost (`appsettings.json` / `appsettings.Development.json`)
-
-| Key | Required | Default (Dev) | Description |
-|---|:---:|---|---|
-| `AzureAuth:Mode` | No | `ExplicitChain` | `ExplicitChain` or `DefaultAzureCredential` |
-| `AzureAuth:TenantId` | No | *(empty)* | Azure AD tenant GUID |
-| `AzureAuth:UseAzureCliCredential` | No | `true` | Include Azure CLI in credential chain |
-| `AzureAuth:UseAzurePowerShellCredential` | No | `true` | Include Azure PowerShell in credential chain |
-| `AzureAuth:UseAzureDeveloperCliCredential` | No | `false` | Include `azd` CLI in credential chain |
-| `AzureAuth:CredentialProcessTimeoutSeconds` | No | `60` | CLI/PS process timeout |
+| Azure CLI **or** Azure PowerShell | latest | Needed for Azure Log Analytics authentication (Modes B/C) |
 
 ---
 
 ## Quick Start
 
-### Build
+### Mode A — Local Dev (no Azure required)
 
 ```powershell
+# 1. Build
 dotnet build OpsCopilot.sln
-```
 
-### Run the API Host
+# 2. Set required secrets (one-time)
+cd src/Hosts/OpsCopilot.ApiHost
+dotnet user-secrets set "WORKSPACE_ID" "<your-workspace-guid>"
+dotnet user-secrets set "SQL_CONNECTION_STRING" "Server=(localdb)\mssqllocaldb;Database=OpsCopilot;Trusted_Connection=True;MultipleActiveResultSets=true"
+cd ../../..
 
-```powershell
-# From the solution root
+# 3. Run
 dotnet run --project src/Hosts/OpsCopilot.ApiHost/OpsCopilot.ApiHost.csproj
-```
 
-The server starts at **http://localhost:5000** (configured in `launchSettings.json`).  
-On first run, EF Core migrations automatically create the `OpsCopilot` database and the `agentRuns` schema in LocalDB.
-
-Startup logs confirm configuration status:
-
-```
-[Startup] Environment: Development
-[Startup] McpKql  ServerCommand=dotnet run --project ... | TimeoutSeconds=90
-[Startup] Config  WORKSPACE_ID=set | SQL_CONNECTION_STRING=set
-```
-
-If either secret shows `*** MISSING ***`, check your User Secrets setup above.
-
-### Health Check
-
-```powershell
+# 4. Verify
 curl http://localhost:5000/healthz
 # → "healthy"
 ```
 
+EF Core migrations run automatically on first start, creating the `OpsCopilot` database in LocalDB.
+
+### Mode B — Azure Read-Only
+
+1. Complete Mode A setup.
+2. Authenticate to Azure:
+   ```powershell
+   az login --tenant <YOUR_TENANT_ID>
+   ```
+   Your identity needs the **Log Analytics Reader** role on the target workspace.
+3. In `appsettings.Development.json`, set:
+   ```jsonc
+   "SafeActions": {
+     "EnableExecution": true,
+     "EnableRealHttpProbe": true,
+     "EnableAzureReadExecutions": true,
+     "EnableAzureMonitorReadExecutions": true
+   }
+   ```
+4. Restart the ApiHost.
+
+### Mode C — Controlled Execution
+
+1. Complete Mode B setup.
+2. Configure tenant allow-lists and throttling:
+   ```jsonc
+   "SafeActions": {
+     "AllowedExecutionTenants": { "<tenant-guid>": true },
+     "EnableExecutionThrottling": true,
+     "ExecutionThrottleWindowSeconds": 60,
+     "ExecutionThrottleMaxAttemptsPerWindow": 5
+   }
+   ```
+3. All `restart_pod` (High risk) actions require explicit approval before execution.
+
+> See [docs/running-locally.md](docs/running-locally.md) for full setup guide.  
+> See [docs/local-dev-auth.md](docs/local-dev-auth.md) for Azure credential troubleshooting.
+
 ---
 
-## API Endpoints
+## Configuration Essentials
 
-| Method | Path | Description |
+### ApiHost Core Settings (`appsettings.json` / User Secrets)
+
+| Key | Required | Default | Description |
+|---|:---:|---|---|
+| `WORKSPACE_ID` | **Yes** | — | Azure Log Analytics workspace GUID |
+| `SQL_CONNECTION_STRING` | **Yes** | — | SQL Server connection string (EF Core) |
+| `KeyVault:VaultUri` | No | *(empty)* | Azure Key Vault URI for production secrets |
+| `McpKql:ServerCommand` | No | `dotnet run --project src/Hosts/OpsCopilot.McpHost/...` | MCP tool server launch command |
+| `McpKql:TimeoutSeconds` | No | `90` | Per-call MCP request timeout (seconds) |
+
+### Governance Settings (`Governance:*`)
+
+| Key | Default | Description |
 |---|---|---|
-| `GET` | `/healthz` | Liveness probe — returns `"healthy"` |
-| `POST` | `/ingest/alert` | Ingests a raw alert, computes SHA-256 fingerprint, creates a `Pending` AgentRun |
-| `POST` | `/agent/triage` | End-to-end KQL triage: validate → execute KQL via MCP → persist ledger entry |
+| `Governance:Defaults:AllowedTools` | `["kql_query", "runbook_search"]` | Tools available to all tenants |
+| `Governance:Defaults:TriageEnabled` | `true` | Global triage capability toggle |
+| `Governance:Defaults:TokenBudget` | `null` (unlimited) | Max tokens per session |
+| `Governance:Defaults:SessionTtlMinutes` | `30` | Session time-to-live |
+| `Governance:TenantOverrides:<tenantId>:*` | — | Per-tenant overrides (same keys as Defaults) |
 
-### POST `/agent/triage` — Example
+### SafeActions Settings (`SafeActions:*`)
 
-**Headers:**
+| Key | Default (Dev) | Description |
+|---|---|---|
+| `SafeActions:EnableExecution` | `false` | Master execution kill-switch |
+| `SafeActions:EnableRealHttpProbe` | `false` | Allow real HTTP probes |
+| `SafeActions:EnableAzureReadExecutions` | `false` | Allow Azure ARM GET operations |
+| `SafeActions:EnableAzureMonitorReadExecutions` | `false` | Allow Azure Monitor KQL queries |
+| `SafeActions:HttpProbeTimeoutMs` | `5000` | HTTP probe timeout |
+| `SafeActions:HttpProbeMaxResponseBytes` | `1024` | Max probe response body |
+| `SafeActions:AzureReadTimeoutMs` | `5000` | Azure READ operation timeout |
+| `SafeActions:AzureMonitorQueryTimeoutMs` | `5000` | Azure Monitor query timeout |
+| `SafeActions:AllowedAzureSubscriptionIds` | `[]` | Subscription allow-list |
+| `SafeActions:AllowedLogAnalyticsWorkspaceIds` | `[]` | Workspace allow-list |
+| `SafeActions:AllowedExecutionTenants` | `{}` | Tenants allowed to execute actions |
+| `SafeActions:AllowActorHeaderFallback` | `true` | Allow `x-actor` header identity |
+| `SafeActions:AllowAnonymousActorFallback` | `true` | Allow anonymous actor in dev |
+| `SafeActions:EnableExecutionThrottling` | `false` | Enable per-tenant throttle |
+| `SafeActions:ExecutionThrottleWindowSeconds` | `60` | Throttle sliding window |
+| `SafeActions:ExecutionThrottleMaxAttemptsPerWindow` | `5` | Max executions per window |
 
-| Header | Required | Description |
-|---|:---:|---|
-| `Content-Type` | Yes | `application/json` |
-| `x-tenant-id` | Yes | Tenant identifier (non-empty string) |
+### Action Types (`SafeActions:ActionTypes`)
 
-**Request body:**
+| ActionType | RiskTier | Default Enabled |
+|---|---|:---:|
+| `restart_pod` | High | Yes |
+| `http_probe` | Low | Yes |
+| `dry_run` | Low | Yes |
+| `azure_resource_get` | Medium | Yes |
+| `azure_monitor_query` | Medium | Yes |
 
-```json
-{
-  "alertPayload": {
-    "alertSource": "Sentinel",
-    "fingerprint": "fp-abc-001",
-    "severity": "High",
-    "description": "CPU spike on vm-web-01"
-  },
-  "timeRangeMinutes": 60
-}
-```
+### McpHost Settings
 
-**Validation rules:**
+| Key | Default (Dev) | Description |
+|---|---|---|
+| `AzureAuth:Mode` | `ExplicitChain` | `ExplicitChain` or `DefaultAzureCredential` |
+| `AzureAuth:TenantId` | *(empty)* | Azure AD tenant GUID |
+| `AzureAuth:UseAzureCliCredential` | `true` | Include Azure CLI in credential chain |
+| `AzureAuth:UseAzurePowerShellCredential` | `true` | Include Azure PowerShell in chain |
 
-| Field | Rule |
-|---|---|
-| `x-tenant-id` header | Must be present and non-empty |
-| `alertPayload` | Must not be null |
-| `alertPayload.alertSource` | Must not be null or whitespace |
-| `alertPayload.fingerprint` | Must not be null or whitespace |
-| `timeRangeMinutes` | Must be between 1 and 1440 (1 minute to 24 hours) |
-| `workspaceId` (if supplied in body) | Must be a valid GUID |
+### AgentRuns Settings
 
-**Successful response (HTTP 200):**
+| Key | Default (Dev) | Description |
+|---|---|---|
+| `AgentRuns:SessionStore:Provider` | `InMemory` | `InMemory` or `Redis` |
+| `AgentRuns:SessionStore:ConnectionString` | — | Redis connection string (when Provider=Redis) |
 
-```json
-{
-  "runId": "2a699e71-b28c-4e53-9966-1938c249aeea",
-  "status": "Completed",
-  "summary": { "rowCount": 5 },
-  "citations": [
-    {
-      "workspaceId": "6b530cc6-14bb-4fad-9577-3a349209ae1c",
-      "executedQuery": "search * | where TimeGenerated > ago(60m) | take 20",
-      "timespan": "PT60M",
-      "executedAtUtc": "2026-02-21T18:58:37.739Z"
-    }
-  ]
-}
-```
+---
+
+## API Quick Reference
+
+### Endpoints
+
+| Method | Path | Description | Success | Error Codes |
+|---|---|---|:---:|---|
+| `GET` | `/healthz` | Liveness probe | 200 | — |
+| `POST` | `/ingest/alert` | Ingest raw alert, compute fingerprint | 200 | 400 |
+| `POST` | `/agent/triage` | End-to-end KQL triage via MCP | 200 | 400, 403 |
+| `POST` | `/safe-actions` | Propose a safe action | 201 | 400 |
+| `GET` | `/safe-actions/{id}` | Get action record by ID | 200 | 404 |
+| `GET` | `/safe-actions` | List action records (with filters) | 200 | 400 |
+| `POST` | `/safe-actions/{id}/approve` | Approve a proposed action | 200 | 401, 404, 409 |
+| `POST` | `/safe-actions/{id}/reject` | Reject a proposed action | 200 | 401, 404, 409 |
+| `POST` | `/safe-actions/{id}/execute` | Execute an approved action | 200 | 400, 404, 409, 429, 501 |
+| `GET` | `/reports/safe-actions/*` | SafeActions reports | 200 | 400 |
+| `GET` | `/reports/platform/*` | Platform-level reports | 200 | — |
+| `GET` | `/evaluation/run` | Run all evaluation scenarios | 200 | — |
+| `GET` | `/evaluation/scenarios` | List scenario metadata | 200 | — |
+| `POST` | `/tenants` | Create a tenant | 201 | 400 |
+| `GET` | `/tenants` | List tenants | 200 | — |
+| `GET` | `/tenants/{id}` | Get tenant by ID | 200 | 404 |
+| `PUT` | `/tenants/{id}/settings` | Upsert tenant config | 200 | 400, 404 |
+| `GET` | `/tenants/{id}/settings/resolved` | Get resolved tenant config | 200 | 404 |
+
+### Policy Denial Reason Codes
+
+When governance or policy checks fail, the API returns HTTP 400 with a `reasonCode`:
+
+| Reason Code | Source | Meaning |
+|---|---|---|
+| `governance_tool_denied` | GovernanceDenialMapper | Tool not in tenant's allowed-tools list |
+| `governance_budget_exceeded` | GovernanceDenialMapper | Token budget exhausted for session |
+| `action_type_not_allowed` | ConfigActionTypeCatalog | Action type disabled or unrecognised |
+| `tenant_not_authorized_for_action` | ConfigDrivenTenantExecutionPolicy | Tenant not in execution allow-list |
+| `throttled` | SafeActionEndpoints | Rate limit exceeded (HTTP 429 + `Retry-After`) |
+| `missing_tenant` | AlertIngestionEndpoints | `x-tenant-id` header absent or empty |
 
 ---
 
 ## Testing
 
 ```powershell
-# Run all unit & module tests
+# Run all 618+ tests
 dotnet test OpsCopilot.sln
 
-# Run a specific module's tests
-dotnet test tests/Modules/AgentRuns/OpsCopilot.Modules.AgentRuns.Tests
+# Run a specific module
+dotnet test tests/Modules/SafeActions/OpsCopilot.Modules.SafeActions.Tests
+
+# Run evaluation scenarios via the API
+curl http://localhost:5000/evaluation/run
 ```
 
----
-
-## Architecture Notes
-
-- **MCP Hard-Boundary**: ApiHost **must not** reference `Azure.Monitor.Query` or call Log Analytics directly. All KQL observations travel through McpHost via the MCP stdio protocol (`StdioClientTransport` → `McpStdioKqlToolClient`).
-- **Clean Architecture**: Each module follows Domain → Application → Infrastructure → Presentation layering. See [docs/pdd/DEPENDENCY_RULES.md](docs/pdd/DEPENDENCY_RULES.md).
-- **EF Core Persistence**: The `AgentRuns` module uses its own `AgentRunsDbContext` with the `agentRuns` schema. Migrations are applied automatically on startup via `MigrateAsync()`.
+The evaluation framework contains **11 deterministic scenarios** across AlertIngestion (4), SafeActions (4), and Reporting (3). These run in-process with no external dependencies.
 
 ---
 
-## Infrastructure
+## Packs
 
-Azure infrastructure assets are under `infrastructure/`.
-See [infrastructure/README.md](infrastructure/README.md) for deployment details, cost guardrails, and optional Azure AI Foundry enablement.
+OpsCopilot supports **Packs** — self-contained bundles of connectors, runbooks, KQL queries, and governance policies that can be shared and versioned independently.
+
+> See [PACKS.md](PACKS.md) for the full pack specification, directory layout, and examples.
+
+---
+
+## Contributing
+
+We welcome contributions — new connectors, evaluation scenarios, packs, and documentation improvements.
+
+> See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, coding conventions, and extension points.
+
+---
+
+## Security
+
+OpsCopilot treats execution as a **danger zone** — all actions flow through governance checks, approval gates, and idempotency guards before reaching real infrastructure.
+
+> See [SECURITY.md](SECURITY.md) for the threat model, responsible disclosure policy, and execution guard chain details.
+
+---
+
+## Solution Layout
+
+```
+src/
+  BuildingBlocks/         Shared libraries (Application, Contracts, Domain, Infrastructure)
+  Hosts/
+    OpsCopilot.ApiHost/   HTTP API (Minimal APIs)
+    OpsCopilot.McpHost/   MCP tool server (stdio, KQL)
+    OpsCopilot.WorkerHost/ Background processing
+  Modules/                Bounded modules (10 total):
+    AgentRuns/              Triage session + ledger persistence
+    AlertIngestion/         Alert intake + SHA-256 fingerprinting
+    Connectors/             Observability, Runbook, ActionTarget connectors
+    Evaluation/             Deterministic evaluation framework (11 scenarios)
+    Governance/             Tool allow-lists, token budgets, tenant config resolution
+    Prompting/              Prompt template management
+    Rag/                    Retrieval-augmented generation
+    Reporting/              SafeActions + platform reports
+    SafeActions/            Proposal → Approval → Execution → Rollback lifecycle
+    Tenancy/                Multi-tenant registry + per-tenant config
+tests/                    Integration, module, and MCP contract tests
+infrastructure/           Azure Bicep deployment artifacts
+docs/                     Developer guides, architecture, evidence
+examples/                 Configuration and integration examples
+templates/                CI/CD, Bicep, and Terraform starter templates
+packs/                    Community and starter packs
+```
 
 ---
 
@@ -235,27 +328,18 @@ See [infrastructure/README.md](infrastructure/README.md) for deployment details,
 | Document | Description |
 |---|---|
 | [docs/PROJECT_VISION.md](docs/PROJECT_VISION.md) | Product vision and target architecture |
-| [docs/local-dev-secrets.md](docs/local-dev-secrets.md) | Secrets setup, Key Vault integration |
-| [docs/local-dev-auth.md](docs/local-dev-auth.md) | Azure authentication troubleshooting |
-| [docs/dev-slice-1-curl.md](docs/dev-slice-1-curl.md) | Curl smoke-test guide for Slice 1 endpoints |
+| [docs/architecture.md](docs/architecture.md) | Detailed architecture deep-dive |
+| [docs/governance.md](docs/governance.md) | Governance resolution and policy chains |
+| [docs/running-locally.md](docs/running-locally.md) | Full local development setup |
+| [docs/deploying-on-azure.md](docs/deploying-on-azure.md) | Azure deployment guide |
+| [docs/threat-model.md](docs/threat-model.md) | Security threat model |
+| [docs/local-dev-auth.md](docs/local-dev-auth.md) | Azure credential troubleshooting |
+| [docs/local-dev-secrets.md](docs/local-dev-secrets.md) | Secrets & Key Vault integration |
 | [docs/pdd/DEPENDENCY_RULES.md](docs/pdd/DEPENDENCY_RULES.md) | Module dependency rules |
 | [src/Hosts/OpsCopilot.McpHost/README.md](src/Hosts/OpsCopilot.McpHost/README.md) | MCP tool server documentation |
 
 ---
 
-## Module Ownership & Status
+## License
 
-Use this table as a living ownership and maturity tracker. Keep dependency direction aligned with `docs/pdd/DEPENDENCY_RULES.md`.
-
-| Module | Owning Team | Tech Lead | Status | Notes |
-| --- | --- | --- | --- | --- |
-| AgentRuns | _TBD_ | _TBD_ | In Progress | Triage + ledger persistence |
-| AlertIngestion | _TBD_ | _TBD_ | In Progress | Alert ingestion + fingerprinting |
-| Connectors | _TBD_ | _TBD_ | Planned | |
-| Evaluation | _TBD_ | _TBD_ | Planned | |
-| Governance | _TBD_ | _TBD_ | Planned | |
-| Prompting | _TBD_ | _TBD_ | Planned | |
-| Rag | _TBD_ | _TBD_ | Planned | |
-| Reporting | _TBD_ | _TBD_ | Planned | |
-| SafeActions | _TBD_ | _TBD_ | Planned | |
-| Tenancy | _TBD_ | _TBD_ | Planned | |
+TBD — license has not yet been decided. This repository is currently shared for internal and evaluation purposes only. Do not redistribute until a license is formally applied.
