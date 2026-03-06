@@ -1,7 +1,7 @@
 # Dev Slice 47 — Governance Preview Semantics + Evidence Reconciliation (STRICT)
 
-**Date:** 2025-07-08
-**Commit:** _(pending)_
+**Date:** 2026-03-06
+**Commit:** efeb0b9745039d31b756fa6bf5167b81404d6d16
 
 ---
 
