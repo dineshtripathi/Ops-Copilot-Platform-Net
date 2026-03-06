@@ -28,6 +28,11 @@
 ###   AF. Tenant-Aware Governance Verification (Dev Slice 30)
 ###   AG. SafeActions Governance Enforcement (Dev Slice 31)
 ###   AH. SafeActions Governance Denial Normalization (Dev Slice 31.1)
+###   AM. Packs → Triage Integration (Dev Slice 36)
+###   AN. Pack Evidence Execution Fix (Dev Slice 39)
+###   AO. ModeB Evidence — Tenant Workspace Config (Dev Slice 40)
+###   AP. Evidence Observability — CorrelationId & Metrics (Dev Slice 42)
+###   AQ. Packs → SafeActions Proposals (Dev Slice 44)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -1926,4 +1931,891 @@ x-tenant-id: tenant-restricted-33
   "proposedPayloadJson": "{\"vmName\":\"vm-prod-01\",\"targetSize\":\"Standard_B1s\"}",
   "rollbackPayloadJson": "{\"vmName\":\"vm-prod-01\",\"targetSize\":\"Standard_D4s_v3\"}",
   "dryRun": false
+}
+
+###############################################################################
+# AK — Pack Inventory (Slice 34)
+###############################################################################
+
+### AK1 — List all loaded packs
+# Expected: 200 OK with:
+#   { generatedAtUtc, totalPacks, validPacks, invalidPacks,
+#     packs[]: { name, version, minimumMode,
+#                resourceTypesCount, evidenceCollectorsCount,
+#                runbooksCount, safeActionsCount,
+#                isValid, errors[] } }
+# @name listPacks
+GET {{baseUrl}}/reports/platform/packs
+
+###############################################################################
+# AL — Pack Catalog Query (Slice 35)
+###############################################################################
+
+### AL1 — Search packs (no filter — returns all)
+# Expected: 200 OK with:
+#   { generatedAtUtc, totalResults, packs[]: { name, version, minimumMode, resourceTypes[], isValid } }
+# @name searchPacksAll
+GET {{baseUrl}}/reports/platform/packs/search
+
+### AL2 — Search packs by resource type
+# @name searchPacksByResourceType
+GET {{baseUrl}}/reports/platform/packs/search?resourceType=Microsoft.Compute/virtualMachines
+
+### AL3 — Search packs by minimum mode
+# @name searchPacksByMode
+GET {{baseUrl}}/reports/platform/packs/search?minimumMode=A
+
+### AL4 — Get pack details by name
+# Expected: 200 OK with:
+#   { generatedAtUtc, pack: { Name, Version, Description, ResourceTypes[], MinimumMode,
+#     EvidenceCollectorCount, RunbookCount, SafeActionCount, IsValid, Errors[], PackPath } }
+# Expected 404 if pack name not found: { error: "Pack '{name}' not found." }
+# @name getPackDetails
+GET {{baseUrl}}/reports/platform/packs/azure-vm
+
+### AL5 — Get pack runbooks
+# Expected: 200 OK with:
+#   { generatedAtUtc, packName, totalRunbooks, runbooks[]: { Id, File } }
+# @name getPackRunbooks
+GET {{baseUrl}}/reports/platform/packs/azure-vm/runbooks
+
+### AL6 — Get pack evidence collectors
+# Expected: 200 OK with:
+#   { generatedAtUtc, packName, totalEvidenceCollectors,
+#     evidenceCollectors[]: { Id, RequiredMode, QueryFile } }
+# @name getPackEvidenceCollectors
+GET {{baseUrl}}/reports/platform/packs/azure-vm/evidence-collectors
+
+### AL7 — Get pack safe actions
+# Expected: 200 OK with:
+#   { generatedAtUtc, packName, totalSafeActions,
+#     safeActions[]: { Id, RequiresMode, DefinitionFile } }
+# @name getPackSafeActions
+GET {{baseUrl}}/reports/platform/packs/azure-vm/safe-actions
+
+###############################################################################
+# AM — Packs → Triage Integration (Slice 36)
+#
+# Pack enrichment adds three NEW nullable fields to the triage response:
+#   packRunbooks[]            — runbook details from Mode-A packs
+#   packEvidenceCollectors[]  — evidence-collector details from Mode-A packs
+#   packErrors[]              — non-fatal errors (null when none)
+#
+# Requirements:
+#   - Packs:RootPath must be configured with at least one valid pack on disk.
+#   - Only packs with minimumMode="A" are surfaced (Mode A only).
+#   - Runbook content is truncated at 2 000 characters.
+###############################################################################
+
+### AM1 — Triage with pack enrichment (happy path)
+# Expected: 200 OK, packRunbooks[] and packEvidenceCollectors[] populated
+#   for packs whose minimumMode="A" and that target the alerted resource type.
+#   packErrors is null (no errors).
+# @name triageWithPackEnrichment
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "pack-enrich-happy-01",
+    "title": "CPU spike on VM — pack enrichment test",
+    "severity": "High",
+    "firedAtUtc": "2025-07-15T10:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-xyz/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/vm-web-01",
+    "serviceName": "vm-web-01",
+    "environment": "production"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AM2 — Triage with minimal payload — pack fields still present
+# Expected: 200 OK, packRunbooks / packEvidenceCollectors returned
+#   (may be empty if no packs target the inferred resource type).
+#   Proves pack enrichment runs even with the minimal request body.
+# @name triageMinimalWithPacks
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Datadog",
+    "fingerprint": "pack-enrich-minimal-01"
+  }
+}
+
+### AM3 — Pack runbook shape verification
+# Expected: 200 OK where each element of packRunbooks[] has:
+#   { packName, runbookId, file, contentSnippet }
+#   contentSnippet is a string (≤2000 chars) or null.
+#   packErrors is null.
+# @name triagePackRunbookShape
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "pack-runbook-shape-01",
+    "title": "Disk pressure — verify pack runbook schema",
+    "severity": "Medium",
+    "firedAtUtc": "2025-07-15T11:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-xyz/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/vm-db-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AM4 — Pack evidence-collector shape verification
+# Expected: 200 OK where each element of packEvidenceCollectors[] has:
+#   { packName, evidenceCollectorId, requiredMode, queryFile, kqlContent }
+#   requiredMode is "A" (Mode-B collectors are filtered out).
+#   kqlContent is the raw KQL text or null if the file was unreadable.
+# @name triagePackEvidenceCollectorShape
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "pack-ec-shape-01",
+    "title": "Memory exhaustion — verify evidence-collector schema",
+    "severity": "Critical",
+    "firedAtUtc": "2025-07-15T12:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-xyz/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/vm-app-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AM5 — Triage without packs configured returns empty arrays
+# Expected: 200 OK with packRunbooks=[], packEvidenceCollectors=[],
+#   packErrors=null.
+#   When Packs:RootPath is empty or points to a directory with no
+#   valid pack folders, enrichment returns empty collections.
+# @name triageNoPacksConfigured
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "PagerDuty",
+    "fingerprint": "no-packs-test-01",
+    "title": "Latency alert — no packs expected"
+  }
+}
+
+### AM6 — Pack enrichment does not break existing triage fields
+# Expected: 200 OK — all pre-existing triage response fields
+#   (runId, status, summary, citations, runbookCitations,
+#    sessionId, isNewSession, sessionExpiresAtUtc, usedSessionContext)
+#   are present and unaffected by the new pack* fields.
+#   Proves additive-only change to TriageResponse.
+# @name triageBackwardCompatibility
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "backward-compat-01",
+    "title": "Network timeout — backward compatibility check",
+    "severity": "Low",
+    "firedAtUtc": "2025-07-15T13:00:00Z",
+    "signalType": "Log",
+    "resourceId": "/subscriptions/sub-xyz/resourceGroups/prod-rg/providers/Microsoft.Network/loadBalancers/lb-01",
+    "serviceName": "lb-01",
+    "environment": "staging",
+    "correlationId": "corr-backward-compat"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+
+###############################################################################
+# AN — Pack Evidence Execution Fix (Slice 39)
+#
+# Slice 39 fixes Mode-B evidence execution that was non-functional in Slice 38.
+# The stub ExecuteQueryAsync on IObservabilityConnector has been replaced by a
+# dedicated IObservabilityQueryExecutor backed by AzureMonitorObservabilityQueryExecutor
+# (LogsQueryClient + DefaultAzureCredential).
+#
+# PackEvidenceExecutor double-gate:
+#   1. Pack deployment mode >= B
+#   2. Configuration flag  Packs:EvidenceExecutionEnabled = true
+#
+# When both gates pass, KQL queries from pack evidence-collector files are
+# executed against Azure Monitor via the new executor.  Results appear in
+# TriageResponse.packEvidenceResults[] as PackEvidenceResultDto objects:
+#   { packName, collectorId, connectorName, queryFile, queryContent,
+#     resultJson, rowCount, errorMessage }
+#
+# NOTE: @workspaceId is synthetic — Azure Monitor cannot resolve it, so
+# evidence queries will return errors.  This PROVES the real execution path
+# runs (the old stub silently returned Success:false with no error detail).
+###############################################################################
+
+### AN1 — Mode-B triage: evidence execution path invoked
+# Expected: 200 OK.  Response contains packEvidenceResults (may be [] or
+#   items with errorMessage due to synthetic workspace).  The key proof is
+#   that the execution path runs at all — Slice 38's stub never reached
+#   Azure Monitor, so any error from Azure Monitor confirms the fix.
+# @name triageEvidenceExecution
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "evidence-exec-01",
+    "title": "High CPU on prod-vm-01 — evidence execution test",
+    "severity": "High",
+    "firedAtUtc": "2025-07-15T14:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-01",
+    "serviceName": "prod-vm-01",
+    "environment": "production",
+    "correlationId": "corr-evidence-exec-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AN2 — Mode-A triage: evidence execution skipped
+# Expected: 200 OK.  packEvidenceResults is null (or absent) because
+#   Mode-A packs do not meet the >= B threshold for evidence execution.
+#   packEvidenceCollectors should still list Mode-A collector metadata.
+# @name triageModeANoExecution
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "evidence-mode-a-01",
+    "title": "Disk warning — Mode A only, no evidence execution",
+    "severity": "Warning",
+    "firedAtUtc": "2025-07-15T14:05:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/dev-rg/providers/Microsoft.Compute/virtualMachines/dev-vm-02",
+    "serviceName": "dev-vm-02",
+    "environment": "development",
+    "correlationId": "corr-evidence-mode-a-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AN3 — Evidence execution disabled via feature flag
+# Expected: 200 OK.  Even with Mode-B packs, when Packs:EvidenceExecutionEnabled
+#   is false (or unset), packEvidenceResults is null.
+#   This confirms the double-gate: mode >= B is necessary but not sufficient.
+# NOTE: This test is only meaningful when the server is started with
+#   Packs:EvidenceExecutionEnabled = false in appsettings or env vars.
+# @name triageEvidenceDisabled
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "evidence-disabled-01",
+    "title": "Memory pressure — evidence disabled gate test",
+    "severity": "Critical",
+    "firedAtUtc": "2025-07-15T14:10:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-03",
+    "serviceName": "prod-vm-03",
+    "environment": "production",
+    "correlationId": "corr-evidence-disabled-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AN4 — Evidence result DTO shape validation
+# Expected: 200 OK.  If packEvidenceResults is non-null, each item must have:
+#   packName (string), collectorId (string), connectorName (string),
+#   queryFile (string|null), queryContent (string|null),
+#   resultJson (string|null), rowCount (int), errorMessage (string|null).
+#   With synthetic workspace, expect errorMessage populated and rowCount = 0.
+# @name triageEvidenceResultShape
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "evidence-shape-01",
+    "title": "Network latency spike — evidence result shape check",
+    "severity": "High",
+    "firedAtUtc": "2025-07-15T14:15:00Z",
+    "signalType": "Log",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Network/virtualNetworks/vnet-01",
+    "serviceName": "vnet-01",
+    "environment": "production",
+    "correlationId": "corr-evidence-shape-01"
+  },
+  "timeRangeMinutes": 60,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AN5 — Evidence execution error captured in packErrors
+# Expected: 200 OK.  When evidence execution encounters errors (e.g. Azure
+#   Monitor rejects the synthetic workspace), the error is captured in
+#   packErrors[] and/or in the individual packEvidenceResults[].errorMessage.
+#   The triage itself does NOT fail — errors are non-fatal and reported inline.
+# @name triageEvidenceErrorHandling
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "evidence-error-01",
+    "title": "Storage IOPS exceeded — evidence error handling test",
+    "severity": "Warning",
+    "firedAtUtc": "2025-07-15T14:20:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Storage/storageAccounts/prodsa01",
+    "serviceName": "prodsa01",
+    "environment": "production",
+    "correlationId": "corr-evidence-error-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AN6 — Backward compatibility: existing triage fields unaffected
+# Expected: 200 OK.  All pre-existing triage response fields remain intact:
+#   runId, status, summary, citations, runbookCitations, sessionId,
+#   isNewSession, sessionExpiresAtUtc, usedSessionContext, packRunbooks,
+#   packEvidenceCollectors.  Evidence execution does not alter these fields.
+#   Minimal payload to isolate backward-compat verification.
+# @name triageBackwardCompatEvidence
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "evidence-compat-01",
+    "title": "Service restart — backward compatibility with evidence",
+    "severity": "Low",
+    "firedAtUtc": "2025-07-15T14:25:00Z",
+    "signalType": "Log",
+    "resourceId": "/subscriptions/sub-xyz/resourceGroups/staging-rg/providers/Microsoft.Web/sites/app-staging-01",
+    "serviceName": "app-staging-01",
+    "environment": "staging",
+    "correlationId": "corr-evidence-compat-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+
+###############################################################################
+# AO — ModeB Evidence — Tenant Workspace Config (Slice 40)
+#
+# Slice 40 wires per-tenant workspace resolution into the ModeB evidence path.
+# Instead of relying on a single global workspaceId in the request body, the
+# executor now reads Tenants:<tenantId>:Observability:LogAnalyticsWorkspaceId
+# from configuration and validates it against the SafeActions allowlist before
+# executing KQL collectors.
+#
+# Resolution logic:
+#   1. Tenant config lookup: Tenants:<tenantId>:Observability:LogAnalyticsWorkspaceId
+#   2. Allowlist check: SafeActions:AllowedLogAnalyticsWorkspaceIds must include the GUID
+#   3. Both gates must pass — failure produces per-item errorMessage, never a 4xx/5xx
+#
+# Scenario matrix:
+#   AO1 — Configured tenant     → packEvidenceResults[] non-null, queries run
+#   AO2 — Missing workspace     → per-item errorMessage = "missing_workspace"
+#   AO3 — Not allowlisted       → per-item errorMessage = "workspace_not_allowlisted"
+#   AO4 — Mode A tenant         → packEvidenceResults null (mode gate fires first)
+###############################################################################
+
+### AO1 — ModeB triage: tenant has workspace configured → evidence results present
+# Expected: 200 OK.  packEvidenceResults[] is non-null and populated because
+#   Tenants:tenant-slice40-configured:Observability:LogAnalyticsWorkspaceId is
+#   set in config and the GUID is present in SafeActions:AllowedLogAnalyticsWorkspaceIds.
+#   Individual items may carry errorMessage if Azure Monitor cannot resolve the
+#   workspace in the local dev environment, but the resolution path itself runs.
+# NOTE: Requires the server to be started with:
+#   Tenants:tenant-slice40-configured:Observability:LogAnalyticsWorkspaceId = <valid-guid>
+#   SafeActions:AllowedLogAnalyticsWorkspaceIds containing that same GUID
+#   Packs:DeploymentMode = "B" and Packs:EvidenceExecutionEnabled = true
+# @name triageModeB_TenantConfigured
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: tenant-slice40-configured
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "ao1-configured-workspace-01",
+    "title": "CPU spike on prod-vm — tenant workspace configured path",
+    "severity": "High",
+    "firedAtUtc": "2025-07-20T09:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-ao1",
+    "serviceName": "prod-vm-ao1",
+    "environment": "production",
+    "correlationId": "corr-ao1-configured-01"
+  },
+  "timeRangeMinutes": 120,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AO2 — ModeB triage: tenant missing workspace → per-item errors, 200 OK
+# Expected: 200 OK.  packEvidenceResults[] items all have errorMessage = "missing_workspace".
+#   No workspace GUID is configured for this tenant in Tenants:tenant-slice40-noworkspace:
+#   Observability:LogAnalyticsWorkspaceId, so the resolver cannot proceed and
+#   each collector entry is returned with the sentinel error string.
+#   The overall response is still 200 — workspace errors are non-fatal.
+# NOTE: No workspace configured for tenant-slice40-noworkspace.
+#   Server must be in Mode B with EvidenceExecutionEnabled = true.
+# @name triageModeB_TenantMissingWorkspace
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: tenant-slice40-noworkspace
+
+{
+  "alertPayload": {
+    "alertSource": "Prometheus",
+    "fingerprint": "ao2-missing-workspace-01",
+    "title": "Memory pressure — tenant workspace missing path",
+    "severity": "Critical",
+    "firedAtUtc": "2025-07-20T09:05:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-ao2",
+    "serviceName": "prod-vm-ao2",
+    "environment": "production",
+    "correlationId": "corr-ao2-noworkspace-01"
+  },
+  "timeRangeMinutes": 120,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AO3 — ModeB triage: tenant workspace not allowlisted → per-item errors, 200 OK
+# Expected: 200 OK.  packEvidenceResults[] items all have errorMessage = "workspace_not_allowlisted".
+#   Tenants:tenant-slice40-notallowlisted:Observability:LogAnalyticsWorkspaceId is
+#   set to a valid GUID, but SafeActions:AllowedLogAnalyticsWorkspaceIds does NOT
+#   include that GUID.  The allowlist gate rejects the workspace before any KQL
+#   query is sent to Azure Monitor.
+# NOTE: Workspace GUID is valid but excluded from the allowlist.
+#   Server must be in Mode B with EvidenceExecutionEnabled = true.
+# @name triageModeB_TenantWorkspaceNotAllowlisted
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: tenant-slice40-notallowlisted
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "ao3-not-allowlisted-01",
+    "title": "Disk IOPS exceeded — workspace not allowlisted path",
+    "severity": "Warning",
+    "firedAtUtc": "2025-07-20T09:10:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Storage/storageAccounts/prodsa-ao3",
+    "serviceName": "prodsa-ao3",
+    "environment": "production",
+    "correlationId": "corr-ao3-notallowlisted-01"
+  },
+  "timeRangeMinutes": 120,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AO4 — ModeA triage: workspace resolution skipped (mode < B gate fires first)
+# Expected: 200 OK.  packEvidenceResults is null because the deployment mode gate
+#   (Packs:DeploymentMode = "A") fires before any workspace resolution occurs.
+#   Even if a workspace is configured for the tenant and is on the allowlist,
+#   the mode gate is checked first and short-circuits the entire evidence path.
+#   This confirms gate ordering: mode check → workspace check → query execution.
+# NOTE: Server must be in Mode A (Packs:DeploymentMode = "A").
+#   Tenant workspace config is irrelevant — the mode gate prevents any lookup.
+# @name triageModeA_WorkspaceResolutionSkipped
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: tenant-slice40-modea
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "ao4-modea-skip-01",
+    "title": "Network latency spike — Mode A workspace skip path",
+    "severity": "Low",
+    "firedAtUtc": "2025-07-20T09:15:00Z",
+    "signalType": "Log",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/staging-rg/providers/Microsoft.Network/virtualNetworks/vnet-ao4",
+    "serviceName": "vnet-ao4",
+    "environment": "staging",
+    "correlationId": "corr-ao4-modea-01"
+  },
+  "timeRangeMinutes": 120,
+  "workspaceId": "{{workspaceId}}"
+}
+
+
+###############################################################################
+# AP — Pack Evidence Observability & Correlation (Slice 42)
+#
+# Slice 42 adds structured telemetry (System.Diagnostics.Metrics counters)
+# and end-to-end CorrelationId propagation to the pack evidence execution
+# pipeline.  Nine counters under the "OpsCopilot.Packs" meter track every
+# gate and query outcome — attempt, skip, workspace-resolution-failure,
+# collector success/failure/truncation, and query blocked/timeout/failure.
+#
+# The CorrelationId supplied in alertPayload.correlationId now flows through
+# the entire evidence path and appears in every counter tag plus structured
+# log scopes, enabling distributed-trace correlation across triage calls.
+#
+# Scenario matrix:
+#   AP1 — ModeB with correlationId  → correlationId echoed in evidence results
+#   AP2 — ModeB without correlationId → system generates one (non-null results)
+#   AP3 — ModeC with correlationId   → multi-pack evidence correlation
+#   AP4 — ModeA triage               → evidence skipped, telemetry only
+###############################################################################
+
+### AP1 — ModeB triage with explicit correlationId → correlationId flows through evidence
+# Expected: 200 OK.  packEvidenceResults[] is non-null.  The correlationId
+#   "corr-ap1-explicit-01" should appear in the structured telemetry counters
+#   (packs.evidence.attempts, packs.evidence.collector.success, etc.) as the
+#   correlation_id tag value.  Verify via Application Insights / OTel exporter
+#   or MeterListener in integration tests.
+# NOTE: Server must be in Mode B (Packs:DeploymentMode = "B") with
+#   Packs:EvidenceExecutionEnabled = true.
+#   Tenant must have a valid workspace configured and allowlisted.
+# @name triageModeB_ExplicitCorrelationId
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: tenant-slice40-configured
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "ap1-correlation-explicit-01",
+    "title": "Memory pressure on app-server — correlation flow verification",
+    "severity": "High",
+    "firedAtUtc": "2025-07-22T10:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-ap1",
+    "serviceName": "prod-vm-ap1",
+    "environment": "production",
+    "correlationId": "corr-ap1-explicit-01"
+  },
+  "timeRangeMinutes": 120,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AP2 — ModeB triage without correlationId → evidence still executes, system-generated correlation
+# Expected: 200 OK.  packEvidenceResults[] is non-null.  Even though the
+#   alertPayload does not include a correlationId, the evidence executor still
+#   runs.  The telemetry counters will record correlation_id as null/empty,
+#   confirming that missing correlation does not break the evidence path.
+# NOTE: Server must be in Mode B with EvidenceExecutionEnabled = true.
+#   Tenant must have a valid workspace configured and allowlisted.
+# @name triageModeB_NoCorrelationId
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: tenant-slice40-configured
+
+{
+  "alertPayload": {
+    "alertSource": "Prometheus",
+    "fingerprint": "ap2-no-correlation-01",
+    "title": "Pod restart loop — evidence without explicit correlationId",
+    "severity": "Warning",
+    "firedAtUtc": "2025-07-22T10:05:00Z",
+    "signalType": "Log",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.ContainerService/managedClusters/aks-ap2",
+    "serviceName": "aks-ap2",
+    "environment": "production"
+  },
+  "timeRangeMinutes": 60,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AP3 — ModeC triage with correlationId → multi-pack evidence correlation
+# Expected: 200 OK.  packEvidenceResults[] is non-null.  In Mode C all
+#   loaded packs are eligible for evidence execution.  The correlationId
+#   "corr-ap3-modec-01" should appear in the telemetry for every pack/
+#   collector pair executed, enabling cross-pack distributed-trace correlation.
+# NOTE: Server must be in Mode C (Packs:DeploymentMode = "C") with
+#   Packs:EvidenceExecutionEnabled = true.
+#   Tenant must have a valid workspace configured and allowlisted.
+# @name triageModeC_CorrelationMultiPack
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: tenant-slice40-configured
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "ap3-modec-multipacks-01",
+    "title": "Storage latency spike — Mode C multi-pack correlation verification",
+    "severity": "Critical",
+    "firedAtUtc": "2025-07-22T10:10:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Storage/storageAccounts/prodsa-ap3",
+    "serviceName": "prodsa-ap3",
+    "environment": "production",
+    "correlationId": "corr-ap3-modec-01"
+  },
+  "timeRangeMinutes": 120,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AP4 — ModeA triage → evidence skipped, observability confirms skip counter
+# Expected: 200 OK.  packEvidenceResults is null because the deployment mode
+#   gate (Packs:DeploymentMode = "A") fires before any evidence execution.
+#   The telemetry counter packs.evidence.skipped should fire with tags
+#   mode = "A" and tenant_id = the request tenant.  No correlation_id is
+#   needed since the evidence path is never entered.
+# NOTE: Server must be in Mode A (Packs:DeploymentMode = "A").
+# @name triageModeA_EvidenceSkipped_Telemetry
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: tenant-slice42-modea
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "ap4-modea-skip-telemetry-01",
+    "title": "Network timeout — Mode A evidence skip telemetry verification",
+    "severity": "Low",
+    "firedAtUtc": "2025-07-22T10:15:00Z",
+    "signalType": "Log",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/staging-rg/providers/Microsoft.Network/virtualNetworks/vnet-ap4",
+    "serviceName": "vnet-ap4",
+    "environment": "staging",
+    "correlationId": "corr-ap4-modea-skip-01"
+  },
+  "timeRangeMinutes": 60,
+  "workspaceId": "{{workspaceId}}"
+}
+
+###############################################################################
+# AQ.  Packs → SafeActions Proposals  (Dev Slice 44)
+#
+# Slice 44 enables packs to surface SafeAction recommendations during
+# triage as proposals only — never auto-approved, never auto-executed.
+# The new TriageResponse field `packSafeActionProposals` is an array
+# of PackSafeActionProposalDto objects.
+#
+# Feature gates:
+#   • Packs:DeploymentMode ≥ "B"  (gate 1 — mode check)
+#   • Packs:SafeActionsEnabled = true  (gate 2 — feature flag)
+#   • Per-action: action.RequiresMode ≤ deploymentMode (gate 3)
+#
+# With FileSystemPackLoader Rule 9 requiring RequiresMode="C" for all
+# safeActions, proposals are only returned when DeploymentMode = "C".
+#
+# Scenario matrix:
+#   AQ1 — ModeC triage → proposals populated (happy path)
+#   AQ2 — ModeB triage → proposals empty (per-action filter)
+#   AQ3 — ModeA triage → proposals empty (mode gate)
+#   AQ4 — Feature disabled → proposals null/empty
+#   AQ5 — No matching packs → proposals empty
+#   AQ6 — ModeC triage → DTO shape verification
+###############################################################################
+
+### AQ1 — ModeC triage: SafeActions proposals populated (happy path)
+# Expected: 200 OK.  Response contains packSafeActionProposals[] with at
+#   least one item if the azure-vm pack has safeActions defined.  Each
+#   proposal has: packName, packVersion, actionId, requiresMode ("C"),
+#   displayName, actionType, parametersJson (may be null), and errorMessage
+#   (null on success).  Proposals are informational only — no execution.
+# NOTE: Server must be in Mode C (Packs:DeploymentMode = "C") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeC_SafeActionProposals
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "aq1-modec-proposals-01",
+    "title": "High CPU on prod-vm-01 — SafeActions proposals verification",
+    "severity": "High",
+    "firedAtUtc": "2025-07-25T10:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-01",
+    "serviceName": "prod-vm-01",
+    "environment": "production",
+    "correlationId": "corr-aq1-proposals-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AQ2 — ModeB triage: SafeActions proposals empty (per-action filter blocks RequiresMode=C)
+# Expected: 200 OK.  packSafeActionProposals is [] (empty) because all
+#   pack safeActions have RequiresMode="C" (enforced by loader Rule 9),
+#   but the deployment mode is "B".  The per-action mode filter
+#   IsModeAtOrBelow(action.RequiresMode="C", deploymentMode="B") returns
+#   false, so every action is filtered out.  Gate 1 (mode >= B) passes.
+# NOTE: Server must be in Mode B (Packs:DeploymentMode = "B") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeB_SafeActionProposalsEmpty
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "aq2-modeb-filtered-01",
+    "title": "Disk full on staging-vm — ModeB per-action filter test",
+    "severity": "Medium",
+    "firedAtUtc": "2025-07-25T10:05:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/staging-rg/providers/Microsoft.Compute/virtualMachines/staging-vm-aq2",
+    "serviceName": "staging-vm-aq2",
+    "environment": "staging",
+    "correlationId": "corr-aq2-modeb-filtered-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AQ3 — ModeA triage: SafeActions proposals empty (mode gate blocks)
+# Expected: 200 OK.  packSafeActionProposals is null or [] because
+#   Gate 1 (Packs:DeploymentMode >= "B") fails — Mode A is below the
+#   minimum threshold.  The proposer returns empty immediately without
+#   consulting the pack catalog.
+# NOTE: Server must be in Mode A (Packs:DeploymentMode = "A").
+# @name triageModeA_SafeActionProposalsGated
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "aq3-modea-gated-01",
+    "title": "Network timeout — ModeA safe-actions gate verification",
+    "severity": "Low",
+    "firedAtUtc": "2025-07-25T10:10:00Z",
+    "signalType": "Log",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/dev-rg/providers/Microsoft.Network/virtualNetworks/vnet-aq3",
+    "serviceName": "vnet-aq3",
+    "environment": "development",
+    "correlationId": "corr-aq3-modea-gated-01"
+  },
+  "timeRangeMinutes": 60,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AQ4 — Feature disabled: SafeActions proposals absent
+# Expected: 200 OK.  packSafeActionProposals is null or [] because
+#   Gate 2 (Packs:SafeActionsEnabled = false) blocks the proposer.
+#   The mode gate may pass (Mode C) but the feature flag prevents
+#   any proposal generation.
+# NOTE: Server must have Packs:SafeActionsEnabled = false
+#   (regardless of Packs:DeploymentMode).
+# @name triageFeatureDisabled_NoProposals
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "aq4-feature-disabled-01",
+    "title": "CPU anomaly — SafeActions feature-flag gate verification",
+    "severity": "Medium",
+    "firedAtUtc": "2025-07-25T10:15:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-aq4",
+    "serviceName": "prod-vm-aq4",
+    "environment": "production",
+    "correlationId": "corr-aq4-feature-disabled-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AQ5 — No matching packs: SafeActions proposals empty
+# Expected: 200 OK.  packSafeActionProposals is [] because the alert
+#   resource type does not match any pack's resourceTypes filter (the
+#   alertPayload references a Storage account, but the default azure-vm
+#   pack only targets Microsoft.Compute/virtualMachines).
+# NOTE: Server must be in Mode C (Packs:DeploymentMode = "C") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageNoMatchingPacks_EmptyProposals
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "aq5-no-match-01",
+    "title": "Storage throttling — no matching pack for resource type",
+    "severity": "Low",
+    "firedAtUtc": "2025-07-25T10:20:00Z",
+    "signalType": "Log",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/data-rg/providers/Microsoft.Storage/storageAccounts/stoaq5",
+    "serviceName": "stoaq5",
+    "environment": "production",
+    "correlationId": "corr-aq5-no-match-01"
+  },
+  "timeRangeMinutes": 60,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AQ6 — ModeC triage: SafeActions proposal DTO shape verification
+# Expected: 200 OK.  Each item in packSafeActionProposals[] must have
+#   all eight fields present (even if null):
+#     packName       — string, e.g. "azure-vm"
+#     packVersion    — string, e.g. "1.0.0"
+#     actionId       — string, e.g. "restart-vm"
+#     requiresMode   — string, "C"
+#     displayName    — string, human-readable action name
+#     actionType     — string, e.g. "http-probe" or "unknown"
+#     parametersJson — string (JSON) or null
+#     errorMessage   — string or null (null = success)
+#   Verify the shape matches PackSafeActionProposalDto exactly.
+# NOTE: Server must be in Mode C (Packs:DeploymentMode = "C") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeC_ProposalDtoShape
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "aq6-dto-shape-01",
+    "title": "High memory on prod-vm-02 — proposal DTO shape check",
+    "severity": "High",
+    "firedAtUtc": "2025-07-25T10:25:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-02",
+    "serviceName": "prod-vm-02",
+    "environment": "production",
+    "correlationId": "corr-aq6-dto-shape-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
 }

@@ -1,0 +1,24 @@
+{
+  "name":          "k8s-basic",
+  "version":       "0.2.0",
+  "description":   "Basic Kubernetes triage evidence and runbooks.",
+  "resourceTypes": ["Microsoft.ContainerService/managedClusters"],
+  "minimumMode":   "A",
+
+  "evidenceCollectors": [
+    {
+      "id":           "pod-status",
+      "requiredMode": "A",
+      "queryFile":    "queries/pod-status.kql"
+    }
+  ],
+
+  "runbooks": [
+    {
+      "id":   "pod-restart",
+      "file": "runbooks/pod-restart.md"
+    }
+  ],
+
+  "safeActions": []
+}

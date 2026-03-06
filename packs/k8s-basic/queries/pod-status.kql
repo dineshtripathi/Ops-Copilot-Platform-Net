@@ -1,0 +1,6 @@
+// Pod status overview – last 15 minutes
+KubePodInventory
+| where TimeGenerated > ago(15m)
+| summarize arg_max(TimeGenerated, *) by Name, Namespace
+| project Name, Namespace, PodStatus, ContainerCount = ContainerStatusReason
+| order by Namespace asc, Name asc

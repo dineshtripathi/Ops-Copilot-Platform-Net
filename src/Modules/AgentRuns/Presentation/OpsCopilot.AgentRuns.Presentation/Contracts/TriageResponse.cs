@@ -24,19 +24,51 @@ public sealed record RunbookCitationDto(
     string Snippet,
     double Score);
 
+/// <summary>Pack runbook detail surfaced from the Packs module during triage enrichment.</summary>
+/// <param name="PackName">Name of the pack that owns the runbook.</param>
+/// <param name="RunbookId">Identifier of the runbook within the pack.</param>
+/// <param name="File">Relative file path inside the pack.</param>
+/// <param name="ContentSnippet">Truncated content of the runbook file (may be null if unreadable).</param>
+public sealed record PackRunbookDto(
+    string  PackName,
+    string  RunbookId,
+    string  File,
+    string? ContentSnippet);
+
+/// <summary>Pack evidence-collector detail surfaced from the Packs module during triage enrichment.</summary>
+/// <param name="PackName">Name of the pack that owns the evidence collector.</param>
+/// <param name="EvidenceCollectorId">Identifier of the evidence collector within the pack.</param>
+/// <param name="RequiredMode">Mode required to execute this collector (e.g. "A").</param>
+/// <param name="QueryFile">Relative path to the KQL query file (may be null).</param>
+/// <param name="KqlContent">Full KQL content of the query file (may be null if unreadable).</param>
+public sealed record PackEvidenceCollectorDto(
+    string  PackName,
+    string  EvidenceCollectorId,
+    string  RequiredMode,
+    string? QueryFile,
+    string? KqlContent);
+
 /// <summary>Response body for POST /agent/triage.</summary>
 /// <param name="RunId">Unique identifier of the persisted AgentRun ledger entry.</param>
 /// <param name="Status">Terminal status of the run (Completed / Degraded / Failed).</param>
 /// <param name="Summary">Structured JSON summary (e.g. <c>{"rowCount":5}</c>). Null on failure.</param>
 /// <param name="Citations">Evidence citations — one per KQL tool invocation.</param>
 /// <param name="RunbookCitations">Runbook search citations — one per matched runbook.</param>
+/// <param name="PackRunbooks">Pack runbook details discovered during triage enrichment (Mode A).</param>
+/// <param name="PackEvidenceCollectors">Pack evidence-collector details discovered during triage enrichment (Mode A).</param>
+/// <param name="PackErrors">Non-fatal errors encountered during pack enrichment (null when none).</param>
 public sealed record TriageResponse(
-    Guid                              RunId,
-    string                            Status,
-    JsonElement?                      Summary,
-    IReadOnlyList<CitationDto>        Citations,
-    IReadOnlyList<RunbookCitationDto> RunbookCitations,
-    Guid?                             SessionId,
-    bool                              IsNewSession,
-    DateTimeOffset?                   SessionExpiresAtUtc,
-    bool                              UsedSessionContext);
+    Guid                                       RunId,
+    string                                     Status,
+    JsonElement?                               Summary,
+    IReadOnlyList<CitationDto>                 Citations,
+    IReadOnlyList<RunbookCitationDto>          RunbookCitations,
+    Guid?                                      SessionId,
+    bool                                       IsNewSession,
+    DateTimeOffset?                            SessionExpiresAtUtc,
+    bool                                       UsedSessionContext,
+    IReadOnlyList<PackRunbookDto>?             PackRunbooks             = null,
+    IReadOnlyList<PackEvidenceCollectorDto>?   PackEvidenceCollectors   = null,
+    IReadOnlyList<string>?                     PackErrors               = null,
+    IReadOnlyList<PackEvidenceResultDto>?      PackEvidenceResults      = null,
+    IReadOnlyList<PackSafeActionProposalDto>?  PackSafeActionProposals  = null);

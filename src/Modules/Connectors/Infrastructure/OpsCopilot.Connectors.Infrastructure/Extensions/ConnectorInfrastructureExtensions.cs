@@ -1,3 +1,5 @@
+using Azure.Identity;
+using Azure.Monitor.Query;
 using Microsoft.Extensions.DependencyInjection;
 using OpsCopilot.Connectors.Abstractions;
 using OpsCopilot.Connectors.Application.Extensions;
@@ -22,6 +24,10 @@ public static class ConnectorInfrastructureExtensions
         services.AddSingleton<IObservabilityConnector, AzureMonitorObservabilityConnector>();
         services.AddSingleton<IRunbookConnector, InMemoryRunbookConnector>();
         services.AddSingleton<IActionTargetConnector, StaticActionTargetConnector>();
+
+        // Observability query executor (real Azure Monitor implementation)
+        services.AddSingleton(new LogsQueryClient(new DefaultAzureCredential()));
+        services.AddSingleton<IObservabilityQueryExecutor, AzureMonitorObservabilityQueryExecutor>();
 
         return services;
     }

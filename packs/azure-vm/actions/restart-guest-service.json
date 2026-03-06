@@ -1,0 +1,9 @@
+{
+  "id": "restart-guest-service",
+  "displayName": "Restart Guest Agent Service",
+  "actionType": "run-command",
+  "parameters": {
+    "commandId": "RunShellScript",
+    "script": "systemctl restart waagent"
+  }
+}

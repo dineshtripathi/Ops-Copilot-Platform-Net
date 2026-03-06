@@ -13,6 +13,8 @@ using OpsCopilot.Evaluation.Presentation.Endpoints;
 using OpsCopilot.Evaluation.Presentation.Extensions;
 using OpsCopilot.Connectors.Infrastructure.Extensions;
 using OpsCopilot.Tenancy.Presentation.Extensions;
+using OpsCopilot.Packs.Presentation.Endpoints;
+using OpsCopilot.Packs.Presentation.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -100,7 +102,8 @@ builder.Services
     .AddSafeActionsModule(builder.Configuration)
     .AddReportingModule(builder.Configuration)
     .AddEvaluationModule()
-    .AddConnectorsModule();
+    .AddConnectorsModule()
+    .AddPacksModule(builder.Configuration);
 
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();
@@ -125,6 +128,7 @@ app.MapReportingEndpoints();            // /reports/safe-actions/*
 app.MapPlatformReportingEndpoints();    // /reports/platform/*
 app.MapEvaluationEndpoints();           // /evaluation/*
 app.MapTenancyEndpoints();              // /tenants/*
+app.MapPlatformPacksEndpoints();        // /reports/platform/packs
 
 app.Run();
 

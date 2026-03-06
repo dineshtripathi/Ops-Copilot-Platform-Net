@@ -1,0 +1,6 @@
+// CPU utilisation for Azure VMs – last 30 minutes
+Perf
+| where ObjectName == "Processor" and CounterName == "% Processor Time"
+| where TimeGenerated > ago(30m)
+| summarize AvgCpu = avg(CounterValue) by Computer, bin(TimeGenerated, 5m)
+| order by AvgCpu desc

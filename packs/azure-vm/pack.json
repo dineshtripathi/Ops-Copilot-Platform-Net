@@ -1,0 +1,35 @@
+{
+  "name":          "azure-vm",
+  "version":       "1.0.0",
+  "description":   "Evidence collectors, runbooks and safe-actions for Azure VM workloads.",
+  "resourceTypes": ["Microsoft.Compute/virtualMachines"],
+  "minimumMode":   "A",
+
+  "evidenceCollectors": [
+    {
+      "id":           "cpu-usage",
+      "requiredMode": "A",
+      "queryFile":    "queries/cpu-usage.kql"
+    },
+    {
+      "id":           "disk-io",
+      "requiredMode": "B",
+      "queryFile":    "queries/disk-io.kql"
+    }
+  ],
+
+  "runbooks": [
+    {
+      "id":   "restart-vm",
+      "file": "runbooks/restart-vm.md"
+    }
+  ],
+
+  "safeActions": [
+    {
+      "id":             "restart-guest-service",
+      "requiresMode":   "C",
+      "definitionFile":  "actions/restart-guest-service.json"
+    }
+  ]
+}

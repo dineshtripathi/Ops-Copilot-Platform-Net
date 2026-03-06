@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
+using OpsCopilot.BuildingBlocks.Contracts.Packs;
 using OpsCopilot.BuildingBlocks.Domain.Services;
 
 namespace OpsCopilot.AgentRuns.Presentation.Endpoints;
@@ -31,11 +32,14 @@ public static class AgentRunEndpoints
         //   • AlertPayload.Fingerprint non-empty
         //   • TimeRangeMinutes in [1, 1440]
         app.MapPost("/agent/triage", async (
-            HttpContext        httpContext,
-            TriageRequest      request,
-            TriageOrchestrator orchestrator,
-            IConfiguration     config,
-            CancellationToken  ct) =>
+            HttpContext           httpContext,
+            TriageRequest         request,
+            TriageOrchestrator    orchestrator,
+            IConfiguration        config,
+            IPackTriageEnricher   packTriageEnricher,
+            IPackEvidenceExecutor    packEvidenceExecutor,
+            IPackSafeActionProposer packSafeActionProposer,
+            CancellationToken       ct) =>
         {
             // ── Header validation ───────────────────────────────────────────
             var tenantId = httpContext.Request.Headers["x-tenant-id"].FirstOrDefault();
@@ -134,6 +138,43 @@ public static class AgentRunEndpoints
                     c.Score))
                 .ToList();
 
+            // ── Pack enrichment (Mode A only) ─────────────────────────────
+            var packEnrichment = await packTriageEnricher.EnrichAsync(ct);
+
+            // ── Pack evidence execution (Mode B+) ───────────────────────────
+            var deploymentMode = config["Packs:DeploymentMode"] ?? "A";
+            var evidenceResult = await packEvidenceExecutor.ExecuteAsync(
+                new PackEvidenceExecutionRequest(deploymentMode, tenantId), ct);
+
+            // ── Pack safe-action proposals (Mode B+, propose-only) ──────────
+            var proposalResult = await packSafeActionProposer.ProposeAsync(
+                new PackSafeActionProposalRequest(deploymentMode, tenantId), ct);
+
+            var packRunbooks = packEnrichment.PackRunbooks
+                .Select(r => new PackRunbookDto(
+                    r.PackName, r.RunbookId, r.File, r.ContentSnippet))
+                .ToList();
+
+            var packEvidenceCollectors = packEnrichment.PackEvidenceCollectors
+                .Select(e => new PackEvidenceCollectorDto(
+                    e.PackName, e.EvidenceCollectorId, e.RequiredMode,
+                    e.QueryFile, e.KqlContent))
+                .ToList();
+
+            var packEvidenceResults = evidenceResult.EvidenceItems
+                .Select(e => new PackEvidenceResultDto(
+                    e.PackName, e.CollectorId, e.ConnectorName,
+                    e.QueryFile, e.QueryContent, e.ResultJson,
+                    e.RowCount, e.ErrorMessage))
+                .ToList();
+
+            var packSafeActionProposals = proposalResult.Proposals
+                .Select(p => new PackSafeActionProposalDto(
+                    p.PackName, p.ActionId, p.DisplayName, p.ActionType,
+                    p.RequiresMode, p.DefinitionFile, p.ParametersJson,
+                    p.ErrorMessage))
+                .ToList();
+
             // Parse the summary JSON string into a structured JsonElement
             // to prevent double-encoding in the HTTP response.
             JsonElement? summary = null;
@@ -152,7 +193,18 @@ public static class AgentRunEndpoints
                 result.SessionId,
                 result.IsNewSession,
                 result.SessionExpiresAtUtc,
-                result.UsedSessionContext));
+                result.UsedSessionContext,
+                packRunbooks,
+                packEvidenceCollectors,
+                packEnrichment.PackErrors.Count > 0
+                    ? packEnrichment.PackErrors
+                    : null,
+                packEvidenceResults.Count > 0
+                    ? packEvidenceResults
+                    : null,
+                packSafeActionProposals.Count > 0
+                    ? packSafeActionProposals
+                    : null));
         })
         .WithName("PostTriage")
         .WithTags("AgentRuns")

@@ -1,0 +1,6 @@
+// Disk I/O throughput for Azure VMs – last 30 minutes
+Perf
+| where ObjectName == "LogicalDisk" and CounterName == "Disk Bytes/sec"
+| where TimeGenerated > ago(30m)
+| summarize AvgBytes = avg(CounterValue) by Computer, InstanceName, bin(TimeGenerated, 5m)
+| order by AvgBytes desc
