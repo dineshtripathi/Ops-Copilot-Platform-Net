@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
 using OpsCopilot.Packs.Application.Abstractions;
 using OpsCopilot.Packs.Domain.Models;
@@ -60,22 +62,43 @@ public sealed class PackSafeActionProposerTests
         Mock<IPackCatalog>      Catalog,
         Mock<IPackFileReader>   FileReader,
         Mock<IPacksTelemetry>   Telemetry)
-        CreateProposer(IConfiguration? config = null)
+        CreateProposer(
+            IConfiguration? config = null,
+            IToolAllowlistPolicy? toolPolicy = null)
     {
         var catalog    = new Mock<IPackCatalog>(MockBehavior.Strict);
         var fileReader = new Mock<IPackFileReader>(MockBehavior.Strict);
         var telemetry  = new Mock<IPacksTelemetry>(MockBehavior.Loose);
 
         var cfg = config ?? BuildConfig();
+        var scopeFactory = CreateScopeFactory(toolPolicy);
 
         var proposer = new PackSafeActionProposer(
             catalog.Object,
             fileReader.Object,
             cfg,
             NullLogger<PackSafeActionProposer>.Instance,
-            telemetry.Object);
+            telemetry.Object,
+            scopeFactory.Object);
 
         return (proposer, catalog, fileReader, telemetry);
+    }
+
+    private static Mock<IServiceScopeFactory> CreateScopeFactory(
+        IToolAllowlistPolicy? toolPolicy = null)
+    {
+        var serviceProvider = new Mock<IServiceProvider>();
+        serviceProvider
+            .Setup(sp => sp.GetService(typeof(IToolAllowlistPolicy)))
+            .Returns(toolPolicy!);
+
+        var serviceScope = new Mock<IServiceScope>();
+        serviceScope.Setup(s => s.ServiceProvider).Returns(serviceProvider.Object);
+
+        var scopeFactory = new Mock<IServiceScopeFactory>();
+        scopeFactory.Setup(f => f.CreateScope()).Returns(serviceScope.Object);
+
+        return scopeFactory;
     }
 
     // ── Request factory ───────────────────────────────────────
@@ -637,5 +660,331 @@ public sealed class PackSafeActionProposerTests
         Assert.False(item.IsExecutableNow);
         Assert.Equal("requires_higher_mode", item.ExecutionBlockedReason);
         Assert.Single(result.Errors);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ── Governance Preview Tests (Slice 46) ───────────────────────
+    // ═══════════════════════════════════════════════════════════════
+
+    // 21. Policy allows → GovernanceAllowed = true
+
+    [Fact]
+    public async Task ProposeAsync_GovernanceAllowed_WhenPolicyAllows()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool(TestTenantId, "restart_vm"))
+              .Returns(PolicyDecision.Allow());
+
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Restart VM","actionType":"restart_vm","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.True(item.GovernanceAllowed);
+        Assert.Equal("ALLOWED", item.GovernanceReasonCode);
+        Assert.NotNull(item.GovernanceMessage);
+        policy.VerifyAll();
+    }
+
+    // 22. Policy denies → GovernanceAllowed = false with reason
+
+    [Fact]
+    public async Task ProposeAsync_GovernanceDenied_WhenPolicyDenies()
+    {
+        var action = new PackSafeAction("sa-delete", "B", "actions/delete.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool(TestTenantId, "delete_vm"))
+              .Returns(PolicyDecision.Deny("not_allowlisted", "Tool delete_vm is not on the allowlist."));
+
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/delete.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Delete VM","actionType":"delete_vm","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.False(item.GovernanceAllowed);
+        Assert.Equal("not_allowlisted", item.GovernanceReasonCode);
+        Assert.Equal("Tool delete_vm is not on the allowlist.", item.GovernanceMessage);
+        policy.VerifyAll();
+    }
+
+    // 23. Null tenantId → governance fields stay null
+
+    [Fact]
+    public async Task ProposeAsync_GovernanceNull_WhenTenantIdMissing()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        // Policy should never be called when tenantId is null
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Restart VM","actionType":"restart_vm","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B", tenantId: null));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.Null(item.GovernanceAllowed);
+        Assert.Null(item.GovernanceReasonCode);
+        Assert.Null(item.GovernanceMessage);
+    }
+
+    // 24. tenantId = "unknown" → governance fields stay null
+
+    [Fact]
+    public async Task ProposeAsync_GovernanceNull_WhenTenantIdUnknown()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        // Policy should never be called when tenantId is "unknown"
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Restart VM","actionType":"restart_vm","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B", tenantId: "unknown"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.Null(item.GovernanceAllowed);
+        Assert.Null(item.GovernanceReasonCode);
+        Assert.Null(item.GovernanceMessage);
+    }
+
+    // 25. No policy registered → governance fields stay null
+
+    [Fact]
+    public async Task ProposeAsync_GovernanceNull_WhenNoPolicyRegistered()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        // toolPolicy = null → CreateScopeFactory returns provider that resolves null
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, toolPolicy: null);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Restart VM","actionType":"restart_vm","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.Null(item.GovernanceAllowed);
+        Assert.Null(item.GovernanceReasonCode);
+        Assert.Null(item.GovernanceMessage);
+    }
+
+    // 26. Policy throws → safe fallback
+
+    [Fact]
+    public async Task ProposeAsync_GovernanceFailed_WhenPolicyThrows()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool(TestTenantId, "restart_vm"))
+              .Throws(new InvalidOperationException("Config error"));
+
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Restart VM","actionType":"restart_vm","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.False(item.GovernanceAllowed);
+        Assert.Equal("governance_preview_failed", item.GovernanceReasonCode);
+        Assert.Equal("Governance preview could not be computed.", item.GovernanceMessage);
+    }
+
+    // 27. Multiple actions with mixed governance results
+
+    [Fact]
+    public async Task ProposeAsync_GovernancePerAction_MixedResults()
+    {
+        var actions = new[]
+        {
+            new PackSafeAction("sa-restart", "B", "actions/restart.json"),
+            new PackSafeAction("sa-delete", "B", "actions/delete.json"),
+        };
+        var pack = MakePack("azure-vm", safeActions: actions);
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool(TestTenantId, "restart_vm"))
+              .Returns(PolicyDecision.Allow());
+        policy.Setup(p => p.CanUseTool(TestTenantId, "delete_vm"))
+              .Returns(PolicyDecision.Deny("not_allowlisted", "Tool delete_vm is not on the allowlist."));
+
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Restart VM","actionType":"restart_vm","parameters":{} }""");
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/delete.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Delete VM","actionType":"delete_vm","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        Assert.Equal(2, result.Proposals.Count);
+
+        var restart = result.Proposals.Single(p => p.ActionId == "sa-restart");
+        Assert.True(restart.GovernanceAllowed);
+        Assert.Equal("ALLOWED", restart.GovernanceReasonCode);
+
+        var delete = result.Proposals.Single(p => p.ActionId == "sa-delete");
+        Assert.False(delete.GovernanceAllowed);
+        Assert.Equal("not_allowlisted", delete.GovernanceReasonCode);
+        policy.VerifyAll();
+    }
+
+    // 28. Error path also gets governance enrichment
+
+    [Fact]
+    public async Task ProposeAsync_GovernanceOnErrorPath_WhenDefinitionReadFails()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        // Error path sets ActionType = "unknown"
+        policy.Setup(p => p.CanUseTool(TestTenantId, "unknown"))
+              .Returns(PolicyDecision.Deny("not_allowlisted", "Tool unknown is not on the allowlist."));
+
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new FileNotFoundException("Not found"));
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.NotNull(item.ErrorMessage);
+        Assert.False(item.GovernanceAllowed);
+        Assert.Equal("not_allowlisted", item.GovernanceReasonCode);
+    }
+
+    // 29. Mode A → no governance computed (no proposals at all)
+
+    [Fact]
+    public async Task ProposeAsync_ModeA_NoGovernanceComputed()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "A");
+
+        // Policy should never be called in Mode A (proposals skipped entirely)
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        var (proposer, catalog, _, _) = CreateProposer(config, policy.Object);
+
+        var result = await proposer.ProposeAsync(MakeRequest("A"));
+
+        Assert.Empty(result.Proposals);
+        Assert.Empty(result.Errors);
+    }
+
+    // 30. Governance uses actionType from definition JSON
+
+    [Fact]
+    public async Task ProposeAsync_GovernanceUsesActionType_FromDefinition()
+    {
+        var action = new PackSafeAction("sa-x", "B", "actions/x.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        // The actionType in the JSON is "scale_up", not the actionId "sa-x"
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool(TestTenantId, "scale_up"))
+              .Returns(PolicyDecision.Allow());
+
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/x.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Scale Up","actionType":"scale_up","parameters":{"size":"large"} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.Equal("scale_up", item.ActionType);
+        Assert.True(item.GovernanceAllowed);
+        policy.Verify(p => p.CanUseTool(TestTenantId, "scale_up"), Times.Once);
+    }
+
+    // 31. ReasonCode and Message propagated from PolicyDecision
+
+    [Fact]
+    public async Task ProposeAsync_GovernanceReasonCodeAndMessage_PropagatedFromPolicy()
+    {
+        var action = new PackSafeAction("sa-drain", "B", "actions/drain.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool(TestTenantId, "drain_node"))
+              .Returns(PolicyDecision.Deny("tenant_restricted", "Tenant does not permit drain_node."));
+
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/drain.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Drain Node","actionType":"drain_node","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.False(item.GovernanceAllowed);
+        Assert.Equal("tenant_restricted", item.GovernanceReasonCode);
+        Assert.Equal("Tenant does not permit drain_node.", item.GovernanceMessage);
+        policy.VerifyAll();
     }
 }

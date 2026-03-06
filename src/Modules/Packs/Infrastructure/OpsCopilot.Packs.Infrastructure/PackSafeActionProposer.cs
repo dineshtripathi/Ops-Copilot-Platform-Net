@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
 using OpsCopilot.Packs.Application.Abstractions;
 using OpsCopilot.Packs.Domain.Models;
@@ -27,25 +29,29 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
     private readonly IConfiguration  _configuration;
     private readonly ILogger<PackSafeActionProposer> _logger;
     private readonly IPacksTelemetry _telemetry;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public PackSafeActionProposer(
         IPackCatalog catalog,
         IPackFileReader fileReader,
         IConfiguration configuration,
         ILogger<PackSafeActionProposer> logger,
-        IPacksTelemetry telemetry)
+        IPacksTelemetry telemetry,
+        IServiceScopeFactory scopeFactory)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(fileReader);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(telemetry);
+        ArgumentNullException.ThrowIfNull(scopeFactory);
 
         _catalog       = catalog;
         _fileReader    = fileReader;
         _configuration = configuration;
         _logger        = logger;
         _telemetry     = telemetry;
+        _scopeFactory  = scopeFactory;
     }
 
     /// <inheritdoc />
@@ -133,6 +139,14 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
         List<string> errors,
         CancellationToken ct)
     {
+        // ── Governance preview: resolve scoped policy via DI ─────────
+        using var governanceScope = _scopeFactory.CreateScope();
+        var toolPolicy = governanceScope.ServiceProvider.GetService<IToolAllowlistPolicy>();
+
+        var canCheckGovernance = toolPolicy is not null
+            && !string.IsNullOrWhiteSpace(tenantId)
+            && tenantId != "unknown";
+
         foreach (var action in pack.Manifest.SafeActions)
         {
             // Per-action eligibility check — actions are always included as recommendations;
@@ -152,6 +166,9 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
                 var item = await BuildProposalItemAsync(
                     pack, action, isExecutableNow, executionBlockedReason, ct).ConfigureAwait(false);
 
+                if (canCheckGovernance)
+                    item = EnrichWithGovernance(item, toolPolicy!, tenantId);
+
                 proposals.Add(item);
 
                 _telemetry.RecordCollectorSuccess(
@@ -164,7 +181,7 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
                     "Failed to read action definition for {ActionId} in pack {PackName}",
                     action.Id, pack.Manifest.Name);
 
-                proposals.Add(new PackSafeActionProposalItem(
+                var errorItem = new PackSafeActionProposalItem(
                     PackName:              pack.Manifest.Name,
                     ActionId:              action.Id,
                     DisplayName:           action.Id,
@@ -174,7 +191,12 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
                     ParametersJson:        null,
                     ErrorMessage:          ex.Message,
                     IsExecutableNow:       isExecutableNow,
-                    ExecutionBlockedReason: executionBlockedReason));
+                    ExecutionBlockedReason: executionBlockedReason);
+
+                if (canCheckGovernance)
+                    errorItem = EnrichWithGovernance(errorItem, toolPolicy!, tenantId);
+
+                proposals.Add(errorItem);
 
                 errors.Add($"Pack '{pack.Manifest.Name}' action '{action.Id}': {ex.Message}");
 
@@ -227,6 +249,34 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
             ErrorMessage:          null,
             IsExecutableNow:       isExecutableNow,
             ExecutionBlockedReason: executionBlockedReason);
+    }
+
+    // ── Governance preview enrichment ──────────────────────────────────
+
+    private static PackSafeActionProposalItem EnrichWithGovernance(
+        PackSafeActionProposalItem item,
+        IToolAllowlistPolicy policy,
+        string tenantId)
+    {
+        try
+        {
+            var decision = policy.CanUseTool(tenantId, item.ActionType);
+            return item with
+            {
+                GovernanceAllowed    = decision.Allowed,
+                GovernanceReasonCode = decision.ReasonCode,
+                GovernanceMessage    = decision.Message
+            };
+        }
+        catch (Exception)
+        {
+            return item with
+            {
+                GovernanceAllowed    = false,
+                GovernanceReasonCode = "governance_preview_failed",
+                GovernanceMessage    = "Governance preview could not be computed."
+            };
+        }
     }
 
     // ── Static helpers (same pattern as PackEvidenceExecutor) ────────────

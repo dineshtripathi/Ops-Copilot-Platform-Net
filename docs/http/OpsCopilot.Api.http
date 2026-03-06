@@ -34,6 +34,7 @@
 ###   AP. Evidence Observability — CorrelationId & Metrics (Dev Slice 42)
 ###   AQ. Packs → SafeActions Proposals (Dev Slice 44)
 ###   AR. Mode B Recommend Alignment (Dev Slice 45)
+###   AS. Governance Preview for Pack SafeAction Proposals (Dev Slice 46)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -2948,6 +2949,123 @@ x-tenant-id: {{tenantId}}
     "serviceName": "prod-vm-03",
     "environment": "production",
     "correlationId": "corr-ar4-dto-fields-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### ================================================================
+### AS. Governance Preview for Pack SafeAction Proposals (Dev Slice 46)
+### ================================================================
+
+### AS1 — Governance allowed: action type is in the tenant allowlist
+# Expected: 200 OK.  Each item in packSafeActionProposals[] that has
+#   an allowed action type will include:
+#     governanceAllowed    = true
+#     governanceReasonCode = "allowed"
+#     governanceMessage    = non-null string
+# NOTE: Requires Packs:SafeActionsEnabled=true, Mode B or C,
+#   and a tenant allowlist that includes the action type.
+# @name triageGovernanceAllowed
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "as1-gov-allowed-01",
+    "title": "High CPU on prod-vm-01 — governance allowed check",
+    "severity": "High",
+    "firedAtUtc": "2025-07-27T09:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-01",
+    "serviceName": "prod-vm-01",
+    "environment": "production",
+    "correlationId": "corr-as1-gov-allowed-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AS2 — Governance denied: action type is NOT in the tenant allowlist
+# Expected: 200 OK.  Each item for a denied action type will include:
+#     governanceAllowed    = false
+#     governanceReasonCode = "tool_not_in_allowlist"
+#     governanceMessage    = non-null string explaining denial
+# NOTE: Configure the tenant's tool allowlist to EXCLUDE the action type
+#   returned by the pack (e.g., remove "AzureResourceAction").
+# @name triageGovernanceDenied
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "as2-gov-denied-01",
+    "title": "High CPU on prod-vm-02 — governance denied check",
+    "severity": "High",
+    "firedAtUtc": "2025-07-27T09:05:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-02",
+    "serviceName": "prod-vm-02",
+    "environment": "production",
+    "correlationId": "corr-as2-gov-denied-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AS3 — Mode A deployment: no safe-action proposals, governance irrelevant
+# Expected: 200 OK.  packSafeActionProposals[] is empty because Mode A
+#   blocks proposals entirely. No governance fields to observe.
+# NOTE: Requires Packs:DeploymentMode = "A".
+# @name triageModeANoGovernance
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "as3-mode-a-01",
+    "title": "Disk latency on prod-vm-03 — Mode A no governance",
+    "severity": "Medium",
+    "firedAtUtc": "2025-07-27T09:10:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-03",
+    "serviceName": "prod-vm-03",
+    "environment": "production",
+    "correlationId": "corr-as3-mode-a-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AS4 — Missing tenantId: governance fields are null
+# Expected: 200 OK.  packSafeActionProposals[] items have:
+#     governanceAllowed    = null
+#     governanceReasonCode = null
+#     governanceMessage    = null
+#   because tenantId is absent from the request headers.
+# NOTE: No x-tenant-id header is sent.
+# @name triageNoTenantGovernanceNull
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "as4-no-tenant-01",
+    "title": "Memory pressure on prod-vm-04 — no tenant governance null",
+    "severity": "High",
+    "firedAtUtc": "2025-07-27T09:15:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-04",
+    "serviceName": "prod-vm-04",
+    "environment": "production",
+    "correlationId": "corr-as4-no-tenant-01"
   },
   "timeRangeMinutes": {{timeRange}},
   "workspaceId": "{{workspaceId}}"

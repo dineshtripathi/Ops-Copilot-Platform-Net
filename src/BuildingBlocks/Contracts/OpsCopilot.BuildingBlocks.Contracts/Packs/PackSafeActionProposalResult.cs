@@ -25,6 +25,9 @@ public sealed record PackSafeActionProposalRequest(
 /// <param name="ErrorMessage">Non-null when the definition file could not be read or parsed.</param>
 /// <param name="IsExecutableNow">True when the current deployment mode satisfies <paramref name="RequiresMode"/>.</param>
 /// <param name="ExecutionBlockedReason">Non-null reason string when <paramref name="IsExecutableNow"/> is false (e.g. "requires_higher_mode").</param>
+/// <param name="GovernanceAllowed">Governance preview: true when the action type is allowlisted for the tenant, null when unavailable.</param>
+/// <param name="GovernanceReasonCode">Governance preview reason code (e.g. "tool_allowed", "tool_denied"), null when unavailable.</param>
+/// <param name="GovernanceMessage">Governance preview human-readable message, null when unavailable.</param>
 public sealed record PackSafeActionProposalItem(
     string PackName,
     string ActionId,
@@ -35,7 +38,10 @@ public sealed record PackSafeActionProposalItem(
     string? ParametersJson,
     string? ErrorMessage,
     bool IsExecutableNow,
-    string? ExecutionBlockedReason);
+    string? ExecutionBlockedReason,
+    bool? GovernanceAllowed = null,
+    string? GovernanceReasonCode = null,
+    string? GovernanceMessage = null);
 
 /// <summary>
 /// Result of <see cref="IPackSafeActionProposer.ProposeAsync"/>.

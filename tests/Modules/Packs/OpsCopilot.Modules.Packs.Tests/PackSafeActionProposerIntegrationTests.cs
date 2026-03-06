@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
 using OpsCopilot.Packs.Application.Abstractions;
 using OpsCopilot.Packs.Domain.Models;
@@ -35,7 +37,8 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
 
     private PackSafeActionProposer CreateProposer(
         string deploymentMode = "B",
-        bool safeActionsEnabled = true)
+        bool safeActionsEnabled = true,
+        IToolAllowlistPolicy? toolPolicy = null)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -49,13 +52,31 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         var catalog = new PackCatalog(loader);
         var fileReader = new PackFileReader(NullLogger<PackFileReader>.Instance);
         var telemetry = new Mock<IPacksTelemetry>(MockBehavior.Loose);
+        var scopeFactory = CreateScopeFactory(toolPolicy);
 
         return new PackSafeActionProposer(
             catalog,
             fileReader,
             config,
             NullLogger<PackSafeActionProposer>.Instance,
-            telemetry.Object);
+            telemetry.Object,
+            scopeFactory.Object);
+    }
+
+    private static Mock<IServiceScopeFactory> CreateScopeFactory(IToolAllowlistPolicy? toolPolicy = null)
+    {
+        var serviceProvider = new Mock<IServiceProvider>();
+        serviceProvider
+            .Setup(sp => sp.GetService(typeof(IToolAllowlistPolicy)))
+            .Returns(toolPolicy);
+
+        var serviceScope = new Mock<IServiceScope>();
+        serviceScope.Setup(s => s.ServiceProvider).Returns(serviceProvider.Object);
+
+        var scopeFactory = new Mock<IServiceScopeFactory>();
+        scopeFactory.Setup(f => f.CreateScope()).Returns(serviceScope.Object);
+
+        return scopeFactory;
     }
 
     private string CreatePackDirectory(string packName)
@@ -471,5 +492,192 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         var scaleUp = result.Proposals.Single(p => p.ActionId == "scale-up");
         Assert.False(scaleUp.IsExecutableNow);
         Assert.Equal("requires_higher_mode", scaleUp.ExecutionBlockedReason);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 12. Governance — policy allows action type
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_GovernanceAllowed_SetsGovernanceFields()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        WriteFile(dir, "actions/restart.json", MakeActionDefinition(
+            "Restart VM", "AzureResourceAction"));
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[] { new PackSafeAction("restart-vm", "C", "actions/restart.json") }));
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool("tenant-integ", "AzureResourceAction"))
+              .Returns(PolicyDecision.Allow());
+
+        var proposer = CreateProposer(deploymentMode: "C", toolPolicy: policy.Object);
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Single(result.Proposals);
+        var item = result.Proposals[0];
+        Assert.True(item.GovernanceAllowed);
+        Assert.Equal("ALLOWED", item.GovernanceReasonCode);
+        Assert.NotNull(item.GovernanceMessage);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 13. Governance — policy denies action type
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_GovernanceDenied_SetsGovernanceFields()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        WriteFile(dir, "actions/restart.json", MakeActionDefinition(
+            "Restart VM", "AzureResourceAction"));
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[] { new PackSafeAction("restart-vm", "C", "actions/restart.json") }));
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool("tenant-integ", "AzureResourceAction"))
+              .Returns(PolicyDecision.Deny("tool_not_in_allowlist", "AzureResourceAction is not permitted."));
+
+        var proposer = CreateProposer(deploymentMode: "C", toolPolicy: policy.Object);
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Single(result.Proposals);
+        var item = result.Proposals[0];
+        Assert.False(item.GovernanceAllowed);
+        Assert.Equal("tool_not_in_allowlist", item.GovernanceReasonCode);
+        Assert.Equal("AzureResourceAction is not permitted.", item.GovernanceMessage);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 14. Governance — no policy registered → null governance fields
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_NoPolicyRegistered_GovernanceFieldsNull()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        WriteFile(dir, "actions/restart.json", MakeActionDefinition(
+            "Restart VM", "AzureResourceAction"));
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[] { new PackSafeAction("restart-vm", "C", "actions/restart.json") }));
+
+        // default CreateProposer — no policy registered
+        var proposer = CreateProposer(deploymentMode: "C");
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Single(result.Proposals);
+        var item = result.Proposals[0];
+        Assert.Null(item.GovernanceAllowed);
+        Assert.Null(item.GovernanceReasonCode);
+        Assert.Null(item.GovernanceMessage);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 15. Governance — null tenantId → null governance fields
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_NullTenantId_GovernanceFieldsNull()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        WriteFile(dir, "actions/restart.json", MakeActionDefinition(
+            "Restart VM", "AzureResourceAction"));
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[] { new PackSafeAction("restart-vm", "C", "actions/restart.json") }));
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        // Policy is registered but tenantId is null — governance should be skipped
+        var proposer = CreateProposer(deploymentMode: "C", toolPolicy: policy.Object);
+
+        var request = new PackSafeActionProposalRequest("C", null, "corr-integ-001");
+        var result = await proposer.ProposeAsync(request);
+
+        Assert.Single(result.Proposals);
+        var item = result.Proposals[0];
+        Assert.Null(item.GovernanceAllowed);
+        Assert.Null(item.GovernanceReasonCode);
+        Assert.Null(item.GovernanceMessage);
+        // Policy should never be called when tenantId is null
+        policy.VerifyNoOtherCalls();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 16. Governance — mixed results across multiple actions
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_GovernanceMixedActions_EachActionGetsOwnDecision()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        WriteFile(dir, "actions/check.json", MakeActionDefinition("Check Health", "HealthCheck"));
+        WriteFile(dir, "actions/restart.json", MakeActionDefinition("Restart", "AzureResourceAction"));
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[]
+            {
+                new PackSafeAction("check-health", "C", "actions/check.json"),
+                new PackSafeAction("restart-vm", "C", "actions/restart.json")
+            }));
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool("tenant-integ", "HealthCheck"))
+              .Returns(PolicyDecision.Allow());
+        policy.Setup(p => p.CanUseTool("tenant-integ", "AzureResourceAction"))
+              .Returns(PolicyDecision.Deny("tool_not_in_allowlist", "Not permitted."));
+
+        var proposer = CreateProposer(deploymentMode: "C", toolPolicy: policy.Object);
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Equal(2, result.Proposals.Count);
+
+        var check = result.Proposals.Single(p => p.ActionId == "check-health");
+        Assert.True(check.GovernanceAllowed);
+        Assert.Equal("ALLOWED", check.GovernanceReasonCode);
+
+        var restart = result.Proposals.Single(p => p.ActionId == "restart-vm");
+        Assert.False(restart.GovernanceAllowed);
+        Assert.Equal("tool_not_in_allowlist", restart.GovernanceReasonCode);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 17. Governance — null definition file (fallback) still enriched
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_NullDefinitionFileWithPolicy_GovernanceUsesUnknownActionType()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        // No definition file — actionType falls back to "unknown"
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[] { new PackSafeAction("restart-vm", "C", null) }));
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool("tenant-integ", "unknown"))
+              .Returns(PolicyDecision.Allow());
+
+        var proposer = CreateProposer(deploymentMode: "C", toolPolicy: policy.Object);
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Single(result.Proposals);
+        var item = result.Proposals[0];
+        Assert.Equal("unknown", item.ActionType);
+        Assert.True(item.GovernanceAllowed);
+        Assert.Equal("ALLOWED", item.GovernanceReasonCode);
     }
 }

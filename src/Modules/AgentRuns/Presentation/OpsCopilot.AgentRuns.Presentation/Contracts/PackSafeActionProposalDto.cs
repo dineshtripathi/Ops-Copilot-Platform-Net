@@ -14,4 +14,7 @@ public sealed record PackSafeActionProposalDto(
     string? ParametersJson,
     string? ErrorMessage,
     bool IsExecutableNow,
-    string? ExecutionBlockedReason);
+    string? ExecutionBlockedReason,
+    bool? GovernanceAllowed = null,
+    string? GovernanceReasonCode = null,
+    string? GovernanceMessage = null);
