@@ -172,7 +172,7 @@ public static class AgentRunEndpoints
                 .Select(p => new PackSafeActionProposalDto(
                     p.PackName, p.ActionId, p.DisplayName, p.ActionType,
                     p.RequiresMode, p.DefinitionFile, p.ParametersJson,
-                    p.ErrorMessage))
+                    p.ErrorMessage, p.IsExecutableNow, p.ExecutionBlockedReason))
                 .ToList();
 
             // Parse the summary JSON string into a structured JsonElement

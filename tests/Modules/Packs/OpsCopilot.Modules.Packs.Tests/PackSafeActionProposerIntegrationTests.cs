@@ -120,7 +120,6 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
 
     // ═══════════════════════════════════════════════════════════════
     // 1. Happy path — Mode C pack with definition file
-    //    Rule 9 requires all safeActions.requiresMode == "C".
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
@@ -152,6 +151,8 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Equal("actions/restart.json", p.DefinitionFile);
         Assert.NotNull(p.ParametersJson);
         Assert.Null(p.ErrorMessage);
+        Assert.True(p.IsExecutableNow);
+        Assert.Null(p.ExecutionBlockedReason);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -197,7 +198,7 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 4. Mode C deployment includes all actions (Rule 9: all must be "C")
+    // 4. Mode C deployment includes all actions
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
@@ -226,16 +227,21 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Contains(result.Proposals, p => p.ActionId == "check-health" && p.DisplayName == "Check Health");
         Assert.Contains(result.Proposals, p => p.ActionId == "restart-vm" && p.DisplayName == "Restart");
         Assert.Contains(result.Proposals, p => p.ActionId == "scale-up" && p.DisplayName == "Scale Up");
+        Assert.All(result.Proposals, p =>
+        {
+            Assert.True(p.IsExecutableNow);
+            Assert.Null(p.ExecutionBlockedReason);
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 5. Mode B deployment — gate passes but per-action filter blocks
-    //    Rule 9 forces requiresMode="C"; IsModeAtOrBelow("C","B") → false
-    //    so Mode B deployments yield zero proposals.
+    // 5. Mode B deployment — actions above mode returned as non-executable
+    //    IsModeAtOrBelow("C","B") → false
+    //    so Mode B deployments include proposals with IsExecutableNow=false.
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task FullPipeline_ModeBDeployment_ReturnsEmptyBecausePerActionFilter()
+    public async Task FullPipeline_ModeBDeployment_ReturnsNotExecutableProposals()
     {
         var dir = CreatePackDirectory("azure-vm");
         WriteFile(dir, "actions/restart.json", MakeActionDefinition("Restart", "AzureResourceAction"));
@@ -253,10 +259,18 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
 
         var result = await proposer.ProposeAsync(MakeRequest("B"));
 
-        // Pack is valid and eligible (MinimumMode A ≤ B), but both actions
-        // require Mode C which is above deployment Mode B → filtered out.
+        // Pack is valid and eligible (MinimumMode A ≤ B). Both actions require
+        // Mode C (above deployment Mode B) → included as recommendations with
+        // IsExecutableNow=false.
         Assert.Empty(result.Errors);
-        Assert.Empty(result.Proposals);
+        Assert.Equal(2, result.Proposals.Count);
+        Assert.All(result.Proposals, p =>
+        {
+            Assert.False(p.IsExecutableNow);
+            Assert.Equal("requires_higher_mode", p.ExecutionBlockedReason);
+        });
+        Assert.Contains(result.Proposals, p => p.ActionId == "restart-vm" && p.DisplayName == "Restart");
+        Assert.Contains(result.Proposals, p => p.ActionId == "scale-up" && p.DisplayName == "Scale Up");
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -310,6 +324,11 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Equal(2, result.Proposals.Count);
         Assert.Contains(result.Proposals, p => p.PackName == "azure-vm" && p.ActionId == "restart-vm");
         Assert.Contains(result.Proposals, p => p.PackName == "k8s-pod" && p.ActionId == "rollback-pod");
+        Assert.All(result.Proposals, p =>
+        {
+            Assert.True(p.IsExecutableNow);
+            Assert.Null(p.ExecutionBlockedReason);
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -342,6 +361,8 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Equal("unknown", p.ActionType);      // fallback
         Assert.Null(p.ParametersJson);
         Assert.Null(p.ErrorMessage);
+        Assert.True(p.IsExecutableNow);
+        Assert.Null(p.ExecutionBlockedReason);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -399,6 +420,8 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Equal("AzureScaleAction", p.ActionType);
         Assert.Equal("C", p.RequiresMode);
         Assert.NotNull(p.ParametersJson);
+        Assert.True(p.IsExecutableNow);
+        Assert.Null(p.ExecutionBlockedReason);
 
         // Verify the parameters JSON is valid and contains expected fields
         using var paramsDoc = JsonDocument.Parse(p.ParametersJson!);
@@ -407,5 +430,46 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Equal(5, ic.GetInt32());
         Assert.True(paramsDoc.RootElement.TryGetProperty("tier", out var tier));
         Assert.Equal("Standard", tier.GetString());
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 11. Mode B with mixed-mode actions — A/B executable, C not
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_ModeBMixedActions_SetsCorrectEligibility()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        WriteFile(dir, "actions/check.json", MakeActionDefinition("Check Health", "HealthCheck"));
+        WriteFile(dir, "actions/restart.json", MakeActionDefinition("Restart", "AzureResourceAction"));
+        WriteFile(dir, "actions/scale.json", MakeActionDefinition("Scale Up", "ScaleAction"));
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[]
+            {
+                new PackSafeAction("check-health", "A", "actions/check.json"),
+                new PackSafeAction("restart-vm", "B", "actions/restart.json"),
+                new PackSafeAction("scale-up", "C", "actions/scale.json")
+            }));
+
+        var proposer = CreateProposer(deploymentMode: "B", safeActionsEnabled: true);
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(3, result.Proposals.Count);
+
+        var checkHealth = result.Proposals.Single(p => p.ActionId == "check-health");
+        Assert.True(checkHealth.IsExecutableNow);
+        Assert.Null(checkHealth.ExecutionBlockedReason);
+
+        var restart = result.Proposals.Single(p => p.ActionId == "restart-vm");
+        Assert.True(restart.IsExecutableNow);
+        Assert.Null(restart.ExecutionBlockedReason);
+
+        var scaleUp = result.Proposals.Single(p => p.ActionId == "scale-up");
+        Assert.False(scaleUp.IsExecutableNow);
+        Assert.Equal("requires_higher_mode", scaleUp.ExecutionBlockedReason);
     }
 }

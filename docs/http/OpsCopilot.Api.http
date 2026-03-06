@@ -33,6 +33,7 @@
 ###   AO. ModeB Evidence — Tenant Workspace Config (Dev Slice 40)
 ###   AP. Evidence Observability — CorrelationId & Metrics (Dev Slice 42)
 ###   AQ. Packs → SafeActions Proposals (Dev Slice 44)
+###   AR. Mode B Recommend Alignment (Dev Slice 45)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -2668,15 +2669,17 @@ x-tenant-id: {{tenantId}}
   "workspaceId": "{{workspaceId}}"
 }
 
-### AQ2 — ModeB triage: SafeActions proposals empty (per-action filter blocks RequiresMode=C)
-# Expected: 200 OK.  packSafeActionProposals is [] (empty) because all
-#   pack safeActions have RequiresMode="C" (enforced by loader Rule 9),
-#   but the deployment mode is "B".  The per-action mode filter
-#   IsModeAtOrBelow(action.RequiresMode="C", deploymentMode="B") returns
-#   false, so every action is filtered out.  Gate 1 (mode >= B) passes.
+### AQ2 — ModeB triage: SafeActions proposals include non-executable recommendations
+# Expected: 200 OK.  packSafeActionProposals[] contains items with
+#   isExecutableNow=false and executionBlockedReason="requires_higher_mode"
+#   because all pack safeActions have RequiresMode="C" (enforced by
+#   loader Rule 9), but the deployment mode is "B".  Per Slice 45,
+#   Mode B no longer filters out ineligible actions — instead they are
+#   returned as recommendations that cannot be executed at the current mode.
+#   Gate 1 (mode >= B) passes.
 # NOTE: Server must be in Mode B (Packs:DeploymentMode = "B") with
 #   Packs:SafeActionsEnabled = true.
-# @name triageModeB_SafeActionProposalsEmpty
+# @name triageModeB_SafeActionProposalsNotExecutable
 POST {{baseUrl}}/agent/triage
 Content-Type: application/json
 x-tenant-id: {{tenantId}}
@@ -2786,15 +2789,17 @@ x-tenant-id: {{tenantId}}
 
 ### AQ6 — ModeC triage: SafeActions proposal DTO shape verification
 # Expected: 200 OK.  Each item in packSafeActionProposals[] must have
-#   all eight fields present (even if null):
-#     packName       — string, e.g. "azure-vm"
-#     packVersion    — string, e.g. "1.0.0"
-#     actionId       — string, e.g. "restart-vm"
-#     requiresMode   — string, "C"
-#     displayName    — string, human-readable action name
-#     actionType     — string, e.g. "http-probe" or "unknown"
-#     parametersJson — string (JSON) or null
-#     errorMessage   — string or null (null = success)
+#   all ten fields present (even if null):
+#     packName                — string, e.g. "azure-vm"
+#     packVersion             — string, e.g. "1.0.0"
+#     actionId                — string, e.g. "restart-vm"
+#     requiresMode            — string, "C"
+#     displayName             — string, human-readable action name
+#     actionType              — string, e.g. "http-probe" or "unknown"
+#     parametersJson          — string (JSON) or null
+#     errorMessage            — string or null (null = success)
+#     isExecutableNow         — bool, true if action mode ≤ deployment mode
+#     executionBlockedReason  — string or null ("requires_higher_mode" when blocked)
 #   Verify the shape matches PackSafeActionProposalDto exactly.
 # NOTE: Server must be in Mode C (Packs:DeploymentMode = "C") with
 #   Packs:SafeActionsEnabled = true.
@@ -2815,6 +2820,134 @@ x-tenant-id: {{tenantId}}
     "serviceName": "prod-vm-02",
     "environment": "production",
     "correlationId": "corr-aq6-dto-shape-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### ================================================================
+### AR. Mode B Recommend Alignment  (Dev Slice 45)
+### ================================================================
+
+### AR1 — ModeB triage: non-executable recommendations returned
+# Expected: 200 OK.  packSafeActionProposals[] has items where
+#   isExecutableNow = false and executionBlockedReason = "requires_higher_mode"
+#   because the actions require Mode C but the deployment is Mode B.
+#   Prior to Slice 45 these were filtered out entirely; now they appear
+#   as informational recommendations the operator cannot execute yet.
+# NOTE: Server must be in Mode B (Packs:DeploymentMode = "B") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeB_NonExecutableRecommendations
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "ar1-modeb-recommend-01",
+    "title": "High CPU on prod-vm-01 — Mode B non-executable recommendations",
+    "severity": "High",
+    "firedAtUtc": "2025-07-25T11:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-01",
+    "serviceName": "prod-vm-01",
+    "environment": "production",
+    "correlationId": "corr-ar1-recommend-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AR2 — ModeC triage: all proposals executable (isExecutableNow=true)
+# Expected: 200 OK.  packSafeActionProposals[] has items where
+#   isExecutableNow = true and executionBlockedReason = null because
+#   Mode C is the highest deployment mode and all actions at or below
+#   Mode C are eligible for execution.
+# NOTE: Server must be in Mode C (Packs:DeploymentMode = "C") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeC_AllExecutable
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "ar2-modec-executable-01",
+    "title": "High CPU on prod-vm-02 — Mode C all executable verification",
+    "severity": "High",
+    "firedAtUtc": "2025-07-25T11:05:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-02",
+    "serviceName": "prod-vm-02",
+    "environment": "production",
+    "correlationId": "corr-ar2-executable-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AR3 — ModeB triage: mixed-mode proposals (some executable, some not)
+# Expected: 200 OK.  If the pack has actions with varying RequiresMode
+#   (e.g. A, B, C), actions requiring A or B will have
+#   isExecutableNow=true, while actions requiring C will have
+#   isExecutableNow=false and executionBlockedReason="requires_higher_mode".
+#   This validates the per-action eligibility logic in Mode B.
+# NOTE: Server must be in Mode B (Packs:DeploymentMode = "B") with
+#   Packs:SafeActionsEnabled = true.  Pack must have mixed requiresMode
+#   actions to see differentiated results.
+# @name triageModeB_MixedEligibility
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "ar3-modeb-mixed-01",
+    "title": "Memory pressure on staging-vm — Mode B mixed eligibility test",
+    "severity": "Medium",
+    "firedAtUtc": "2025-07-25T11:10:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/staging-rg/providers/Microsoft.Compute/virtualMachines/staging-vm-ar3",
+    "serviceName": "staging-vm-ar3",
+    "environment": "staging",
+    "correlationId": "corr-ar3-mixed-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AR4 — DTO shape: verify isExecutableNow + executionBlockedReason fields
+# Expected: 200 OK.  Each item in packSafeActionProposals[] must now
+#   include the two new Slice 45 fields:
+#     isExecutableNow        — bool
+#     executionBlockedReason — string or null
+#   When isExecutableNow=true, executionBlockedReason must be null.
+#   When isExecutableNow=false, executionBlockedReason must be
+#   "requires_higher_mode".
+#   Verify using Mode B so both states can be observed (if pack has
+#   mixed-mode actions) or all items show isExecutableNow=false.
+# NOTE: Server must be in Mode B (Packs:DeploymentMode = "B") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeB_DtoNewFields
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "ar4-dto-fields-01",
+    "title": "Disk latency on prod-vm-03 — new DTO field shape check",
+    "severity": "High",
+    "firedAtUtc": "2025-07-25T11:15:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-03",
+    "serviceName": "prod-vm-03",
+    "environment": "production",
+    "correlationId": "corr-ar4-dto-fields-01"
   },
   "timeRangeMinutes": {{timeRange}},
   "workspaceId": "{{workspaceId}}"

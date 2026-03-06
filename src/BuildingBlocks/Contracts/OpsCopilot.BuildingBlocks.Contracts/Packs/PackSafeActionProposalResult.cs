@@ -23,6 +23,8 @@ public sealed record PackSafeActionProposalRequest(
 /// <param name="DefinitionFile">Relative path to the action definition file within the pack.</param>
 /// <param name="ParametersJson">Serialised parameters from the definition file, or null on error.</param>
 /// <param name="ErrorMessage">Non-null when the definition file could not be read or parsed.</param>
+/// <param name="IsExecutableNow">True when the current deployment mode satisfies <paramref name="RequiresMode"/>.</param>
+/// <param name="ExecutionBlockedReason">Non-null reason string when <paramref name="IsExecutableNow"/> is false (e.g. "requires_higher_mode").</param>
 public sealed record PackSafeActionProposalItem(
     string PackName,
     string ActionId,
@@ -31,7 +33,9 @@ public sealed record PackSafeActionProposalItem(
     string RequiresMode,
     string? DefinitionFile,
     string? ParametersJson,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    bool IsExecutableNow,
+    string? ExecutionBlockedReason);
 
 /// <summary>
 /// Result of <see cref="IPackSafeActionProposer.ProposeAsync"/>.

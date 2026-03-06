@@ -12,4 +12,6 @@ public sealed record PackSafeActionProposalDto(
     string RequiresMode,
     string? DefinitionFile,
     string? ParametersJson,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    bool IsExecutableNow,
+    string? ExecutionBlockedReason);

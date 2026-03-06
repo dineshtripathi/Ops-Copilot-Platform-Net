@@ -207,18 +207,34 @@ public class FileSystemPackLoaderValidationTests : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 10. safeActions[].requiresMode not "C" (Rule 9)
+    // 10. safeActions[].requiresMode invalid (Rule 9)
     // ═══════════════════════════════════════════════════════════════
 
-    [Fact]
-    public void Validate_SafeActionRequiresModeNotC_ReturnsError()
+    [Theory]
+    [InlineData("Z")]
+    [InlineData("D")]
+    [InlineData("")]
+    public void Validate_SafeActionRequiresModeInvalid_ReturnsError(string mode)
     {
         var manifest = ValidManifest(
-            safeActions: new[] { new PackSafeAction("restart-svc", "A", null) });
+            safeActions: new[] { new PackSafeAction("restart-svc", mode, null) });
         var result = FileSystemPackLoader.Validate(manifest, "azure-vm", _packDir);
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, e => e.Contains("requiresMode must be 'C'"));
+        Assert.Contains(result.Errors, e => e.Contains("requiresMode must be 'A', 'B', or 'C'"));
+    }
+
+    [Theory]
+    [InlineData("A")]
+    [InlineData("B")]
+    [InlineData("C")]
+    public void Validate_SafeActionRequiresModeValid_NoError(string mode)
+    {
+        var manifest = ValidManifest(
+            safeActions: new[] { new PackSafeAction("restart-svc", mode, null) });
+        var result = FileSystemPackLoader.Validate(manifest, "azure-vm", _packDir);
+
+        Assert.True(result.IsValid);
     }
 
     // ═══════════════════════════════════════════════════════════════

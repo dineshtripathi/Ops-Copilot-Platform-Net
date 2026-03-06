@@ -135,19 +135,22 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
     {
         foreach (var action in pack.Manifest.SafeActions)
         {
-            // Per-action mode filter
-            if (!IsModeAtOrBelow(action.RequiresMode, deploymentMode))
+            // Per-action eligibility check — actions are always included as recommendations;
+            // IsExecutableNow indicates whether the current mode can actually run them.
+            bool isExecutableNow = IsModeAtOrBelow(action.RequiresMode, deploymentMode);
+            string? executionBlockedReason = isExecutableNow ? null : "requires_higher_mode";
+
+            if (!isExecutableNow)
             {
                 _logger.LogDebug(
-                    "Skipping action {ActionId} in pack {PackName} — requires mode {RequiresMode}, deployment is {DeploymentMode}",
+                    "Action {ActionId} in pack {PackName} requires mode {RequiresMode}, deployment is {DeploymentMode} — recommending with IsExecutableNow=false",
                     action.Id, pack.Manifest.Name, action.RequiresMode, deploymentMode);
-                continue;
             }
 
             try
             {
                 var item = await BuildProposalItemAsync(
-                    pack, action, ct).ConfigureAwait(false);
+                    pack, action, isExecutableNow, executionBlockedReason, ct).ConfigureAwait(false);
 
                 proposals.Add(item);
 
@@ -162,14 +165,16 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
                     action.Id, pack.Manifest.Name);
 
                 proposals.Add(new PackSafeActionProposalItem(
-                    PackName:       pack.Manifest.Name,
-                    ActionId:       action.Id,
-                    DisplayName:    action.Id,
-                    ActionType:     "unknown",
-                    RequiresMode:   action.RequiresMode,
-                    DefinitionFile: action.DefinitionFile,
-                    ParametersJson: null,
-                    ErrorMessage:   ex.Message));
+                    PackName:              pack.Manifest.Name,
+                    ActionId:              action.Id,
+                    DisplayName:           action.Id,
+                    ActionType:            "unknown",
+                    RequiresMode:          action.RequiresMode,
+                    DefinitionFile:        action.DefinitionFile,
+                    ParametersJson:        null,
+                    ErrorMessage:          ex.Message,
+                    IsExecutableNow:       isExecutableNow,
+                    ExecutionBlockedReason: executionBlockedReason));
 
                 errors.Add($"Pack '{pack.Manifest.Name}' action '{action.Id}': {ex.Message}");
 
@@ -182,6 +187,8 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
     private async Task<PackSafeActionProposalItem> BuildProposalItemAsync(
         LoadedPack pack,
         PackSafeAction action,
+        bool isExecutableNow,
+        string? executionBlockedReason,
         CancellationToken ct)
     {
         string displayName = action.Id;
@@ -210,14 +217,16 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
         }
 
         return new PackSafeActionProposalItem(
-            PackName:       pack.Manifest.Name,
-            ActionId:       action.Id,
-            DisplayName:    displayName,
-            ActionType:     actionType,
-            RequiresMode:   action.RequiresMode,
-            DefinitionFile: action.DefinitionFile,
-            ParametersJson: parametersJson,
-            ErrorMessage:   null);
+            PackName:              pack.Manifest.Name,
+            ActionId:              action.Id,
+            DisplayName:           displayName,
+            ActionType:            actionType,
+            RequiresMode:          action.RequiresMode,
+            DefinitionFile:        action.DefinitionFile,
+            ParametersJson:        parametersJson,
+            ErrorMessage:          null,
+            IsExecutableNow:       isExecutableNow,
+            ExecutionBlockedReason: executionBlockedReason);
     }
 
     // ── Static helpers (same pattern as PackEvidenceExecutor) ────────────

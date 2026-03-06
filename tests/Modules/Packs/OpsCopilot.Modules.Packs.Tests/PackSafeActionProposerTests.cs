@@ -147,6 +147,8 @@ public sealed class PackSafeActionProposerTests
         Assert.Equal("actions/restart.json", item.DefinitionFile);
         Assert.Equal("""{"vmName":"test-vm"}""", item.ParametersJson);
         Assert.Null(item.ErrorMessage);
+        Assert.True(item.IsExecutableNow);
+        Assert.Null(item.ExecutionBlockedReason);
         Assert.Empty(result.Errors);
     }
 
@@ -213,23 +215,34 @@ public sealed class PackSafeActionProposerTests
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 7. No eligible actions (action mode above deployment) → empty
+    // 7. Action above deployment mode → included as non-executable
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task ProposeAsync_NoEligibleActions_ReturnsEmpty()
+    public async Task ProposeAsync_ActionAboveDeploymentMode_ReturnsNotExecutableProposal()
     {
         var action = new PackSafeAction("sa-c", "C", "actions/c.json");
         var pack = MakePack("azure-vm", minimumMode: "A", safeActions: new[] { action });
         var config = BuildConfig(deploymentMode: "B");
-        var (proposer, catalog, _, _) = CreateProposer(config);
+        var (proposer, catalog, fileReader, _) = CreateProposer(config);
 
         catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
                .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/c.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Escalate Action","actionType":"escalation","parameters":{} }""");
 
         var result = await proposer.ProposeAsync(MakeRequest("B"));
 
-        Assert.Empty(result.Proposals);
+        Assert.Single(result.Proposals);
+        var item = result.Proposals[0];
+        Assert.Equal("azure-vm", item.PackName);
+        Assert.Equal("sa-c", item.ActionId);
+        Assert.Equal("Escalate Action", item.DisplayName);
+        Assert.Equal("escalation", item.ActionType);
+        Assert.Equal("C", item.RequiresMode);
+        Assert.False(item.IsExecutableNow);
+        Assert.Equal("requires_higher_mode", item.ExecutionBlockedReason);
         Assert.Empty(result.Errors);
     }
 
@@ -260,6 +273,8 @@ public sealed class PackSafeActionProposerTests
         Assert.Equal("restart-vm", item.DisplayName);   // Falls back to action ID
         Assert.Equal("unknown", item.ActionType);
         Assert.Equal("File not found", item.ErrorMessage);
+        Assert.True(item.IsExecutableNow);
+        Assert.Null(item.ExecutionBlockedReason);
         Assert.Single(result.Errors);
         Assert.Contains("File not found", result.Errors[0]);
     }
@@ -289,6 +304,8 @@ public sealed class PackSafeActionProposerTests
         var item = result.Proposals[0];
         Assert.Equal("unknown", item.ActionType);
         Assert.NotNull(item.ErrorMessage);
+        Assert.True(item.IsExecutableNow);
+        Assert.Null(item.ExecutionBlockedReason);
         Assert.Single(result.Errors);
     }
 
@@ -330,12 +347,18 @@ public sealed class PackSafeActionProposerTests
 
         Assert.Equal("Restart VM", result.Proposals[0].DisplayName);
         Assert.Equal("azure-vm", result.Proposals[0].PackName);
+        Assert.True(result.Proposals[0].IsExecutableNow);
+        Assert.Null(result.Proposals[0].ExecutionBlockedReason);
 
         Assert.Equal("Scale Up", result.Proposals[1].DisplayName);
         Assert.Equal("azure-vm", result.Proposals[1].PackName);
+        Assert.True(result.Proposals[1].IsExecutableNow);
+        Assert.Null(result.Proposals[1].ExecutionBlockedReason);
 
         Assert.Equal("Rotate Key", result.Proposals[2].DisplayName);
         Assert.Equal("azure-kv", result.Proposals[2].PackName);
+        Assert.True(result.Proposals[2].IsExecutableNow);
+        Assert.Null(result.Proposals[2].ExecutionBlockedReason);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -365,8 +388,14 @@ public sealed class PackSafeActionProposerTests
 
         Assert.Equal(3, result.Proposals.Count);
         Assert.Equal("sa-a", result.Proposals[0].ActionId);
+        Assert.True(result.Proposals[0].IsExecutableNow);
+        Assert.Null(result.Proposals[0].ExecutionBlockedReason);
         Assert.Equal("sa-b", result.Proposals[1].ActionId);
+        Assert.True(result.Proposals[1].IsExecutableNow);
+        Assert.Null(result.Proposals[1].ExecutionBlockedReason);
         Assert.Equal("sa-c", result.Proposals[2].ActionId);
+        Assert.True(result.Proposals[2].IsExecutableNow);
+        Assert.Null(result.Proposals[2].ExecutionBlockedReason);
         Assert.Empty(result.Errors);
     }
 
@@ -395,6 +424,8 @@ public sealed class PackSafeActionProposerTests
         Assert.Null(item.ParametersJson);
         Assert.Null(item.DefinitionFile);
         Assert.Null(item.ErrorMessage);
+        Assert.True(item.IsExecutableNow);
+        Assert.Null(item.ExecutionBlockedReason);
         Assert.Empty(result.Errors);
     }
 
@@ -532,6 +563,79 @@ public sealed class PackSafeActionProposerTests
         Assert.Equal("unknown", item.ActionType);       // Fallback
         Assert.Null(item.ParametersJson);
         Assert.Null(item.ErrorMessage);
+        Assert.True(item.IsExecutableNow);
+        Assert.Null(item.ExecutionBlockedReason);
         Assert.Empty(result.Errors);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 19. Mode B with mixed eligible/ineligible actions
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task ProposeAsync_ModeBMixedActions_SetsCorrectEligibility()
+    {
+        var actions = new[]
+        {
+            new PackSafeAction("sa-a", "A", "actions/a.json"),
+            new PackSafeAction("sa-b", "B", "actions/b.json"),
+            new PackSafeAction("sa-c", "C", "actions/c.json"),
+        };
+        var pack = MakePack("azure-vm", safeActions: actions);
+        var config = BuildConfig(deploymentMode: "B");
+        var (proposer, catalog, fileReader, _) = CreateProposer(config);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync("/packs/azure-vm", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Action","actionType":"generic","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        Assert.Equal(3, result.Proposals.Count);
+        Assert.Empty(result.Errors);
+
+        // A and B actions are executable in Mode B
+        var saA = result.Proposals.Single(p => p.ActionId == "sa-a");
+        Assert.True(saA.IsExecutableNow);
+        Assert.Null(saA.ExecutionBlockedReason);
+
+        var saB = result.Proposals.Single(p => p.ActionId == "sa-b");
+        Assert.True(saB.IsExecutableNow);
+        Assert.Null(saB.ExecutionBlockedReason);
+
+        // C action is NOT executable in Mode B — blocked
+        var saC = result.Proposals.Single(p => p.ActionId == "sa-c");
+        Assert.False(saC.IsExecutableNow);
+        Assert.Equal("requires_higher_mode", saC.ExecutionBlockedReason);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 20. Non-executable action with file-read error — both recorded
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task ProposeAsync_NonExecutableActionFileReadError_RecordsErrorWithBlockedReason()
+    {
+        var action = new PackSafeAction("sa-c", "C", "actions/c.json");
+        var pack = MakePack("azure-vm", minimumMode: "A", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+        var (proposer, catalog, fileReader, _) = CreateProposer(config);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/c.json", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new FileNotFoundException("Not found"));
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        Assert.Single(result.Proposals);
+        var item = result.Proposals[0];
+        Assert.Equal("sa-c", item.ActionId);
+        Assert.Equal("Not found", item.ErrorMessage);
+        Assert.False(item.IsExecutableNow);
+        Assert.Equal("requires_higher_mode", item.ExecutionBlockedReason);
+        Assert.Single(result.Errors);
     }
 }

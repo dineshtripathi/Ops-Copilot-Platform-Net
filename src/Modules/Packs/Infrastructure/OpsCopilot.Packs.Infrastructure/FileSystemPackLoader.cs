@@ -218,9 +218,9 @@ internal sealed partial class FileSystemPackLoader : IPackLoader
                 if (!string.IsNullOrEmpty(sa.Id) && !saIds.Add(sa.Id))
                     errors.Add($"Duplicate safeActions id '{sa.Id}'.");
 
-                // Rule 9: safeActions[].requiresMode must be "C"
-                if (!string.Equals(sa.RequiresMode, "C", StringComparison.Ordinal))
-                    errors.Add($"safeActions['{sa.Id}'].requiresMode must be 'C' (got '{sa.RequiresMode}').");
+                // Rule 9: safeActions[].requiresMode must be "A", "B", or "C"
+                if (!ValidModes.Contains(sa.RequiresMode ?? string.Empty))
+                    errors.Add($"safeActions['{sa.Id}'].requiresMode must be 'A', 'B', or 'C' (got '{sa.RequiresMode}').");
 
                 // Rule 14: definitionFile must exist on disk (if specified)
                 if (!string.IsNullOrEmpty(sa.DefinitionFile))
