@@ -520,8 +520,8 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Single(result.Proposals);
         var item = result.Proposals[0];
         Assert.True(item.GovernanceAllowed);
-        Assert.Equal("ALLOWED", item.GovernanceReasonCode);
-        Assert.NotNull(item.GovernanceMessage);
+        Assert.Null(item.GovernanceReasonCode);
+        Assert.Null(item.GovernanceMessage);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -645,7 +645,7 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
 
         var check = result.Proposals.Single(p => p.ActionId == "check-health");
         Assert.True(check.GovernanceAllowed);
-        Assert.Equal("ALLOWED", check.GovernanceReasonCode);
+        Assert.Null(check.GovernanceReasonCode);
 
         var restart = result.Proposals.Single(p => p.ActionId == "restart-vm");
         Assert.False(restart.GovernanceAllowed);
@@ -678,6 +678,6 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         var item = result.Proposals[0];
         Assert.Equal("unknown", item.ActionType);
         Assert.True(item.GovernanceAllowed);
-        Assert.Equal("ALLOWED", item.GovernanceReasonCode);
+        Assert.Null(item.GovernanceReasonCode);
     }
 }

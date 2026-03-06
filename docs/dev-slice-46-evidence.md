@@ -3,7 +3,7 @@
 **Status:** Complete  
 **Branch:** main  
 **Base commit:** c2ac990  
-**Date:** 2025-07-01
+**Date:** 2025-07-06
 
 ---
 
@@ -25,7 +25,7 @@ Add governance preview enrichment to each `PackSafeActionProposalItem` returned 
 | 6 | `tests/Modules/Packs/…/PackSafeActionProposerIntegrationTests.cs` | Updated `CreateProposer` + added `CreateScopeFactory` + added 6 new integration tests (tests 12-17) |
 | 7 | `docs/http/OpsCopilot.Api.http` | Added TOC entry + Section AS with 4 manual test requests |
 
-**Totals:** 7 files changed, +745 / −10 lines.
+**Totals:** 7 code files changed, +745 / −10 lines (8 files in git including this evidence doc).
 
 ---
 
@@ -36,7 +36,7 @@ Add governance preview enrichment to each `PackSafeActionProposalItem` returned 
 
 ### EnrichWithGovernance
 Static helper wraps `IToolAllowlistPolicy.CanUseTool(tenantId, actionType)` in try/catch:
-- **Success → Allow:** `GovernanceAllowed = true`, `GovernanceReasonCode = "ALLOWED"`, `GovernanceMessage = "Policy check passed."`
+- **Success → Allow:** `GovernanceAllowed = true`, `GovernanceReasonCode = null`, `GovernanceMessage = null`
 - **Success → Deny:** `GovernanceAllowed = false`, `GovernanceReasonCode = <policy reason>`, `GovernanceMessage = <policy message>`
 - **Exception:** `GovernanceAllowed = false`, `GovernanceReasonCode = "governance_preview_failed"`, `GovernanceMessage = "Governance preview could not be computed."`
 
@@ -54,7 +54,7 @@ When `TenantId` is null/empty, governance enrichment is skipped → all three fi
 
 | # | Test Name | Scenario |
 |---|-----------|----------|
-| 21 | `ProposeAsync_GovernanceAllowed_WhenToolIsOnAllowlist` | Policy returns Allow → `GovernanceAllowed = true`, `GovernanceReasonCode = "ALLOWED"` |
+| 21 | `ProposeAsync_GovernanceAllowed_WhenToolIsOnAllowlist` | Policy returns Allow → `GovernanceAllowed = true`, `GovernanceReasonCode = null`, `GovernanceMessage = null` |
 | 22 | `ProposeAsync_GovernanceDenied_WhenToolNotOnAllowlist` | Policy returns Deny → `GovernanceAllowed = false`, `GovernanceReasonCode = "not_allowlisted"` |
 | 23 | `ProposeAsync_GovernanceNull_WhenTenantIdMissing` | No tenant → all governance fields null |
 | 24 | `ProposeAsync_GovernanceNull_WhenModeIsA` | Mode A → no proposals at all |

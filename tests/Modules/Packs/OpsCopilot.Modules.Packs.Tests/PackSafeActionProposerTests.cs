@@ -691,8 +691,8 @@ public sealed class PackSafeActionProposerTests
 
         var item = Assert.Single(result.Proposals);
         Assert.True(item.GovernanceAllowed);
-        Assert.Equal("ALLOWED", item.GovernanceReasonCode);
-        Assert.NotNull(item.GovernanceMessage);
+        Assert.Null(item.GovernanceReasonCode);
+        Assert.Null(item.GovernanceMessage);
         policy.VerifyAll();
     }
 
@@ -871,7 +871,7 @@ public sealed class PackSafeActionProposerTests
 
         var restart = result.Proposals.Single(p => p.ActionId == "sa-restart");
         Assert.True(restart.GovernanceAllowed);
-        Assert.Equal("ALLOWED", restart.GovernanceReasonCode);
+        Assert.Null(restart.GovernanceReasonCode);
 
         var delete = result.Proposals.Single(p => p.ActionId == "sa-delete");
         Assert.False(delete.GovernanceAllowed);

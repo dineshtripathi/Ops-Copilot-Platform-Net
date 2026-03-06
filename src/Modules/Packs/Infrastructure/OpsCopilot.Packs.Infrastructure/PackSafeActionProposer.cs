@@ -264,8 +264,8 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
             return item with
             {
                 GovernanceAllowed    = decision.Allowed,
-                GovernanceReasonCode = decision.ReasonCode,
-                GovernanceMessage    = decision.Message
+                GovernanceReasonCode = decision.Allowed ? null : decision.ReasonCode,
+                GovernanceMessage    = decision.Allowed ? null : decision.Message
             };
         }
         catch (Exception)
