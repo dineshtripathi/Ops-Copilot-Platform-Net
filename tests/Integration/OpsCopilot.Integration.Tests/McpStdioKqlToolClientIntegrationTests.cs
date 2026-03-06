@@ -23,6 +23,12 @@ namespace OpsCopilot.Integration.Tests;
 /// </summary>
 public sealed class McpStdioKqlToolClientIntegrationTests : IAsyncDisposable
 {
+#if DEBUG
+    private const string Configuration = "Debug";
+#else
+    private const string Configuration = "Release";
+#endif
+
     // A single client instance is shared across all tests in this class to
     // avoid spawning the child process more than once per test session.
     private readonly McpStdioKqlToolClient _sut;
@@ -36,7 +42,8 @@ public sealed class McpStdioKqlToolClientIntegrationTests : IAsyncDisposable
         {
             Executable = "dotnet",
             // Pass the absolute project path so spaces are handled correctly.
-            Arguments  = ["run", "--project", mcpHostPath],
+            // --no-build + --configuration ensure the pre-built output is used (no surprise builds on CI).
+            Arguments  = ["run", "--project", mcpHostPath, "--no-build", "--configuration", Configuration],
             // WorkingDirectory = null → McpStdioKqlToolClient auto-discovers .sln root.
         };
 

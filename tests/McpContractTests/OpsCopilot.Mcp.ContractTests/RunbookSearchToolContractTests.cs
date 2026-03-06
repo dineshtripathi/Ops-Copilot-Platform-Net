@@ -20,6 +20,12 @@ namespace OpsCopilot.Mcp.ContractTests;
 /// </summary>
 public sealed class RunbookSearchToolContractTests
 {
+#if DEBUG
+    private const string Configuration = "Debug";
+#else
+    private const string Configuration = "Release";
+#endif
+
     // ── Test: tool is registered with correct schema ──────────────────────────
 
     [Fact]
@@ -164,7 +170,8 @@ public sealed class RunbookSearchToolContractTests
 
     /// <summary>
     /// Creates and connects an MCP client to the McpHost process.
-    /// Uses 'dotnet run --project &lt;path&gt;' so no pre-built binary is required.
+    /// Uses 'dotnet run --project &lt;path&gt; --no-build --configuration {Configuration}'
+    /// so the child process uses the same build that the test runner already compiled.
     /// </summary>
     private static async Task<McpClient> CreateClientAsync(CancellationToken ct)
     {
@@ -174,7 +181,7 @@ public sealed class RunbookSearchToolContractTests
         {
             Name      = "OpsCopilotMcpHost",
             Command   = "dotnet",
-            Arguments = ["run", "--project", mcpHostProjectPath],
+            Arguments = ["run", "--project", mcpHostProjectPath, "--no-build", "--configuration", Configuration],
         });
 
         return await McpClient.CreateAsync(transport, cancellationToken: ct);

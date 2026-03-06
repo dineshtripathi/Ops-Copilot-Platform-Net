@@ -157,4 +157,58 @@ Full solution:
 | 0 warnings / 0 errors build | ✓ |
 | All tests pass (815/815) | ✓ |
 
-*Not committed — awaiting explicit instruction.*
+---
+
+## Post-Merge Fix — CI Pipeline (commit `af8fd24`)
+
+### Problem
+
+GitHub Actions CI workflow (`ci.yml`) failed at the **Test** step (step 7,
+exit code 1, 48 s) on commit `58dc880`. The pipeline builds in Release only
+(`dotnet build --configuration Release`), then runs tests with
+`--no-build --configuration Release`.
+
+Three MCP test files spawned `McpHost` via `StdioClientTransport` / `McpKqlServerOptions`
+using `Arguments = ["run", "--project", <path>]` **without** `--configuration`
+or `--no-build`. On CI (fresh `ubuntu-latest`), `dotnet run` defaulted to Debug
+→ triggered a full Debug restore + compile from scratch → timed out.
+
+### Root Cause
+
+Configuration mismatch: test runner executed in Release, child `dotnet run`
+defaulted to Debug. On a clean CI runner with no Debug build artefacts, the
+implicit build exceeded the 90-second test timeout.
+
+### Fix
+
+Added a conditional-compilation constant to each affected class:
+
+```csharp
+#if DEBUG
+    private const string Configuration = "Debug";
+#else
+    private const string Configuration = "Release";
+#endif
+```
+
+Modified every `Arguments` array to include `"--no-build", "--configuration", Configuration`.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `tests/McpContractTests/.../KqlToolContractTests.cs` | `#if DEBUG` constant + args |
+| `tests/McpContractTests/.../RunbookSearchToolContractTests.cs` | `#if DEBUG` constant + args |
+| `tests/Integration/.../McpStdioKqlToolClientIntegrationTests.cs` | `#if DEBUG` constant + args |
+
+### Verification
+
+```
+dotnet build OpsCopilot.sln --configuration Release -warnaserror
+  Build succeeded.  0 Warning(s)  0 Error(s)
+
+dotnet test OpsCopilot.sln --no-build --configuration Release
+  815/815 passed, 0 failed
+```
+
+Commit `af8fd24` pushed to `origin/main`.
