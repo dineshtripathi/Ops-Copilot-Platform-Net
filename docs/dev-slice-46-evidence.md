@@ -3,7 +3,8 @@
 **Status:** Complete  
 **Branch:** main  
 **Base commit:** c2ac990  
-**Date:** 2025-07-06
+**Commit:** 10d1a66  
+**Date:** 2026-03-06
 
 ---
 
@@ -39,6 +40,8 @@ Static helper wraps `IToolAllowlistPolicy.CanUseTool(tenantId, actionType)` in t
 - **Success → Allow:** `GovernanceAllowed = true`, `GovernanceReasonCode = null`, `GovernanceMessage = null`
 - **Success → Deny:** `GovernanceAllowed = false`, `GovernanceReasonCode = <policy reason>`, `GovernanceMessage = <policy message>`
 - **Exception:** `GovernanceAllowed = false`, `GovernanceReasonCode = "governance_preview_failed"`, `GovernanceMessage = "Governance preview could not be computed."`
+
+> **Note:** Slice 47 later normalized semantics so Policy Allowed ⇒ `GovernanceReasonCode`/`GovernanceMessage` are `null` (boolean alone signals allow).
 
 ### Mode A Behavior
 Mode A requests produce no proposals (unchanged behavior) → governance fields never populate.
