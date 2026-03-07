@@ -38,8 +38,9 @@ public static class AgentRunEndpoints
             IConfiguration        config,
             IPackTriageEnricher   packTriageEnricher,
             IPackEvidenceExecutor    packEvidenceExecutor,
-            IPackSafeActionProposer packSafeActionProposer,
-            CancellationToken       ct) =>
+            IPackSafeActionProposer  packSafeActionProposer,
+            IPackSafeActionRecorder  packSafeActionRecorder,
+            CancellationToken        ct) =>
         {
             // ── Header validation ───────────────────────────────────────────
             var tenantId = httpContext.Request.Headers["x-tenant-id"].FirstOrDefault();
@@ -176,6 +177,27 @@ public static class AgentRunEndpoints
                     p.GovernanceAllowed, p.GovernanceReasonCode, p.GovernanceMessage))
                 .ToList();
 
+            // ── Pack safe-action recording (Mode C only) ────────────────────
+            var recordResult = await packSafeActionRecorder.RecordAsync(
+                new PackSafeActionRecordRequest(
+                    deploymentMode, tenantId, result.RunId, proposalResult.Proposals),
+                ct);
+
+            PackSafeActionRecordSummaryDto? packSafeActionRecordSummary =
+                recordResult.Records.Count > 0
+                    ? new PackSafeActionRecordSummaryDto(
+                        recordResult.Records
+                            .Select(r => new PackSafeActionRecordItemDto(
+                                r.PackName, r.ActionId, r.ActionType,
+                                r.ActionRecordId, r.Status, r.ErrorMessage,
+                                r.PolicyDenialReasonCode))
+                            .ToList(),
+                        recordResult.CreatedCount,
+                        recordResult.SkippedCount,
+                        recordResult.FailedCount,
+                        recordResult.Errors)
+                    : null;
+
             // Parse the summary JSON string into a structured JsonElement
             // to prevent double-encoding in the HTTP response.
             JsonElement? summary = null;
@@ -205,7 +227,8 @@ public static class AgentRunEndpoints
                     : null,
                 packSafeActionProposals.Count > 0
                     ? packSafeActionProposals
-                    : null));
+                    : null,
+                packSafeActionRecordSummary));
         })
         .WithName("PostTriage")
         .WithTags("AgentRuns")

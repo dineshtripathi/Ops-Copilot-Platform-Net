@@ -21,6 +21,11 @@ public sealed class PacksTelemetry : IPacksTelemetry, IDisposable
     private readonly Counter<long> _queryBlocked;
     private readonly Counter<long> _queryTimeout;
     private readonly Counter<long> _queryFailed;
+    private readonly Counter<long> _safeActionAttempts;
+    private readonly Counter<long> _safeActionCreated;
+    private readonly Counter<long> _safeActionDenied;
+    private readonly Counter<long> _safeActionSkipped;
+    private readonly Counter<long> _safeActionFailed;
 
     public PacksTelemetry()
     {
@@ -35,6 +40,12 @@ public sealed class PacksTelemetry : IPacksTelemetry, IDisposable
         _queryBlocked              = _meter.CreateCounter<long>("packs.evidence.query.blocked",                   description: "Blocked queries (file not found or no content)");
         _queryTimeout              = _meter.CreateCounter<long>("packs.evidence.query.timeout",                   description: "Query execution timeouts");
         _queryFailed               = _meter.CreateCounter<long>("packs.evidence.query.failed",                    description: "Query execution failures");
+
+        _safeActionAttempts        = _meter.CreateCounter<long>("packs.safeaction.attempts",                      description: "Safe-action recording attempts (Mode C)");
+        _safeActionCreated         = _meter.CreateCounter<long>("packs.safeaction.created",                       description: "Safe-action records created successfully");
+        _safeActionDenied          = _meter.CreateCounter<long>("packs.safeaction.denied",                        description: "Safe-action records denied by policy");
+        _safeActionSkipped         = _meter.CreateCounter<long>("packs.safeaction.skipped",                       description: "Safe-action records skipped (not executable or gate)");
+        _safeActionFailed          = _meter.CreateCounter<long>("packs.safeaction.failed",                        description: "Safe-action recording failures");
     }
 
     public void RecordEvidenceAttempt(string mode, string tenantId, string? correlationId) =>
@@ -94,6 +105,44 @@ public sealed class PacksTelemetry : IPacksTelemetry, IDisposable
         _queryFailed.Add(1,
             new KeyValuePair<string, object?>("pack_id", packId),
             new KeyValuePair<string, object?>("collector_id", collectorId),
+            new KeyValuePair<string, object?>("tenant_id", tenantId),
+            new KeyValuePair<string, object?>("error_code", errorCode),
+            new KeyValuePair<string, object?>("correlation_id", correlationId));
+
+    // ── Safe-action recording counters (Mode C only) ──────────────────────
+
+    public void RecordSafeActionAttempt(string mode, string tenantId, string? correlationId) =>
+        _safeActionAttempts.Add(1,
+            new KeyValuePair<string, object?>("mode", mode),
+            new KeyValuePair<string, object?>("tenant_id", tenantId),
+            new KeyValuePair<string, object?>("correlation_id", correlationId));
+
+    public void RecordSafeActionCreated(string packName, string actionId, string tenantId, string? correlationId) =>
+        _safeActionCreated.Add(1,
+            new KeyValuePair<string, object?>("pack_name", packName),
+            new KeyValuePair<string, object?>("action_id", actionId),
+            new KeyValuePair<string, object?>("tenant_id", tenantId),
+            new KeyValuePair<string, object?>("correlation_id", correlationId));
+
+    public void RecordSafeActionDenied(string packName, string actionId, string tenantId, string reasonCode, string? correlationId) =>
+        _safeActionDenied.Add(1,
+            new KeyValuePair<string, object?>("pack_name", packName),
+            new KeyValuePair<string, object?>("action_id", actionId),
+            new KeyValuePair<string, object?>("tenant_id", tenantId),
+            new KeyValuePair<string, object?>("reason_code", reasonCode),
+            new KeyValuePair<string, object?>("correlation_id", correlationId));
+
+    public void RecordSafeActionSkipped(string packName, string actionId, string tenantId, string? skipReason) =>
+        _safeActionSkipped.Add(1,
+            new KeyValuePair<string, object?>("pack_name", packName),
+            new KeyValuePair<string, object?>("action_id", actionId),
+            new KeyValuePair<string, object?>("tenant_id", tenantId),
+            new KeyValuePair<string, object?>("skip_reason", skipReason));
+
+    public void RecordSafeActionFailed(string packName, string actionId, string tenantId, string errorCode, string? correlationId) =>
+        _safeActionFailed.Add(1,
+            new KeyValuePair<string, object?>("pack_name", packName),
+            new KeyValuePair<string, object?>("action_id", actionId),
             new KeyValuePair<string, object?>("tenant_id", tenantId),
             new KeyValuePair<string, object?>("error_code", errorCode),
             new KeyValuePair<string, object?>("correlation_id", correlationId));

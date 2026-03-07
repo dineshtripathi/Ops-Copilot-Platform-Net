@@ -32,4 +32,21 @@ public interface IPacksTelemetry
 
     /// <summary>packs.evidence.query.failed — incremented when a query execution returns a failure result.</summary>
     void RecordQueryFailed(string packId, string collectorId, string tenantId, string errorCode, string? correlationId);
+
+    // ── Safe-action recording counters (Mode C only) ──────────────────────
+
+    /// <summary>packs.safeaction.attempts — incremented when safe-action recording begins (Mode C).</summary>
+    void RecordSafeActionAttempt(string mode, string tenantId, string? correlationId);
+
+    /// <summary>packs.safeaction.created — incremented when a safe-action record is created successfully.</summary>
+    void RecordSafeActionCreated(string packName, string actionId, string tenantId, string? correlationId);
+
+    /// <summary>packs.safeaction.denied — incremented when a safe-action is denied by policy.</summary>
+    void RecordSafeActionDenied(string packName, string actionId, string tenantId, string reasonCode, string? correlationId);
+
+    /// <summary>packs.safeaction.skipped — incremented when a safe-action is skipped (not executable or gate).</summary>
+    void RecordSafeActionSkipped(string packName, string actionId, string tenantId, string? skipReason);
+
+    /// <summary>packs.safeaction.failed — incremented when a safe-action recording fails with an exception.</summary>
+    void RecordSafeActionFailed(string packName, string actionId, string tenantId, string errorCode, string? correlationId);
 }

@@ -48,6 +48,36 @@ public sealed record PackEvidenceCollectorDto(
     string? QueryFile,
     string? KqlContent);
 
+/// <summary>Per-proposal outcome of the Mode C safe-action recording step.</summary>
+/// <param name="PackName">The pack that owns this action.</param>
+/// <param name="ActionId">Unique action identifier within the pack.</param>
+/// <param name="ActionType">The type of action (e.g. run-command).</param>
+/// <param name="ActionRecordId">The persisted SafeAction record identifier, or null on failure/skip.</param>
+/// <param name="Status">Outcome status: Created, Skipped, PolicyDenied, or Failed.</param>
+/// <param name="ErrorMessage">Non-null when the record could not be created.</param>
+/// <param name="PolicyDenialReasonCode">Non-null when the proposal was denied by SafeAction policy.</param>
+public sealed record PackSafeActionRecordItemDto(
+    string  PackName,
+    string  ActionId,
+    string  ActionType,
+    Guid?   ActionRecordId,
+    string  Status,
+    string? ErrorMessage,
+    string? PolicyDenialReasonCode);
+
+/// <summary>Summary of the Mode C safe-action recording step (null when mode is not C or feature is disabled).</summary>
+/// <param name="Records">Per-proposal recording outcomes.</param>
+/// <param name="CreatedCount">Number of proposals that were successfully recorded.</param>
+/// <param name="SkippedCount">Number of proposals that were skipped (not executable / governance denied).</param>
+/// <param name="FailedCount">Number of proposals that failed (policy denied or unexpected error).</param>
+/// <param name="Errors">Aggregate error messages encountered during recording.</param>
+public sealed record PackSafeActionRecordSummaryDto(
+    IReadOnlyList<PackSafeActionRecordItemDto> Records,
+    int                                        CreatedCount,
+    int                                        SkippedCount,
+    int                                        FailedCount,
+    IReadOnlyList<string>                      Errors);
+
 /// <summary>Response body for POST /agent/triage.</summary>
 /// <param name="RunId">Unique identifier of the persisted AgentRun ledger entry.</param>
 /// <param name="Status">Terminal status of the run (Completed / Degraded / Failed).</param>
@@ -57,6 +87,7 @@ public sealed record PackEvidenceCollectorDto(
 /// <param name="PackRunbooks">Pack runbook details discovered during triage enrichment (Mode A).</param>
 /// <param name="PackEvidenceCollectors">Pack evidence-collector details discovered during triage enrichment (Mode A).</param>
 /// <param name="PackErrors">Non-fatal errors encountered during pack enrichment (null when none).</param>
+/// <param name="PackSafeActionRecordSummary">Summary of Mode C safe-action recording (null when mode ≠ C or feature disabled).</param>
 public sealed record TriageResponse(
     Guid                                       RunId,
     string                                     Status,
@@ -67,8 +98,9 @@ public sealed record TriageResponse(
     bool                                       IsNewSession,
     DateTimeOffset?                            SessionExpiresAtUtc,
     bool                                       UsedSessionContext,
-    IReadOnlyList<PackRunbookDto>?             PackRunbooks             = null,
-    IReadOnlyList<PackEvidenceCollectorDto>?   PackEvidenceCollectors   = null,
-    IReadOnlyList<string>?                     PackErrors               = null,
-    IReadOnlyList<PackEvidenceResultDto>?      PackEvidenceResults      = null,
-    IReadOnlyList<PackSafeActionProposalDto>?  PackSafeActionProposals  = null);
+    IReadOnlyList<PackRunbookDto>?             PackRunbooks                = null,
+    IReadOnlyList<PackEvidenceCollectorDto>?   PackEvidenceCollectors      = null,
+    IReadOnlyList<string>?                     PackErrors                  = null,
+    IReadOnlyList<PackEvidenceResultDto>?      PackEvidenceResults         = null,
+    IReadOnlyList<PackSafeActionProposalDto>?  PackSafeActionProposals     = null,
+    PackSafeActionRecordSummaryDto?            PackSafeActionRecordSummary = null);

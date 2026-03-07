@@ -500,6 +500,11 @@ public sealed class TriageEvidenceIntegrationTests
             .ReturnsAsync(new PackSafeActionProposalResult([], []));
         builder.Services.AddSingleton<IPackSafeActionProposer>(proposer.Object);
 
+        var recorder = new Mock<IPackSafeActionRecorder>();
+        recorder.Setup(r => r.RecordAsync(It.IsAny<PackSafeActionRecordRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PackSafeActionRecordResult([], 0, 0, 0, []));
+        builder.Services.AddSingleton<IPackSafeActionRecorder>(recorder.Object);
+
         var app = builder.Build();
         app.MapAgentRunEndpoints();
         await app.StartAsync();
@@ -585,6 +590,11 @@ public sealed class TriageEvidenceIntegrationTests
         proposer.Setup(p => p.ProposeAsync(It.IsAny<PackSafeActionProposalRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PackSafeActionProposalResult([], []));
         builder.Services.AddSingleton<IPackSafeActionProposer>(proposer.Object);
+
+        var recorder = new Mock<IPackSafeActionRecorder>();
+        recorder.Setup(r => r.RecordAsync(It.IsAny<PackSafeActionRecordRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PackSafeActionRecordResult([], 0, 0, 0, []));
+        builder.Services.AddSingleton<IPackSafeActionRecorder>(recorder.Object);
 
         var app = builder.Build();
         app.MapAgentRunEndpoints();

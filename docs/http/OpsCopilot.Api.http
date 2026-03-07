@@ -35,6 +35,7 @@
 ###   AQ. Packs → SafeActions Proposals (Dev Slice 44)
 ###   AR. Mode B Recommend Alignment (Dev Slice 45)
 ###   AS. Governance Preview for Pack SafeAction Proposals (Dev Slice 46)
+###   AT. Packs → SafeActions Record Creation (Dev Slice 49)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -3068,5 +3069,182 @@ Content-Type: application/json
     "correlationId": "corr-as4-no-tenant-01"
   },
   "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### ================================================================
+### AT. Packs → SafeActions Record Creation  (Dev Slice 49)
+### ================================================================
+###
+### Dev Slice 49: Mode C Only, STRICT — PackSafeActionRecorder bridges
+###   pack safe-action proposals into real SafeAction proposal records
+###   via ISafeActionProposalService.  Response includes a new field
+###   packSafeActionRecordSummary (null when mode ≠ C or feature disabled).
+###
+### Test cases:
+###   AT1 — ModeC triage: packSafeActionRecordSummary populated (happy path)
+###   AT2 — ModeB triage: packSafeActionRecordSummary is null (mode gate)
+###   AT3 — ModeC with feature disabled: packSafeActionRecordSummary is null
+###   AT4 — ModeC triage: DTO shape verification for record items
+###   AT5 — ModeA triage: packSafeActionRecordSummary is null (mode gate)
+###############################################################################
+
+### AT1 — ModeC triage: packSafeActionRecordSummary populated (happy path)
+# Expected: 200 OK.  Response includes packSafeActionRecordSummary object with:
+#   records[]       — per-proposal recording outcomes (PackSafeActionRecordItemDto[])
+#   createdCount    — number of proposals successfully recorded (≥ 0)
+#   skippedCount    — number of proposals skipped (not executable / governance denied)
+#   failedCount     — number of proposals that failed recording
+#   errors[]        — aggregate error messages (empty on full success)
+#   Each record item has: packName, actionId, actionType,
+#   actionRecordId (GUID or null), status ("Created"/"Skipped"/
+#   "PolicyDenied"/"Failed"), errorMessage (null on success),
+#   policyDenialReasonCode (null unless policy denied).
+# NOTE: Server must be in Mode C (Packs:DeploymentMode = "C") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeC_RecordSummaryHappyPath
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "at1-modec-record-01",
+    "title": "High CPU on prod-vm-01 — SafeActions record creation verification",
+    "severity": "High",
+    "firedAtUtc": "2025-07-29T10:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-01",
+    "serviceName": "prod-vm-01",
+    "environment": "production",
+    "correlationId": "corr-at1-record-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AT2 — ModeB triage: packSafeActionRecordSummary is null (mode gate)
+# Expected: 200 OK.  packSafeActionRecordSummary is null because the
+#   PackSafeActionRecorder only activates in Mode C (char.ToUpperInvariant
+#   check).  Mode B passes through the proposer but the recorder returns
+#   an empty result, so the endpoint maps it to null in the response.
+# NOTE: Server must be in Mode B (Packs:DeploymentMode = "B") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeB_RecordSummaryNull
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "at2-modeb-record-01",
+    "title": "Disk full on staging-vm — ModeB record gate verification",
+    "severity": "Medium",
+    "firedAtUtc": "2025-07-29T10:05:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/staging-rg/providers/Microsoft.Compute/virtualMachines/staging-vm-at2",
+    "serviceName": "staging-vm-at2",
+    "environment": "staging",
+    "correlationId": "corr-at2-modeb-record-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AT3 — ModeC with SafeActionsEnabled=false: packSafeActionRecordSummary is null
+# Expected: 200 OK.  packSafeActionRecordSummary is null because the
+#   feature flag Packs:SafeActionsEnabled is false, which causes the
+#   PackSafeActionRecorder to short-circuit and return an empty result.
+#   The endpoint maps an empty (zero-record) result to null.
+# NOTE: Server must have Packs:SafeActionsEnabled = false
+#   (Packs:DeploymentMode may be "C" or anything else).
+# @name triageModeC_FeatureDisabled_RecordSummaryNull
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "at3-feature-disabled-record-01",
+    "title": "CPU anomaly — SafeActions feature-flag record gate verification",
+    "severity": "Medium",
+    "firedAtUtc": "2025-07-29T10:10:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-at3",
+    "serviceName": "prod-vm-at3",
+    "environment": "production",
+    "correlationId": "corr-at3-feature-disabled-record-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AT4 — ModeC triage: PackSafeActionRecordItemDto shape verification
+# Expected: 200 OK.  Each item in packSafeActionRecordSummary.records[]
+#   must have all seven fields present (even if null):
+#     packName               — string, e.g. "azure-vm"
+#     actionId               — string, e.g. "restart-vm"
+#     actionType             — string, e.g. "run-command"
+#     actionRecordId         — GUID string or null
+#     status                 — string: "Created", "Skipped", "PolicyDenied", or "Failed"
+#     errorMessage           — string or null (null = success)
+#     policyDenialReasonCode — string or null (non-null only on "PolicyDenied")
+#   Also verify the summary-level fields:
+#     createdCount           — integer ≥ 0
+#     skippedCount           — integer ≥ 0
+#     failedCount            — integer ≥ 0
+#     errors                 — array of strings (may be empty)
+#   Verify the shape matches PackSafeActionRecordSummaryDto exactly.
+# NOTE: Server must be in Mode C (Packs:DeploymentMode = "C") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeC_RecordDtoShape
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "at4-dto-shape-record-01",
+    "title": "High memory on prod-vm-02 — record DTO shape check",
+    "severity": "High",
+    "firedAtUtc": "2025-07-29T10:15:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-02",
+    "serviceName": "prod-vm-02",
+    "environment": "production",
+    "correlationId": "corr-at4-dto-shape-record-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AT5 — ModeA triage: packSafeActionRecordSummary is null (mode gate)
+# Expected: 200 OK.  packSafeActionRecordSummary is null because Mode A
+#   is below the minimum threshold for the PackSafeActionRecorder.
+#   The recorder returns an empty result immediately.
+# NOTE: Server must be in Mode A (Packs:DeploymentMode = "A").
+# @name triageModeA_RecordSummaryNull
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "at5-modea-record-01",
+    "title": "Network timeout — ModeA safe-actions record gate verification",
+    "severity": "Low",
+    "firedAtUtc": "2025-07-29T10:20:00Z",
+    "signalType": "Log",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/dev-rg/providers/Microsoft.Network/virtualNetworks/vnet-at5",
+    "serviceName": "vnet-at5",
+    "environment": "development",
+    "correlationId": "corr-at5-modea-record-01"
+  },
+  "timeRangeMinutes": 60,
   "workspaceId": "{{workspaceId}}"
 }

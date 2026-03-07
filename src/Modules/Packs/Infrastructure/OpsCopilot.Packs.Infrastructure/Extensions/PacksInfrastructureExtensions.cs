@@ -10,7 +10,7 @@ public static class PacksInfrastructureExtensions
     /// <summary>
     /// Registers the filesystem-based pack loader, in-memory pack catalog,
     /// pack file reader, pack triage enricher, pack evidence executor,
-    /// and safe-action proposer.
+    /// safe-action proposer, and safe-action recorder.
     /// </summary>
     public static IServiceCollection AddPacksInfrastructure(
         this IServiceCollection services,
@@ -23,6 +23,7 @@ public static class PacksInfrastructureExtensions
         services.AddSingleton<ITenantWorkspaceResolver, TenantWorkspaceResolver>();
         services.AddSingleton<IPackEvidenceExecutor, PackEvidenceExecutor>();
         services.AddSingleton<IPackSafeActionProposer, PackSafeActionProposer>();
+        services.AddSingleton<IPackSafeActionRecorder, PackSafeActionRecorder>();
 
         return services;
     }
