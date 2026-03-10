@@ -45,4 +45,15 @@ public interface IAgentRunRepository
     Task UpdateTokenUsageAsync(
         Guid runId, int inputTokens, int outputTokens, int totalTokens,
         CancellationToken ct = default);
+
+    /// <summary>Persists LLM ledger metadata (model, prompt version, tokens, cost) for a completed run.</summary>
+    Task UpdateRunLedgerAsync(
+        Guid     runId,
+        string   modelId,
+        string?  promptVersionId,
+        int      inputTokens,
+        int      outputTokens,
+        int      totalTokens,
+        decimal  estimatedCost,
+        CancellationToken ct = default);
 }

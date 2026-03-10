@@ -6,9 +6,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <!-- Allow Integration.Tests to call internal methods (e.g. BuildChildEnvironment) -->
+  <!-- Allow test assemblies to call internal methods -->
   <ItemGroup>
     <InternalsVisibleTo Include="OpsCopilot.Integration.Tests" />
+    <InternalsVisibleTo Include="OpsCopilot.Modules.AgentRuns.Tests" />
   </ItemGroup>
 
   <ItemGroup>
@@ -17,6 +18,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.AI" Version="9.5.0" />
     <!-- MCP stdio client — calls McpHost child process via StdioClientTransport -->
     <PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.1" />
     <!-- Redis session store for durable multi-replica sessions -->
@@ -27,6 +29,7 @@
     <ProjectReference Include="..\..\Application\OpsCopilot.AgentRuns.Application\OpsCopilot.AgentRuns.Application.csproj" />
     <ProjectReference Include="..\..\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
     <ProjectReference Include="..\..\..\..\BuildingBlocks\Contracts\OpsCopilot.BuildingBlocks.Contracts\OpsCopilot.BuildingBlocks.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Tenancy\Application\OpsCopilot.Tenancy.Application\OpsCopilot.Tenancy.Application.csproj" />
   </ItemGroup>
 
 </Project>

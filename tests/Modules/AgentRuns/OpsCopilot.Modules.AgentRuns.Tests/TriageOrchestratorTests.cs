@@ -6,7 +6,9 @@ using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Repositories;
+using Microsoft.Extensions.AI;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
+using System.Net.Http;
 using Xunit;
 
 namespace OpsCopilot.Modules.AgentRuns.Tests;
@@ -1015,4 +1017,259 @@ public sealed class TriageOrchestratorTests
 
         return (sessionStore, sessionPolicy);
     }
+
+    // ── Dev Slice 56 ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_WithChatClient_PopulatesLedgerFields()
+    {
+        // Arrange
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock
+            .Setup(r => r.UpdateRunLedgerAsync(
+                agentRun.RunId,
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<decimal>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var chatResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Analysis complete"))
+        {
+            Usage = new UsageDetails
+            {
+                InputTokenCount  = 10,
+                OutputTokenCount = 20,
+                TotalTokenCount  = 30
+            }
+        };
+
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(chatResponse);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock
+            .Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock
+            .Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze the situation."));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object,
+            kqlMock.Object,
+            runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object,
+            budget.Object,
+            degraded.Object,
+            sessionStore.Object,
+            sessionPolicy.Object,
+            TimeProvider.System,
+            chatClientMock.Object,
+            modelRoutingMock.Object,
+            promptVersionMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal("gpt-4o", result.ModelId);
+        Assert.Equal("1.0.0", result.PromptVersionId);
+        Assert.Equal(10, result.InputTokens);
+        Assert.Equal(20, result.OutputTokens);
+        Assert.Equal(30, result.TotalTokens);
+        Assert.NotNull(result.EstimatedCost);
+
+        repoMock.Verify(
+            r => r.UpdateRunLedgerAsync(
+                agentRun.RunId,
+                "gpt-4o",
+                "1.0.0",
+                10,
+                20,
+                30,
+                It.IsAny<decimal>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RunAsync_ChatClientThrows_ReturnsDegraded_UpdateLedgerNotCalled()
+    {
+        // Arrange
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(
+                agentRun.RunId, AgentRunStatus.Degraded,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        // No UpdateRunLedgerAsync setup — it must never be called.
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("LLM unavailable"));
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock
+            .Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock
+            .Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze the situation."));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object,
+            kqlMock.Object,
+            runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object,
+            budget.Object,
+            degraded.Object,
+            sessionStore.Object,
+            sessionPolicy.Object,
+            TimeProvider.System,
+            chatClientMock.Object,
+            modelRoutingMock.Object,
+            promptVersionMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — run completes as Degraded; ledger never written
+        Assert.Equal(AgentRunStatus.Degraded, result.Status);
+        Assert.Null(result.ModelId);
+        Assert.Null(result.InputTokens);
+
+        repoMock.Verify(
+            r => r.UpdateRunLedgerAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<decimal>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task RunAsync_LlmSucceeds_WritesExactCostToLedger_ForGpt4o()
+    {
+        // Arrange — 1M input + 1M output for gpt-4o → $2.50 + $10.00 = $12.50
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock
+            .Setup(r => r.UpdateRunLedgerAsync(
+                agentRun.RunId,
+                "gpt-4o",
+                "1.0.0",
+                1_000_000,
+                1_000_000,
+                2_000_000,
+                12.50m,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var chatResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Cost test analysis"))
+        {
+            Usage = new UsageDetails
+            {
+                InputTokenCount  = 1_000_000,
+                OutputTokenCount = 1_000_000,
+                TotalTokenCount  = 2_000_000
+            }
+        };
+
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(chatResponse);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock
+            .Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock
+            .Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze the situation."));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object,
+            kqlMock.Object,
+            runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object,
+            budget.Object,
+            degraded.Object,
+            sessionStore.Object,
+            sessionPolicy.Object,
+            TimeProvider.System,
+            chatClientMock.Object,
+            modelRoutingMock.Object,
+            promptVersionMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — exact cost for gpt-4o at 1M/1M tokens
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal("gpt-4o", result.ModelId);
+        Assert.Equal(12.50m,   result.EstimatedCost);
+
+        repoMock.Verify(
+            r => r.UpdateRunLedgerAsync(
+                agentRun.RunId,
+                "gpt-4o",
+                "1.0.0",
+                1_000_000,
+                1_000_000,
+                2_000_000,
+                12.50m,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
 }
+

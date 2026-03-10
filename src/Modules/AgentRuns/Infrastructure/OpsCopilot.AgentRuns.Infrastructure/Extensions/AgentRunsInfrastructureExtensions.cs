@@ -6,6 +6,7 @@ using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Infrastructure.McpClient;
 using OpsCopilot.AgentRuns.Infrastructure.Persistence;
+using OpsCopilot.AgentRuns.Infrastructure.Routing;
 using OpsCopilot.AgentRuns.Infrastructure.Sessions;
 using StackExchange.Redis;
 
@@ -65,6 +66,8 @@ public static class AgentRunsInfrastructureExtensions
 
         services.AddScoped<IAgentRunRepository, SqlAgentRunRepository>();
         services.AddScoped<BuildingBlocks.Contracts.AgentRuns.IAgentRunCreator, Adapters.AgentRunCreatorAdapter>();
+        services.AddScoped<IModelRoutingPolicy,   TenantConfigModelRoutingPolicy>();
+        services.AddScoped<IPromptVersionService, ConfigPromptVersionService>();
 
         // ── Session store (config-driven: InMemory or Redis) ──────────────
         // Provider selection: AgentRuns:SessionStore:Provider

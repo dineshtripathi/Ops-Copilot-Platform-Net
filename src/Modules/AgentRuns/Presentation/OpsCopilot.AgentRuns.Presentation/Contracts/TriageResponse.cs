@@ -89,6 +89,12 @@ public sealed record PackSafeActionRecordSummaryDto(
 /// <param name="PackEvidenceCollectors">Pack evidence-collector details discovered during triage enrichment (Mode A).</param>
 /// <param name="PackErrors">Non-fatal errors encountered during pack enrichment (null when none).</param>
 /// <param name="PackSafeActionRecordSummary">Summary of Mode C safe-action recording (null when mode ≠ C or feature disabled).</param>
+/// <param name="ModelId">Identifier of the LLM model used for this run (null when LLM is disabled).</param>
+/// <param name="PromptVersionId">Version of the system prompt used for this run (null when LLM is disabled).</param>
+/// <param name="InputTokens">Number of input tokens consumed (null when LLM is disabled).</param>
+/// <param name="OutputTokens">Number of output tokens produced (null when LLM is disabled).</param>
+/// <param name="TotalTokens">Total tokens (input + output) for this run (null when LLM is disabled).</param>
+/// <param name="EstimatedCost">Estimated monetary cost of the LLM call in USD (null when LLM is disabled).</param>
 public sealed record TriageResponse(
     Guid                                       RunId,
     string                                     Status,
@@ -105,4 +111,10 @@ public sealed record TriageResponse(
     IReadOnlyList<string>?                     PackErrors                  = null,
     IReadOnlyList<PackEvidenceResultDto>?      PackEvidenceResults         = null,
     IReadOnlyList<PackSafeActionProposalDto>?  PackSafeActionProposals     = null,
-    PackSafeActionRecordSummaryDto?            PackSafeActionRecordSummary = null);
+    PackSafeActionRecordSummaryDto?            PackSafeActionRecordSummary = null,
+    string?                                    ModelId                     = null,
+    string?                                    PromptVersionId             = null,
+    int?                                       InputTokens                 = null,
+    int?                                       OutputTokens                = null,
+    int?                                       TotalTokens                 = null,
+    decimal?                                   EstimatedCost               = null);

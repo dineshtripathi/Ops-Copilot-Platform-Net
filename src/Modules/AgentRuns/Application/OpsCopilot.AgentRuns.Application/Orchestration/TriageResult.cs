@@ -14,4 +14,10 @@ public sealed record TriageResult(
     bool                              IsNewSession,
     DateTimeOffset?                   SessionExpiresAtUtc,
     bool                              UsedSessionContext,
-    string                            SessionReasonCode);
+    string                            SessionReasonCode,
+    string?  ModelId         = null,
+    string?  PromptVersionId = null,
+    int?     InputTokens     = null,
+    int?     OutputTokens    = null,
+    int?     TotalTokens     = null,
+    decimal? EstimatedCost   = null);

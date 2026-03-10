@@ -36,6 +36,9 @@ public sealed class AgentRunsDbContext : DbContext
             e.HasIndex(x => new { x.TenantId, x.CreatedAtUtc });
             e.Property(x => x.SessionId);
             e.HasIndex(x => x.SessionId);
+            e.Property(x => x.ModelId).HasMaxLength(128);
+            e.Property(x => x.PromptVersionId).HasMaxLength(64);
+            e.Property(x => x.EstimatedCost).HasColumnType("decimal(18,6)");
         });
 
         modelBuilder.Entity<ToolCall>(e =>

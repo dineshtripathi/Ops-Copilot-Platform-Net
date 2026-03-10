@@ -70,4 +70,15 @@ public sealed class SqlAgentRunRepository : IAgentRunRepository
         Guid runId, int inputTokens, int outputTokens, int totalTokens,
         CancellationToken ct = default)
         => Task.CompletedTask;
+
+    public async Task UpdateRunLedgerAsync(
+        Guid runId, string modelId, string? promptVersionId,
+        int inputTokens, int outputTokens, int totalTokens, decimal estimatedCost,
+        CancellationToken ct = default)
+    {
+        var run = await _db.AgentRuns.FindAsync([runId], ct)
+                  ?? throw new InvalidOperationException($"AgentRun {runId} not found.");
+        run.SetLedgerMetadata(modelId, promptVersionId, inputTokens, outputTokens, totalTokens, estimatedCost);
+        await _db.SaveChangesAsync(ct);
+    }
 }

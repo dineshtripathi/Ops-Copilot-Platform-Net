@@ -232,7 +232,13 @@ public static class AgentRunEndpoints
                 PackSafeActionProposals:     packSafeActionProposals.Count > 0
                     ? packSafeActionProposals
                     : null,
-                PackSafeActionRecordSummary: packSafeActionRecordSummary));
+                PackSafeActionRecordSummary: packSafeActionRecordSummary,
+                ModelId:                     result.ModelId,
+                PromptVersionId:             result.PromptVersionId,
+                InputTokens:                 result.InputTokens,
+                OutputTokens:                result.OutputTokens,
+                TotalTokens:                 result.TotalTokens,
+                EstimatedCost:               result.EstimatedCost));
         })
         .WithName("PostTriage")
         .WithTags("AgentRuns")

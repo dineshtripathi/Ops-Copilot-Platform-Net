@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Entities;
@@ -36,6 +37,10 @@ public sealed class TriageOrchestrator
     private readonly ISessionPolicy        _sessionPolicy;
     private readonly TimeProvider           _timeProvider;
 
+    private readonly IChatClient?           _chatClient;
+    private readonly IModelRoutingPolicy?   _modelRouting;
+    private readonly IPromptVersionService? _promptVersion;
+
     private const string ToolName        = "kql_query";
     private const string RunbookToolName = "runbook_search";
     private const int    MaxPriorRuns    = 5;
@@ -53,7 +58,10 @@ public sealed class TriageOrchestrator
         IDegradedModePolicy degraded,
         ISessionStore sessionStore,
         ISessionPolicy sessionPolicy,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IChatClient? chatClient = null,
+        IModelRoutingPolicy? modelRouting = null,
+        IPromptVersionService? promptVersion = null)
     {
         _repo          = repo;
         _kql           = kql;
@@ -65,6 +73,9 @@ public sealed class TriageOrchestrator
         _sessionStore  = sessionStore;
         _sessionPolicy = sessionPolicy;
         _timeProvider  = timeProvider;
+        _chatClient    = chatClient;
+        _modelRouting  = modelRouting;
+        _promptVersion = promptVersion;
     }
 
     public async Task<TriageResult> RunAsync(
@@ -320,17 +331,64 @@ public sealed class TriageOrchestrator
             }
         }
 
+        // ── LLM enrichment (runs BEFORE CompleteRunAsync so exceptions can set Degraded) ──────
+        string?  modelId         = null;
+        string?  promptVersionId = null;
+        int?     inputTokens     = null;
+        int?     outputTokens    = null;
+        int?     totalTokens     = null;
+        decimal? estimatedCost   = null;
+
         var finalStatus = response.Ok ? AgentRunStatus.Completed : AgentRunStatus.Degraded;
         var summaryJson = response.Ok
             ? JsonSerializer.Serialize(new { rowCount = response.Rows.Count, runbookHits = runbookCitations.Count }, JsonOpts)
             : JsonSerializer.Serialize(new { error = response.Error }, JsonOpts);
 
-        await _repo.CompleteRunAsync(run.RunId, finalStatus, summaryJson, toolCitationsJson, ct);
+        if (_chatClient != null)
+        {
+            try
+            {
+                var descriptor  = await (_modelRouting?.SelectModelAsync(tenantId, ct)
+                                         ?? Task.FromResult(new ModelDescriptor("default")));
+                var versionInfo = await (_promptVersion?.GetCurrentVersionAsync("triage", ct)
+                                         ?? Task.FromResult(new PromptVersionInfo("0.0.0", "Analyze the following triage data.")));
+                var messages = new List<ChatMessage>
+                {
+                    new(ChatRole.System, versionInfo.SystemPrompt),
+                    new(ChatRole.User,   summaryJson ?? alertFingerprint)
+                };
+                var completion  = await _chatClient.GetResponseAsync(messages, cancellationToken: ct);
+                var usage       = completion.Usage;
+                modelId         = descriptor.ModelId;
+                promptVersionId = versionInfo.VersionId;
+                inputTokens     = (int?)usage?.InputTokenCount;
+                outputTokens    = (int?)usage?.OutputTokenCount;
+                totalTokens     = (int?)usage?.TotalTokenCount;
+                estimatedCost   = ModelCostEstimator.Estimate(modelId, inputTokens ?? 0, outputTokens ?? 0);
+            }
+            catch (Exception llmEx)
+            {
+                _log.LogWarning(llmEx, "LLM analysis failed for run {RunId}, marking Degraded", run.RunId);
+                finalStatus = AgentRunStatus.Degraded;
+            }
+        }
+
+        await _repo.CompleteRunAsync(run.RunId, finalStatus, summaryJson!, toolCitationsJson, ct);
+
+        if (modelId is not null)
+            await _repo.UpdateRunLedgerAsync(
+                run.RunId, modelId, promptVersionId,
+                inputTokens ?? 0, outputTokens ?? 0, totalTokens ?? 0, estimatedCost ?? 0m, ct);
 
         _log.LogInformation("Triage run {RunId} completed with status {Status} in {ElapsedMs}ms",
             run.RunId, finalStatus, sw.ElapsedMilliseconds);
 
-        return new TriageResult(run.RunId, finalStatus, summaryJson, new[] { toolCitation }, runbookCitations, session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
+        return new TriageResult(
+            run.RunId, finalStatus, summaryJson, new[] { toolCitation }, runbookCitations,
+            session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode,
+            ModelId: modelId, PromptVersionId: promptVersionId,
+            InputTokens: inputTokens, OutputTokens: outputTokens,
+            TotalTokens: totalTokens, EstimatedCost: estimatedCost);
     }
 
     private static KqlCitation BuildCitation(KqlToolResponse r)

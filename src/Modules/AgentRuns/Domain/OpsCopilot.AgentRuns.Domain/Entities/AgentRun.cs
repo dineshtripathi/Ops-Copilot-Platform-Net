@@ -39,6 +39,28 @@ public sealed class AgentRun
     public int?             OutputTokens { get; private set; }
     public int?             TotalTokens  { get; private set; }
 
+    // Populated by SetLedgerMetadata (Slice 56 — model routing + prompt ledger)
+    public string?          ModelId         { get; private set; }
+    public string?          PromptVersionId { get; private set; }
+    public decimal?         EstimatedCost   { get; private set; }
+
+    /// <summary>Atomically sets LLM ledger metadata. Overwrites InputTokens/OutputTokens/TotalTokens via this path.</summary>
+    public void SetLedgerMetadata(
+        string  modelId,
+        string? promptVersionId,
+        int     inputTokens,
+        int     outputTokens,
+        int     totalTokens,
+        decimal estimatedCost)
+    {
+        ModelId         = modelId;
+        PromptVersionId = promptVersionId;
+        InputTokens     = inputTokens;
+        OutputTokens    = outputTokens;
+        TotalTokens     = totalTokens;
+        EstimatedCost   = estimatedCost;
+    }
+
     /// <summary>
     /// Transitions the run to a terminal state. May only be called once.
     /// </summary>
