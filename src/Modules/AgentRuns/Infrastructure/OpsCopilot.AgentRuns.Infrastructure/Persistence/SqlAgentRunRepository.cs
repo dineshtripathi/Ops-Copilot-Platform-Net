@@ -60,4 +60,14 @@ public sealed class SqlAgentRunRepository : IAgentRunRepository
             .Take(limit)
             .ToListAsync(ct);
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Stub — token usage persistence is not wired in this slice.
+    /// The method is intentionally a no-op; rows will be updated in a future slice.
+    /// </remarks>
+    public Task UpdateTokenUsageAsync(
+        Guid runId, int inputTokens, int outputTokens, int totalTokens,
+        CancellationToken ct = default)
+        => Task.CompletedTask;
 }

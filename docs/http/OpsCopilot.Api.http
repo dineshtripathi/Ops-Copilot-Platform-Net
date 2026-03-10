@@ -36,6 +36,7 @@
 ###   AR. Mode B Recommend Alignment (Dev Slice 45)
 ###   AS. Governance Preview for Pack SafeAction Proposals (Dev Slice 46)
 ###   AT. Packs → SafeActions Record Creation (Dev Slice 49)
+###   AU. Pack SafeAction Definition Validation + Preview (Dev Slice 51)
 ###
 ### NOTE on runbook_search:
 ###   `runbook_search` is NOT a public HTTP endpoint.
@@ -3246,5 +3247,227 @@ x-tenant-id: {{tenantId}}
     "correlationId": "corr-at5-modea-record-01"
   },
   "timeRangeMinutes": 60,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### ================================================================
+### AU. Pack SafeAction Definition Validation + Preview (Dev Slice 51)
+### ================================================================
+###
+### Dev Slice 51: Additive-only, Recommend-Only — Adds three new nullable
+###   fields to each PackSafeActionProposalDto item inside
+###   packSafeActionProposals[]:
+###     definitionValidationErrorCode — kebab-case error code or null
+###     definitionValidationMessage   — human-readable error or null
+###     operatorPreview               — deterministic Operator Card text or null
+###
+### Validation runs a frozen minimal-schema check (12 error codes).
+### Operator Card is a deterministic multi-line text block:
+###   == Operator Card ==
+###   Action : {displayName}
+###   Type   : {actionType}
+###   Params : {sorted keys} | (none) | (parse error)
+###   Valid  : yes | no — {errorCode}: {errorMessage}
+###
+### Fields are null when:
+###   - Mode A (proposals not generated at all)
+###   - Packs:SafeActionsEnabled = false (proposals not generated)
+###   - DefinitionFile is null/absent for that action
+###
+### Test cases:
+###   AU1 — ModeB triage: validation fields present on proposals (happy path)
+###   AU2 — ModeC triage: operatorPreview contains Operator Card text
+###   AU3 — ModeB triage: DTO shape — all 3 new fields present on each proposal
+###   AU4 — ModeA triage: proposals absent, validation fields not applicable
+###   AU5 — Feature disabled: proposals absent, validation fields not applicable
+###   AU6 — ModeB triage: multiple proposals — each has independent validation
+###############################################################################
+
+### AU1 — ModeB triage: validation fields present on proposals (happy path)
+# Expected: 200 OK.  Each item in packSafeActionProposals[] includes:
+#   definitionValidationErrorCode — null if the definition is well-formed
+#   definitionValidationMessage   — null if the definition is well-formed
+#   operatorPreview               — non-null multi-line Operator Card string
+#     containing "== Operator Card ==" header and "Valid  : yes"
+# Items without a definitionFile will have all three fields as null.
+# NOTE: Server must be in Mode B or C (Packs:DeploymentMode ≥ "B") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeB_ValidationFieldsHappyPath
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "au1-validation-happy-01",
+    "title": "High CPU on prod-vm-01 — definition validation happy path",
+    "severity": "High",
+    "firedAtUtc": "2025-07-29T12:00:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-01",
+    "serviceName": "prod-vm-01",
+    "environment": "production",
+    "correlationId": "corr-au1-validation-happy-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AU2 — ModeC triage: operatorPreview contains Operator Card text
+# Expected: 200 OK.  For each proposal in packSafeActionProposals[]
+#   that has a definitionFile, verify:
+#   operatorPreview starts with "== Operator Card =="
+#   operatorPreview contains "Action :" line with the displayName
+#   operatorPreview contains "Type   :" line with the actionType
+#   operatorPreview contains "Params :" line (sorted keys, "(none)", or "(parse error)")
+#   operatorPreview contains "Valid  :" line ("yes" or "no — {errorCode}: {msg}")
+# Each preview is deterministic — identical input always yields identical output.
+# NOTE: Server must be in Mode C (Packs:DeploymentMode = "C") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeC_OperatorPreviewContent
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "au2-operator-preview-01",
+    "title": "Disk full on prod-vm-02 — Operator Card preview verification",
+    "severity": "High",
+    "firedAtUtc": "2025-07-29T12:05:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-02",
+    "serviceName": "prod-vm-02",
+    "environment": "production",
+    "correlationId": "corr-au2-operator-preview-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AU3 — ModeB triage: DTO shape — all 3 new fields present on each proposal
+# Expected: 200 OK.  Each item in packSafeActionProposals[] must have the
+#   following three fields present in the JSON (even if null):
+#     definitionValidationErrorCode — string or null
+#     definitionValidationMessage   — string or null
+#     operatorPreview               — string or null
+#   These fields are additive to the existing DTO shape (packName,
+#   actionId, displayName, actionType, requiresMode, definitionFile,
+#   parametersJson, errorMessage, isExecutableNow, executionBlockedReason,
+#   governanceAllowed, governanceReasonCode, governanceMessage).
+#   Total: 22 fields per proposal item.
+# NOTE: Server must be in Mode B (Packs:DeploymentMode = "B") with
+#   Packs:SafeActionsEnabled = true.
+# @name triageModeB_DtoShapeValidation
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "au3-dto-shape-01",
+    "title": "Memory pressure on web-app — DTO shape verification for new fields",
+    "severity": "Medium",
+    "firedAtUtc": "2025-07-29T12:10:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/web-app-au3",
+    "serviceName": "web-app-au3",
+    "environment": "production",
+    "correlationId": "corr-au3-dto-shape-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AU4 — ModeA triage: proposals absent, validation fields not applicable
+# Expected: 200 OK.  packSafeActionProposals is null or empty because
+#   Mode A is below the threshold for pack safe-action proposal generation.
+#   Since no proposals exist, the three new validation fields are not
+#   present in the response (nothing to validate).
+# NOTE: Server must be in Mode A (Packs:DeploymentMode = "A").
+# @name triageModeA_ProposalsAbsent
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "au4-modea-absent-01",
+    "title": "Network timeout on dev-vm — ModeA validation fields absent",
+    "severity": "Low",
+    "firedAtUtc": "2025-07-29T12:15:00Z",
+    "signalType": "Log",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/dev-rg/providers/Microsoft.Network/virtualNetworks/vnet-au4",
+    "serviceName": "vnet-au4",
+    "environment": "development",
+    "correlationId": "corr-au4-modea-absent-01"
+  },
+  "timeRangeMinutes": 60,
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AU5 — Feature disabled: proposals absent, validation fields not applicable
+# Expected: 200 OK.  packSafeActionProposals is null or empty because
+#   Packs:SafeActionsEnabled = false.  The proposer short-circuits before
+#   reading definitions or running validation.  No validation fields appear.
+# NOTE: Server must have Packs:SafeActionsEnabled = false
+#   (Packs:DeploymentMode may be "B" or "C").
+# @name triageFeatureDisabled_ProposalsAbsent
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "au5-feature-disabled-01",
+    "title": "CPU spike on staging-vm — feature-disabled validation gate",
+    "severity": "Medium",
+    "firedAtUtc": "2025-07-29T12:20:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/staging-rg/providers/Microsoft.Compute/virtualMachines/staging-vm-au5",
+    "serviceName": "staging-vm-au5",
+    "environment": "staging",
+    "correlationId": "corr-au5-feature-disabled-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
+  "workspaceId": "{{workspaceId}}"
+}
+
+### AU6 — ModeB triage: multiple proposals — each has independent validation
+# Expected: 200 OK.  When the matched pack yields multiple safe-action
+#   proposals, each item in packSafeActionProposals[] carries its OWN
+#   validation result.  One proposal may be valid (definitionValidationErrorCode
+#   = null, operatorPreview contains "Valid  : yes") while another may be
+#   invalid (definitionValidationErrorCode = a non-null kebab-case code,
+#   operatorPreview contains "Valid  : no — ...").
+# This verifies per-item independence of the validator.
+# NOTE: Server must be in Mode B (Packs:DeploymentMode = "B") with
+#   Packs:SafeActionsEnabled = true, and the matched pack must define
+#   at least two safe-actions (e.g., azure-vm pack has restart-vm and
+#   run-command).
+# @name triageModeB_MultipleProposalsIndependentValidation
+POST {{baseUrl}}/agent/triage
+Content-Type: application/json
+x-tenant-id: {{tenantId}}
+
+{
+  "alertPayload": {
+    "alertSource": "Azure Monitor",
+    "fingerprint": "au6-multi-proposal-01",
+    "title": "High CPU on prod-vm-03 — multi-proposal validation independence",
+    "severity": "High",
+    "firedAtUtc": "2025-07-29T12:25:00Z",
+    "signalType": "Metric",
+    "resourceId": "/subscriptions/sub-abc/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-vm-03",
+    "serviceName": "prod-vm-03",
+    "environment": "production",
+    "correlationId": "corr-au6-multi-proposal-01"
+  },
+  "timeRangeMinutes": {{timeRange}},
   "workspaceId": "{{workspaceId}}"
 }

@@ -84,6 +84,7 @@ public sealed record PackSafeActionRecordSummaryDto(
 /// <param name="Summary">Structured JSON summary (e.g. <c>{"rowCount":5}</c>). Null on failure.</param>
 /// <param name="Citations">Evidence citations — one per KQL tool invocation.</param>
 /// <param name="RunbookCitations">Runbook search citations — one per matched runbook.</param>
+/// <param name="SessionReasonCode">Why the session was created or resumed (e.g. SessionCreated, SessionResumed).</param>
 /// <param name="PackRunbooks">Pack runbook details discovered during triage enrichment (Mode A).</param>
 /// <param name="PackEvidenceCollectors">Pack evidence-collector details discovered during triage enrichment (Mode A).</param>
 /// <param name="PackErrors">Non-fatal errors encountered during pack enrichment (null when none).</param>
@@ -98,6 +99,7 @@ public sealed record TriageResponse(
     bool                                       IsNewSession,
     DateTimeOffset?                            SessionExpiresAtUtc,
     bool                                       UsedSessionContext,
+    string?                                    SessionReasonCode           = null,
     IReadOnlyList<PackRunbookDto>?             PackRunbooks                = null,
     IReadOnlyList<PackEvidenceCollectorDto>?   PackEvidenceCollectors      = null,
     IReadOnlyList<string>?                     PackErrors                  = null,

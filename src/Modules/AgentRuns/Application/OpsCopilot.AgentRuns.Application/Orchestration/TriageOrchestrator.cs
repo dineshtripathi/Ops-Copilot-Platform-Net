@@ -171,7 +171,7 @@ public sealed class TriageOrchestrator
             await _repo.CompleteRunAsync(run.RunId, AgentRunStatus.Failed,
                 JsonSerializer.Serialize(new { policy = "ToolAllowlist", reason = allowlistDecision.ReasonCode }, JsonOpts),
                 "[]", ct);
-            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext);
+            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
         }
 
         // ── Guardrail 2: token budget ───────────────────────────────
@@ -187,7 +187,7 @@ public sealed class TriageOrchestrator
             await _repo.CompleteRunAsync(run.RunId, AgentRunStatus.Failed,
                 JsonSerializer.Serialize(new { policy = "TokenBudget", reason = budgetDecision.ReasonCode }, JsonOpts),
                 "[]", ct);
-            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext);
+            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
         }
 
         // ── Execute KQL tool (MCP) ──────────────────────────────────
@@ -248,7 +248,7 @@ public sealed class TriageOrchestrator
                 JsonSerializer.Serialize(new { error = ex.Message, errorCode = degradedDecision.ErrorCode }, JsonOpts),
                 citationsJson, ct);
 
-            return new TriageResult(run.RunId, mappedStatus, null, new[] { citation }, Array.Empty<RunbookCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext);
+            return new TriageResult(run.RunId, mappedStatus, null, new[] { citation }, Array.Empty<RunbookCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
         }
 
         sw.Stop();
@@ -330,7 +330,7 @@ public sealed class TriageOrchestrator
         _log.LogInformation("Triage run {RunId} completed with status {Status} in {ElapsedMs}ms",
             run.RunId, finalStatus, sw.ElapsedMilliseconds);
 
-        return new TriageResult(run.RunId, finalStatus, summaryJson, new[] { toolCitation }, runbookCitations, session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext);
+        return new TriageResult(run.RunId, finalStatus, summaryJson, new[] { toolCitation }, runbookCitations, session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
     }
 
     private static KqlCitation BuildCitation(KqlToolResponse r)

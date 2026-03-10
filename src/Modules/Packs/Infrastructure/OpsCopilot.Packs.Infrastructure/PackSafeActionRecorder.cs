@@ -89,11 +89,13 @@ internal sealed class PackSafeActionRecorder : IPackSafeActionRecorder
             ct.ThrowIfCancellationRequested();
 
             // Skip proposals that are not executable or governance-denied at proposal time.
-            if (!proposal.IsExecutableNow || proposal.GovernanceAllowed == false)
+            if (!proposal.IsExecutableNow || proposal.GovernanceAllowed == false || proposal.ScopeAllowed == false)
             {
                 var skipReason = !proposal.IsExecutableNow
                     ? "not_executable"
-                    : "governance_denied";
+                    : proposal.GovernanceAllowed == false
+                        ? "governance_denied"
+                        : "scope_denied";
 
                 _telemetry.RecordSafeActionSkipped(
                     proposal.PackName, proposal.ActionId, tenantId, skipReason);

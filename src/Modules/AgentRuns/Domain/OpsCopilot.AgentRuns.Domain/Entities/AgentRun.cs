@@ -33,6 +33,12 @@ public sealed class AgentRun
     public string?         CitationsJson    { get; private set; }
     public Guid?            SessionId        { get; private set; }
 
+    // Populated by UpdateTokenUsageAsync (set post-completion)
+    public string?          RunType      { get; private set; }
+    public int?             InputTokens  { get; private set; }
+    public int?             OutputTokens { get; private set; }
+    public int?             TotalTokens  { get; private set; }
+
     /// <summary>
     /// Transitions the run to a terminal state. May only be called once.
     /// </summary>

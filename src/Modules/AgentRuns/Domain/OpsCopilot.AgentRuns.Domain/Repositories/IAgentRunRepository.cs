@@ -40,4 +40,9 @@ public interface IAgentRunRepository
     /// </summary>
     Task<IReadOnlyList<AgentRun>> GetRecentRunsBySessionAsync(
         Guid sessionId, int limit, CancellationToken ct = default);
+
+    /// <summary>Records LLM token usage for a completed run. Idempotent if called more than once.</summary>
+    Task UpdateTokenUsageAsync(
+        Guid runId, int inputTokens, int outputTokens, int totalTokens,
+        CancellationToken ct = default);
 }

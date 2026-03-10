@@ -64,14 +64,15 @@ public sealed class PackSafeActionProposerTests
         Mock<IPacksTelemetry>   Telemetry)
         CreateProposer(
             IConfiguration? config = null,
-            IToolAllowlistPolicy? toolPolicy = null)
+            IToolAllowlistPolicy? toolPolicy = null,
+            ITargetScopeEvaluator? scopeEvaluator = null)
     {
         var catalog    = new Mock<IPackCatalog>(MockBehavior.Strict);
         var fileReader = new Mock<IPackFileReader>(MockBehavior.Strict);
         var telemetry  = new Mock<IPacksTelemetry>(MockBehavior.Loose);
 
         var cfg = config ?? BuildConfig();
-        var scopeFactory = CreateScopeFactory(toolPolicy);
+        var scopeFactory = CreateScopeFactory(toolPolicy, scopeEvaluator);
 
         var proposer = new PackSafeActionProposer(
             catalog.Object,
@@ -85,12 +86,16 @@ public sealed class PackSafeActionProposerTests
     }
 
     private static Mock<IServiceScopeFactory> CreateScopeFactory(
-        IToolAllowlistPolicy? toolPolicy = null)
+        IToolAllowlistPolicy? toolPolicy = null,
+        ITargetScopeEvaluator? scopeEvaluator = null)
     {
         var serviceProvider = new Mock<IServiceProvider>();
         serviceProvider
             .Setup(sp => sp.GetService(typeof(IToolAllowlistPolicy)))
             .Returns(toolPolicy!);
+        serviceProvider
+            .Setup(sp => sp.GetService(typeof(ITargetScopeEvaluator)))
+            .Returns(scopeEvaluator!);
 
         var serviceScope = new Mock<IServiceScope>();
         serviceScope.Setup(s => s.ServiceProvider).Returns(serviceProvider.Object);
@@ -172,6 +177,9 @@ public sealed class PackSafeActionProposerTests
         Assert.Null(item.ErrorMessage);
         Assert.True(item.IsExecutableNow);
         Assert.Null(item.ExecutionBlockedReason);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
         Assert.Empty(result.Errors);
     }
 
@@ -266,6 +274,9 @@ public sealed class PackSafeActionProposerTests
         Assert.Equal("C", item.RequiresMode);
         Assert.False(item.IsExecutableNow);
         Assert.Equal("requires_higher_mode", item.ExecutionBlockedReason);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
         Assert.Empty(result.Errors);
     }
 
@@ -298,6 +309,9 @@ public sealed class PackSafeActionProposerTests
         Assert.Equal("File not found", item.ErrorMessage);
         Assert.True(item.IsExecutableNow);
         Assert.Null(item.ExecutionBlockedReason);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.Null(item.OperatorPreview);
         Assert.Single(result.Errors);
         Assert.Contains("File not found", result.Errors[0]);
     }
@@ -322,14 +336,18 @@ public sealed class PackSafeActionProposerTests
 
         var result = await proposer.ProposeAsync(MakeRequest("B"));
 
-        // Invalid JSON → caught by try/catch → error item
+        // Invalid JSON → inner catch keeps defaults; validator reports parse_error
         Assert.Single(result.Proposals);
         var item = result.Proposals[0];
         Assert.Equal("unknown", item.ActionType);
-        Assert.NotNull(item.ErrorMessage);
-        Assert.True(item.IsExecutableNow);
-        Assert.Null(item.ExecutionBlockedReason);
-        Assert.Single(result.Errors);
+        Assert.Null(item.ErrorMessage);
+        Assert.False(item.IsExecutableNow);
+        Assert.Equal("invalid_definition", item.ExecutionBlockedReason);
+        Assert.Equal("parse_error", item.DefinitionValidationErrorCode);
+        Assert.NotNull(item.DefinitionValidationMessage);
+        Assert.Contains("Invalid JSON", item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
+        Assert.Empty(result.Errors);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -369,16 +387,25 @@ public sealed class PackSafeActionProposerTests
         Assert.Empty(result.Errors);
 
         Assert.Equal("Restart VM", result.Proposals[0].DisplayName);
+        Assert.Null(result.Proposals[0].DefinitionValidationErrorCode);
+        Assert.Null(result.Proposals[0].DefinitionValidationMessage);
+        Assert.NotNull(result.Proposals[0].OperatorPreview);
         Assert.Equal("azure-vm", result.Proposals[0].PackName);
         Assert.True(result.Proposals[0].IsExecutableNow);
         Assert.Null(result.Proposals[0].ExecutionBlockedReason);
 
         Assert.Equal("Scale Up", result.Proposals[1].DisplayName);
+        Assert.Null(result.Proposals[1].DefinitionValidationErrorCode);
+        Assert.Null(result.Proposals[1].DefinitionValidationMessage);
+        Assert.NotNull(result.Proposals[1].OperatorPreview);
         Assert.Equal("azure-vm", result.Proposals[1].PackName);
         Assert.True(result.Proposals[1].IsExecutableNow);
         Assert.Null(result.Proposals[1].ExecutionBlockedReason);
 
         Assert.Equal("Rotate Key", result.Proposals[2].DisplayName);
+        Assert.Null(result.Proposals[2].DefinitionValidationErrorCode);
+        Assert.Null(result.Proposals[2].DefinitionValidationMessage);
+        Assert.NotNull(result.Proposals[2].OperatorPreview);
         Assert.Equal("azure-kv", result.Proposals[2].PackName);
         Assert.True(result.Proposals[2].IsExecutableNow);
         Assert.Null(result.Proposals[2].ExecutionBlockedReason);
@@ -413,12 +440,21 @@ public sealed class PackSafeActionProposerTests
         Assert.Equal("sa-a", result.Proposals[0].ActionId);
         Assert.True(result.Proposals[0].IsExecutableNow);
         Assert.Null(result.Proposals[0].ExecutionBlockedReason);
+        Assert.Null(result.Proposals[0].DefinitionValidationErrorCode);
+        Assert.Null(result.Proposals[0].DefinitionValidationMessage);
+        Assert.NotNull(result.Proposals[0].OperatorPreview);
         Assert.Equal("sa-b", result.Proposals[1].ActionId);
         Assert.True(result.Proposals[1].IsExecutableNow);
         Assert.Null(result.Proposals[1].ExecutionBlockedReason);
+        Assert.Null(result.Proposals[1].DefinitionValidationErrorCode);
+        Assert.Null(result.Proposals[1].DefinitionValidationMessage);
+        Assert.NotNull(result.Proposals[1].OperatorPreview);
         Assert.Equal("sa-c", result.Proposals[2].ActionId);
         Assert.True(result.Proposals[2].IsExecutableNow);
         Assert.Null(result.Proposals[2].ExecutionBlockedReason);
+        Assert.Null(result.Proposals[2].DefinitionValidationErrorCode);
+        Assert.Null(result.Proposals[2].DefinitionValidationMessage);
+        Assert.NotNull(result.Proposals[2].OperatorPreview);
         Assert.Empty(result.Errors);
     }
 
@@ -449,6 +485,9 @@ public sealed class PackSafeActionProposerTests
         Assert.Null(item.ErrorMessage);
         Assert.True(item.IsExecutableNow);
         Assert.Null(item.ExecutionBlockedReason);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.Null(item.OperatorPreview);
         Assert.Empty(result.Errors);
     }
 
@@ -586,8 +625,11 @@ public sealed class PackSafeActionProposerTests
         Assert.Equal("unknown", item.ActionType);       // Fallback
         Assert.Null(item.ParametersJson);
         Assert.Null(item.ErrorMessage);
-        Assert.True(item.IsExecutableNow);
-        Assert.Null(item.ExecutionBlockedReason);
+        Assert.False(item.IsExecutableNow);
+        Assert.Equal("invalid_definition", item.ExecutionBlockedReason);
+        Assert.Equal("definition_null", item.DefinitionValidationErrorCode);
+        Assert.NotNull(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
         Assert.Empty(result.Errors);
     }
 
@@ -622,15 +664,24 @@ public sealed class PackSafeActionProposerTests
         var saA = result.Proposals.Single(p => p.ActionId == "sa-a");
         Assert.True(saA.IsExecutableNow);
         Assert.Null(saA.ExecutionBlockedReason);
+        Assert.Null(saA.DefinitionValidationErrorCode);
+        Assert.Null(saA.DefinitionValidationMessage);
+        Assert.NotNull(saA.OperatorPreview);
 
         var saB = result.Proposals.Single(p => p.ActionId == "sa-b");
         Assert.True(saB.IsExecutableNow);
         Assert.Null(saB.ExecutionBlockedReason);
+        Assert.Null(saB.DefinitionValidationErrorCode);
+        Assert.Null(saB.DefinitionValidationMessage);
+        Assert.NotNull(saB.OperatorPreview);
 
         // C action is NOT executable in Mode B — blocked
         var saC = result.Proposals.Single(p => p.ActionId == "sa-c");
         Assert.False(saC.IsExecutableNow);
         Assert.Equal("requires_higher_mode", saC.ExecutionBlockedReason);
+        Assert.Null(saC.DefinitionValidationErrorCode);
+        Assert.Null(saC.DefinitionValidationMessage);
+        Assert.NotNull(saC.OperatorPreview);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -659,6 +710,9 @@ public sealed class PackSafeActionProposerTests
         Assert.Equal("Not found", item.ErrorMessage);
         Assert.False(item.IsExecutableNow);
         Assert.Equal("requires_higher_mode", item.ExecutionBlockedReason);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.Null(item.OperatorPreview);
         Assert.Single(result.Errors);
     }
 
@@ -693,6 +747,9 @@ public sealed class PackSafeActionProposerTests
         Assert.True(item.GovernanceAllowed);
         Assert.Null(item.GovernanceReasonCode);
         Assert.Null(item.GovernanceMessage);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
         policy.VerifyAll();
     }
 
@@ -723,6 +780,9 @@ public sealed class PackSafeActionProposerTests
         Assert.False(item.GovernanceAllowed);
         Assert.Equal("not_allowlisted", item.GovernanceReasonCode);
         Assert.Equal("Tool delete_vm is not on the allowlist.", item.GovernanceMessage);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
         policy.VerifyAll();
     }
 
@@ -751,6 +811,9 @@ public sealed class PackSafeActionProposerTests
         Assert.Null(item.GovernanceAllowed);
         Assert.Null(item.GovernanceReasonCode);
         Assert.Null(item.GovernanceMessage);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
     }
 
     // 24. tenantId = "unknown" → governance fields stay null
@@ -778,6 +841,9 @@ public sealed class PackSafeActionProposerTests
         Assert.Null(item.GovernanceAllowed);
         Assert.Null(item.GovernanceReasonCode);
         Assert.Null(item.GovernanceMessage);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
     }
 
     // 25. No policy registered → governance fields stay null
@@ -804,6 +870,9 @@ public sealed class PackSafeActionProposerTests
         Assert.Null(item.GovernanceAllowed);
         Assert.Null(item.GovernanceReasonCode);
         Assert.Null(item.GovernanceMessage);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
     }
 
     // 26. Policy throws → safe fallback
@@ -833,6 +902,9 @@ public sealed class PackSafeActionProposerTests
         Assert.False(item.GovernanceAllowed);
         Assert.Equal("governance_preview_failed", item.GovernanceReasonCode);
         Assert.Equal("Governance preview could not be computed.", item.GovernanceMessage);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
     }
 
     // 27. Multiple actions with mixed governance results
@@ -872,10 +944,16 @@ public sealed class PackSafeActionProposerTests
         var restart = result.Proposals.Single(p => p.ActionId == "sa-restart");
         Assert.True(restart.GovernanceAllowed);
         Assert.Null(restart.GovernanceReasonCode);
+        Assert.Null(restart.DefinitionValidationErrorCode);
+        Assert.Null(restart.DefinitionValidationMessage);
+        Assert.NotNull(restart.OperatorPreview);
 
         var delete = result.Proposals.Single(p => p.ActionId == "sa-delete");
         Assert.False(delete.GovernanceAllowed);
         Assert.Equal("not_allowlisted", delete.GovernanceReasonCode);
+        Assert.Null(delete.DefinitionValidationErrorCode);
+        Assert.Null(delete.DefinitionValidationMessage);
+        Assert.NotNull(delete.OperatorPreview);
         policy.VerifyAll();
     }
 
@@ -907,6 +985,9 @@ public sealed class PackSafeActionProposerTests
         Assert.NotNull(item.ErrorMessage);
         Assert.False(item.GovernanceAllowed);
         Assert.Equal("not_allowlisted", item.GovernanceReasonCode);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.Null(item.OperatorPreview);
     }
 
     // 29. Mode A → no governance computed (no proposals at all)
@@ -955,6 +1036,9 @@ public sealed class PackSafeActionProposerTests
         var item = Assert.Single(result.Proposals);
         Assert.Equal("scale_up", item.ActionType);
         Assert.True(item.GovernanceAllowed);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
         policy.Verify(p => p.CanUseTool(TestTenantId, "scale_up"), Times.Once);
     }
 
@@ -985,6 +1069,183 @@ public sealed class PackSafeActionProposerTests
         Assert.False(item.GovernanceAllowed);
         Assert.Equal("tenant_restricted", item.GovernanceReasonCode);
         Assert.Equal("Tenant does not permit drain_node.", item.GovernanceMessage);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
         policy.VerifyAll();
+    }
+
+    // ── Scope preview tests ────────────────────────────────────────────
+
+    // 32. Scope allowed → ScopeAllowed=true, reason/message null
+
+    [Fact]
+    public async Task ProposeAsync_ScopeAllowed_SetsScopeFieldsCorrectly()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool(TestTenantId, "restart_vm"))
+              .Returns(PolicyDecision.Allow());
+
+        var scopeEval = new Mock<ITargetScopeEvaluator>(MockBehavior.Strict);
+        scopeEval.Setup(e => e.Evaluate(TestTenantId, "restart_vm", "azure-vm"))
+                 .Returns(TargetScopeDecision.Allow());
+
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object, scopeEval.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Restart VM","actionType":"restart_vm","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.True(item.ScopeAllowed);
+        Assert.Null(item.ScopeReasonCode);
+        Assert.Null(item.ScopeMessage);
+        scopeEval.VerifyAll();
+    }
+
+    // 33. Scope denied → ScopeAllowed=false, reason/message propagated
+
+    [Fact]
+    public async Task ProposeAsync_ScopeDenied_PropagatesReasonCodeAndMessage()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool(TestTenantId, "restart_vm"))
+              .Returns(PolicyDecision.Allow());
+
+        var scopeEval = new Mock<ITargetScopeEvaluator>(MockBehavior.Strict);
+        scopeEval.Setup(e => e.Evaluate(TestTenantId, "restart_vm", "azure-vm"))
+                 .Returns(TargetScopeDecision.Deny(
+                     "target_scope_subscription_not_allowed",
+                     "Subscription not in tenant allowlist."));
+
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object, scopeEval.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Restart VM","actionType":"restart_vm","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.False(item.ScopeAllowed);
+        Assert.Equal("target_scope_subscription_not_allowed", item.ScopeReasonCode);
+        Assert.Equal("Subscription not in tenant allowlist.", item.ScopeMessage);
+        scopeEval.VerifyAll();
+    }
+
+    // 34. No scope evaluator registered → scope fields remain null
+
+    [Fact]
+    public async Task ProposeAsync_NoScopeEvaluator_ScopeFieldsRemainNull()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool(TestTenantId, "restart_vm"))
+              .Returns(PolicyDecision.Allow());
+
+        // No scopeEvaluator passed — defaults to null
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Restart VM","actionType":"restart_vm","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.Null(item.ScopeAllowed);
+        Assert.Null(item.ScopeReasonCode);
+        Assert.Null(item.ScopeMessage);
+    }
+
+    // 35. Scope evaluator throws → safe fallback
+
+    [Fact]
+    public async Task ProposeAsync_ScopeEvaluatorThrows_FallsBackToFailed()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        policy.Setup(p => p.CanUseTool(TestTenantId, "restart_vm"))
+              .Returns(PolicyDecision.Allow());
+
+        var scopeEval = new Mock<ITargetScopeEvaluator>(MockBehavior.Strict);
+        scopeEval.Setup(e => e.Evaluate(TestTenantId, "restart_vm", "azure-vm"))
+                 .Throws(new InvalidOperationException("Config unavailable"));
+
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object, scopeEval.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{ "displayName":"Restart VM","actionType":"restart_vm","parameters":{} }""");
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.False(item.ScopeAllowed);
+        Assert.Equal("scope_preview_failed", item.ScopeReasonCode);
+        Assert.Equal("Scope preview could not be computed.", item.ScopeMessage);
+    }
+
+    // 36. Error path also gets scope enrichment
+
+    [Fact]
+    public async Task ProposeAsync_ScopeOnErrorPath_WhenDefinitionReadFails()
+    {
+        var action = new PackSafeAction("sa-restart", "B", "actions/restart.json");
+        var pack = MakePack("azure-vm", safeActions: new[] { action });
+        var config = BuildConfig(deploymentMode: "B");
+
+        var policy = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        // Error path sets ActionType = "unknown"
+        policy.Setup(p => p.CanUseTool(TestTenantId, "unknown"))
+              .Returns(PolicyDecision.Deny("not_allowlisted", "Tool unknown is not on the allowlist."));
+
+        var scopeEval = new Mock<ITargetScopeEvaluator>(MockBehavior.Strict);
+        // Error path: ActionType="unknown", PackName="azure-vm"
+        scopeEval.Setup(e => e.Evaluate(TestTenantId, "unknown", "azure-vm"))
+                 .Returns(TargetScopeDecision.Deny(
+                     "target_scope_unknown_target",
+                     "Target type 'unknown' is not recognized."));
+
+        var (proposer, catalog, fileReader, _) = CreateProposer(config, policy.Object, scopeEval.Object);
+
+        catalog.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new[] { pack });
+        fileReader.Setup(f => f.ReadFileAsync(
+                "/packs/azure-vm", "actions/restart.json", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new FileNotFoundException("Not found"));
+
+        var result = await proposer.ProposeAsync(MakeRequest("B"));
+
+        var item = Assert.Single(result.Proposals);
+        Assert.NotNull(item.ErrorMessage);
+        Assert.False(item.ScopeAllowed);
+        Assert.Equal("target_scope_unknown_target", item.ScopeReasonCode);
+        Assert.Equal("Target type 'unknown' is not recognized.", item.ScopeMessage);
+        scopeEval.VerifyAll();
     }
 }

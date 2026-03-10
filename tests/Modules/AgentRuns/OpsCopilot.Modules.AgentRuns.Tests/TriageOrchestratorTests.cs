@@ -758,6 +758,7 @@ public sealed class TriageOrchestratorTests
         Assert.True(result.UsedSessionContext);
         Assert.False(result.IsNewSession);
         Assert.Equal(existingSessionId, result.SessionId);
+        Assert.Equal("SessionResumed", result.SessionReasonCode);
         sessionStore.Verify(s => s.TouchAsync(existingSessionId, It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -846,6 +847,7 @@ public sealed class TriageOrchestratorTests
         Assert.True(result.IsNewSession);
         Assert.NotEqual(expiredSessionId, result.SessionId);
         Assert.Equal(newSessionId, result.SessionId);
+        Assert.Equal("SessionExpiredFallback", result.SessionReasonCode);
     }
 
     [Fact]
@@ -885,6 +887,7 @@ public sealed class TriageOrchestratorTests
 
         // Assert
         Assert.True(result.IsNewSession);
+        Assert.Equal("SessionNotFoundFallback", result.SessionReasonCode);
         sessionStore.Verify(s => s.CreateAsync(TenantId, It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -912,6 +915,7 @@ public sealed class TriageOrchestratorTests
         // Assert
         Assert.True(result.IsNewSession);
         Assert.False(result.UsedSessionContext);
+        Assert.Equal("SessionCreated", result.SessionReasonCode);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

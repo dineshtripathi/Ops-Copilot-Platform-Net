@@ -123,6 +123,7 @@ app.MapGet("/healthz", () => Results.Ok("healthy"))
 // ── Module endpoints ──────────────────────────────────────────────────────────
 app.MapAlertIngestionEndpoints();   // POST /ingest/alert
 app.MapAgentRunEndpoints();         // POST /agent/triage
+app.MapSessionEndpoints();          // GET  /session/{sessionId}
 app.MapSafeActionEndpoints();       // /safe-actions/*
 app.MapReportingEndpoints();            // /reports/safe-actions/*
 app.MapPlatformReportingEndpoints();    // /reports/platform/*

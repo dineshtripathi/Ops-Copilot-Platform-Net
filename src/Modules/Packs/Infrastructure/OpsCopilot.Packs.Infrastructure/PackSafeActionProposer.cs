@@ -142,8 +142,13 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
         // ── Governance preview: resolve scoped policy via DI ─────────
         using var governanceScope = _scopeFactory.CreateScope();
         var toolPolicy = governanceScope.ServiceProvider.GetService<IToolAllowlistPolicy>();
+        var scopeEvaluator = governanceScope.ServiceProvider.GetService<ITargetScopeEvaluator>();
 
         var canCheckGovernance = toolPolicy is not null
+            && !string.IsNullOrWhiteSpace(tenantId)
+            && tenantId != "unknown";
+
+        var canCheckScope = scopeEvaluator is not null
             && !string.IsNullOrWhiteSpace(tenantId)
             && tenantId != "unknown";
 
@@ -168,6 +173,9 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
 
                 if (canCheckGovernance)
                     item = EnrichWithGovernance(item, toolPolicy!, tenantId);
+
+                if (canCheckScope)
+                    item = EnrichWithScope(item, scopeEvaluator!, tenantId);
 
                 proposals.Add(item);
 
@@ -196,6 +204,9 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
                 if (canCheckGovernance)
                     errorItem = EnrichWithGovernance(errorItem, toolPolicy!, tenantId);
 
+                if (canCheckScope)
+                    errorItem = EnrichWithScope(errorItem, scopeEvaluator!, tenantId);
+
                 proposals.Add(errorItem);
 
                 errors.Add($"Pack '{pack.Manifest.Name}' action '{action.Id}': {ex.Message}");
@@ -216,25 +227,52 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
         string displayName = action.Id;
         string actionType  = "unknown";
         string? parametersJson = null;
+        string? rawJson = null;
 
         if (!string.IsNullOrWhiteSpace(action.DefinitionFile))
         {
-            var json = await _fileReader.ReadFileAsync(
+            rawJson = await _fileReader.ReadFileAsync(
                 pack.PackPath, action.DefinitionFile, ct).ConfigureAwait(false);
 
-            if (json is not null)
+            if (rawJson is not null)
             {
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
+                try
+                {
+                    using var doc = JsonDocument.Parse(rawJson);
+                    var root = doc.RootElement;
 
-                if (root.TryGetProperty("displayName", out var dn))
-                    displayName = dn.GetString() ?? action.Id;
+                    if (root.TryGetProperty("displayName", out var dn))
+                        displayName = dn.GetString() ?? action.Id;
 
-                if (root.TryGetProperty("actionType", out var at))
-                    actionType = at.GetString() ?? "unknown";
+                    if (root.TryGetProperty("actionType", out var at))
+                        actionType = at.GetString() ?? "unknown";
 
-                if (root.TryGetProperty("parameters", out var p))
-                    parametersJson = p.GetRawText();
+                    if (root.TryGetProperty("parameters", out var p))
+                        parametersJson = p.GetRawText();
+                }
+                catch (JsonException)
+                {
+                    // Malformed JSON — leave defaults; validator will report parse_error.
+                }
+            }
+        }
+
+        string? validationErrorCode = null;
+        string? validationMessage = null;
+        string? operatorPreview = null;
+
+        if (!string.IsNullOrWhiteSpace(action.DefinitionFile))
+        {
+            var validation = PackSafeActionDefinitionValidator.Validate(action.Id, rawJson);
+            operatorPreview = PackSafeActionDefinitionValidator.GenerateOperatorPreview(
+                displayName, actionType, parametersJson, validation);
+
+            if (!validation.IsValid)
+            {
+                validationErrorCode = validation.ErrorCode;
+                validationMessage = validation.ErrorMessage;
+                isExecutableNow = false;
+                executionBlockedReason ??= "invalid_definition";
             }
         }
 
@@ -248,7 +286,10 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
             ParametersJson:        parametersJson,
             ErrorMessage:          null,
             IsExecutableNow:       isExecutableNow,
-            ExecutionBlockedReason: executionBlockedReason);
+            ExecutionBlockedReason: executionBlockedReason,
+            DefinitionValidationErrorCode: validationErrorCode,
+            DefinitionValidationMessage:   validationMessage,
+            OperatorPreview:               operatorPreview);
     }
 
     // ── Governance preview enrichment ──────────────────────────────────
@@ -275,6 +316,34 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
                 GovernanceAllowed    = false,
                 GovernanceReasonCode = "governance_preview_failed",
                 GovernanceMessage    = "Governance preview could not be computed."
+            };
+        }
+    }
+
+    // ── Scope preview enrichment ───────────────────────────────────────
+
+    private static PackSafeActionProposalItem EnrichWithScope(
+        PackSafeActionProposalItem item,
+        ITargetScopeEvaluator evaluator,
+        string tenantId)
+    {
+        try
+        {
+            var decision = evaluator.Evaluate(tenantId, item.ActionType, item.PackName);
+            return item with
+            {
+                ScopeAllowed    = decision.Allowed,
+                ScopeReasonCode = decision.Allowed ? null : decision.ReasonCode,
+                ScopeMessage    = decision.Allowed ? null : decision.Message
+            };
+        }
+        catch (Exception)
+        {
+            return item with
+            {
+                ScopeAllowed    = false,
+                ScopeReasonCode = "scope_preview_failed",
+                ScopeMessage    = "Scope preview could not be computed."
             };
         }
     }

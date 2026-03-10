@@ -28,6 +28,12 @@ public sealed record PackSafeActionProposalRequest(
 /// <param name="GovernanceAllowed">Governance preview: true when the action type is allowlisted for the tenant, null when unavailable.</param>
 /// <param name="GovernanceReasonCode">Governance preview reason code (e.g. "tool_allowed", "tool_denied"), null when unavailable.</param>
 /// <param name="GovernanceMessage">Governance preview human-readable message, null when unavailable.</param>
+/// <param name="ScopeAllowed">Target-scope allowlist preview: true when the target scope is allowed, null when unavailable.</param>
+/// <param name="ScopeReasonCode">Target-scope reason code, null when unavailable.</param>
+/// <param name="ScopeMessage">Target-scope human-readable message, null when unavailable.</param>
+/// <param name="DefinitionValidationErrorCode">Frozen-schema validation error code, null when valid or not validated.</param>
+/// <param name="DefinitionValidationMessage">Frozen-schema validation error message, null when valid or not validated.</param>
+/// <param name="OperatorPreview">Deterministic human-readable operator card preview, null when not available.</param>
 public sealed record PackSafeActionProposalItem(
     string PackName,
     string ActionId,
@@ -41,7 +47,13 @@ public sealed record PackSafeActionProposalItem(
     string? ExecutionBlockedReason,
     bool? GovernanceAllowed = null,
     string? GovernanceReasonCode = null,
-    string? GovernanceMessage = null);
+    string? GovernanceMessage = null,
+    bool? ScopeAllowed = null,
+    string? ScopeReasonCode = null,
+    string? ScopeMessage = null,
+    string? DefinitionValidationErrorCode = null,
+    string? DefinitionValidationMessage = null,
+    string? OperatorPreview = null);
 
 /// <summary>
 /// Result of <see cref="IPackSafeActionProposer.ProposeAsync"/>.

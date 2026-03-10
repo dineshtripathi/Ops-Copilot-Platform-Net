@@ -13,4 +13,5 @@ public sealed record TriageResult(
     Guid?                             SessionId,
     bool                              IsNewSession,
     DateTimeOffset?                   SessionExpiresAtUtc,
-    bool                              UsedSessionContext);
+    bool                              UsedSessionContext,
+    string                            SessionReasonCode);

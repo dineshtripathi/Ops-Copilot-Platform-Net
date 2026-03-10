@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
+using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
 using OpsCopilot.BuildingBlocks.Domain.Services;
@@ -174,7 +175,9 @@ public static class AgentRunEndpoints
                     p.PackName, p.ActionId, p.DisplayName, p.ActionType,
                     p.RequiresMode, p.DefinitionFile, p.ParametersJson,
                     p.ErrorMessage, p.IsExecutableNow, p.ExecutionBlockedReason,
-                    p.GovernanceAllowed, p.GovernanceReasonCode, p.GovernanceMessage))
+                    p.GovernanceAllowed, p.GovernanceReasonCode, p.GovernanceMessage,
+                    p.ScopeAllowed, p.ScopeReasonCode, p.ScopeMessage,
+                    p.DefinitionValidationErrorCode, p.DefinitionValidationMessage, p.OperatorPreview))
                 .ToList();
 
             // ── Pack safe-action recording (Mode C only) ────────────────────
@@ -217,18 +220,19 @@ public static class AgentRunEndpoints
                 result.IsNewSession,
                 result.SessionExpiresAtUtc,
                 result.UsedSessionContext,
-                packRunbooks,
-                packEvidenceCollectors,
-                packEnrichment.PackErrors.Count > 0
+                SessionReasonCode:           result.SessionReasonCode,
+                PackRunbooks:                packRunbooks,
+                PackEvidenceCollectors:      packEvidenceCollectors,
+                PackErrors:                  packEnrichment.PackErrors.Count > 0
                     ? packEnrichment.PackErrors
                     : null,
-                packEvidenceResults.Count > 0
+                PackEvidenceResults:         packEvidenceResults.Count > 0
                     ? packEvidenceResults
                     : null,
-                packSafeActionProposals.Count > 0
+                PackSafeActionProposals:     packSafeActionProposals.Count > 0
                     ? packSafeActionProposals
                     : null,
-                packSafeActionRecordSummary));
+                PackSafeActionRecordSummary: packSafeActionRecordSummary));
         })
         .WithName("PostTriage")
         .WithTags("AgentRuns")
@@ -236,6 +240,62 @@ public static class AgentRunEndpoints
         .Produces<TriageResponse>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        return app;
+    }
+
+    public static IEndpointRouteBuilder MapSessionEndpoints(
+        this IEndpointRouteBuilder app)
+    {
+        // GET /session/{sessionId}
+        // Header (required): x-tenant-id
+        // Returns session metadata + last 10 run summaries.
+        // Expired sessions return IsExpired: true rather than 404.
+        app.MapGet("/session/{sessionId:guid}", async (
+            Guid                sessionId,
+            HttpContext         httpContext,
+            ISessionStore       sessionStore,
+            IAgentRunRepository runRepository,
+            CancellationToken   ct) =>
+        {
+            var tenantId = httpContext.Request.Headers["x-tenant-id"].FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(tenantId))
+                return Results.Problem(
+                    detail:     "The 'x-tenant-id' header is required.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title:      "Missing required header");
+
+            var session = await sessionStore.GetIncludingExpiredAsync(sessionId, ct);
+            if (session is null)
+                return Results.NotFound();
+
+            if (!string.Equals(session.TenantId, tenantId, StringComparison.OrdinalIgnoreCase))
+                return Results.Problem(
+                    detail:     $"Session {sessionId} does not belong to the specified tenant.",
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title:      "Session tenant mismatch");
+
+            var isExpired = DateTimeOffset.UtcNow > session.ExpiresAtUtc;
+            var runs      = await runRepository.GetRecentRunsBySessionAsync(sessionId, limit: 10, ct);
+            var runDtos   = runs
+                .Select(r => new SessionRunSummaryDto(
+                    r.RunId, r.Status.ToString(), r.AlertFingerprint, r.CreatedAtUtc))
+                .ToList();
+
+            return Results.Ok(new SessionResponse(
+                session.SessionId,
+                session.TenantId,
+                isExpired,
+                session.CreatedAtUtc,
+                session.ExpiresAtUtc,
+                runDtos));
+        })
+        .WithName("GetSession")
+        .WithTags("AgentRuns")
+        .Produces<SessionResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
 
         return app;
     }

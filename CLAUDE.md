@@ -1,28 +1,61 @@
-# OpsCopilot — Claude Code Instructions (STRICT)
+# CLAUDE.md — OpsCopilot Dev Rules (STRICT)
 
-## Rules
-- DO NOT change runtime behavior unless explicitly requested.
-- DO NOT add new routes unless explicitly requested.
-- DO NOT change DB schema or migrations unless explicitly requested.
-- DO NOT break DTOs (additive-only changes allowed only when requested).
-- DO NOT change SafeActions behavior unless explicitly requested.
-- Keep Mode A deterministic and offline.
+## Purpose
+This file defines how Claude should work in this repo: slice-based development, strict constraints, evidence docs, and test gating.
 
-## Build gates (must be green)
-- dotnet build OpsCopilot.sln -warnaserror
-- dotnet test OpsCopilot.sln --no-build --verbosity minimal
+---
 
-## Output format
-- Files changed (Created/Modified/Deleted)
-- Build summary (warnings/errors)
-- Test totals (per assembly + grand total)
-- Evidence doc: docs/dev-slice-XX-evidence.md
+## 1) Operating Mode
+- Work in **small slices** (e.g., Slice 49, Slice 50…).
+- Each slice must have:
+  - a clear objective
+  - strict constraints
+  - acceptance criteria (ACs)
+  - evidence doc in `docs/dev-slice-XX-evidence.md`
+  - build/test gates
 
-## Repo layout
-- src/ and tests/ are code; docs/http/OpsCopilot.Api.http is the manual test file
-- packs/ contains pack content (JSON/KQL/Markdown)
+---
 
-## Defaults
-- Prefer deterministic reason codes.
-- Prefer config-driven behavior with safe defaults.
-- Never log secrets or full payloads; truncate/redact.
+## 2) Non-Negotiables (STRICT)
+Unless the slice explicitly allows it, **DO NOT**:
+- add or change HTTP routes
+- introduce breaking DTO changes (additive-only is OK)
+- change DB schema or add migrations
+- change runtime behavior outside the slice scope
+- add background workers / queues / service bus
+- auto-approve or auto-execute SafeActions
+- introduce secrets into logs, docs, examples, or tests
+- modify `.github/workflows/*` (read-only). Use `templates/` if needed.
+
+If something is missing/unknown, **search the codebase** and either:
+- use the real names/keys/types, or
+- add `TODO` comments rather than guessing.
+
+---
+
+## 3) Codebase Hygiene
+- Prefer **interfaces in Contracts** for cross-module dependencies.
+- Keep module boundaries clean:
+  - Presentation depends on Contracts, not Infrastructure
+  - Composition root (ApiHost) wires implementations
+- Keep logs safe:
+  - log identifiers + error codes only
+  - never log payload bodies, secrets, tokens, connection strings
+
+---
+
+## 4) Configuration Rules
+- **Never invent config keys.**
+- Always verify keys in:
+  - `src/Hosts/**/appsettings*.json`
+  - `*Options.cs` / `*Settings.cs`
+- If a key is not found, add:
+  `<!-- TODO: verify config key in appsettings.json -->`
+
+---
+
+## 5) Tests and Gates (Required)
+For every slice with code changes:
+1. Build gate (treat warnings as errors):
+   ```powershell
+   dotnet build OpsCopilot.sln -warnaserror

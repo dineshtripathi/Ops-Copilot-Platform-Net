@@ -17,4 +17,10 @@ public sealed record PackSafeActionProposalDto(
     string? ExecutionBlockedReason,
     bool? GovernanceAllowed = null,
     string? GovernanceReasonCode = null,
-    string? GovernanceMessage = null);
+    string? GovernanceMessage = null,
+    bool? ScopeAllowed = null,
+    string? ScopeReasonCode = null,
+    string? ScopeMessage = null,
+    string? DefinitionValidationErrorCode = null,
+    string? DefinitionValidationMessage = null,
+    string? OperatorPreview = null);

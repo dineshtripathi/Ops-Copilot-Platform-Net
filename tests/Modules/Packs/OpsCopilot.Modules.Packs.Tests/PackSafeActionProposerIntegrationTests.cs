@@ -174,6 +174,9 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Null(p.ErrorMessage);
         Assert.True(p.IsExecutableNow);
         Assert.Null(p.ExecutionBlockedReason);
+        Assert.Null(p.DefinitionValidationErrorCode);
+        Assert.Null(p.DefinitionValidationMessage);
+        Assert.NotNull(p.OperatorPreview);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -252,6 +255,9 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         {
             Assert.True(p.IsExecutableNow);
             Assert.Null(p.ExecutionBlockedReason);
+            Assert.Null(p.DefinitionValidationErrorCode);
+            Assert.Null(p.DefinitionValidationMessage);
+            Assert.NotNull(p.OperatorPreview);
         });
     }
 
@@ -289,6 +295,9 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         {
             Assert.False(p.IsExecutableNow);
             Assert.Equal("requires_higher_mode", p.ExecutionBlockedReason);
+            Assert.Null(p.DefinitionValidationErrorCode);
+            Assert.Null(p.DefinitionValidationMessage);
+            Assert.NotNull(p.OperatorPreview);
         });
         Assert.Contains(result.Proposals, p => p.ActionId == "restart-vm" && p.DisplayName == "Restart");
         Assert.Contains(result.Proposals, p => p.ActionId == "scale-up" && p.DisplayName == "Scale Up");
@@ -349,6 +358,9 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         {
             Assert.True(p.IsExecutableNow);
             Assert.Null(p.ExecutionBlockedReason);
+            Assert.Null(p.DefinitionValidationErrorCode);
+            Assert.Null(p.DefinitionValidationMessage);
+            Assert.NotNull(p.OperatorPreview);
         });
     }
 
@@ -384,6 +396,9 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Null(p.ErrorMessage);
         Assert.True(p.IsExecutableNow);
         Assert.Null(p.ExecutionBlockedReason);
+        Assert.Null(p.DefinitionValidationErrorCode);
+        Assert.Null(p.DefinitionValidationMessage);
+        Assert.Null(p.OperatorPreview);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -443,6 +458,10 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.NotNull(p.ParametersJson);
         Assert.True(p.IsExecutableNow);
         Assert.Null(p.ExecutionBlockedReason);
+        Assert.Null(p.DefinitionValidationErrorCode);
+        Assert.Null(p.DefinitionValidationMessage);
+        Assert.NotNull(p.OperatorPreview);
+        Assert.Contains("== Operator Card ==", p.OperatorPreview);
 
         // Verify the parameters JSON is valid and contains expected fields
         using var paramsDoc = JsonDocument.Parse(p.ParametersJson!);
@@ -484,14 +503,23 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         var checkHealth = result.Proposals.Single(p => p.ActionId == "check-health");
         Assert.True(checkHealth.IsExecutableNow);
         Assert.Null(checkHealth.ExecutionBlockedReason);
+        Assert.Null(checkHealth.DefinitionValidationErrorCode);
+        Assert.Null(checkHealth.DefinitionValidationMessage);
+        Assert.NotNull(checkHealth.OperatorPreview);
 
         var restart = result.Proposals.Single(p => p.ActionId == "restart-vm");
         Assert.True(restart.IsExecutableNow);
         Assert.Null(restart.ExecutionBlockedReason);
+        Assert.Null(restart.DefinitionValidationErrorCode);
+        Assert.Null(restart.DefinitionValidationMessage);
+        Assert.NotNull(restart.OperatorPreview);
 
         var scaleUp = result.Proposals.Single(p => p.ActionId == "scale-up");
         Assert.False(scaleUp.IsExecutableNow);
         Assert.Equal("requires_higher_mode", scaleUp.ExecutionBlockedReason);
+        Assert.Null(scaleUp.DefinitionValidationErrorCode);
+        Assert.Null(scaleUp.DefinitionValidationMessage);
+        Assert.NotNull(scaleUp.OperatorPreview);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -522,6 +550,9 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.True(item.GovernanceAllowed);
         Assert.Null(item.GovernanceReasonCode);
         Assert.Null(item.GovernanceMessage);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -552,6 +583,9 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.False(item.GovernanceAllowed);
         Assert.Equal("tool_not_in_allowlist", item.GovernanceReasonCode);
         Assert.Equal("AzureResourceAction is not permitted.", item.GovernanceMessage);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -579,6 +613,9 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Null(item.GovernanceAllowed);
         Assert.Null(item.GovernanceReasonCode);
         Assert.Null(item.GovernanceMessage);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -608,6 +645,9 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Null(item.GovernanceAllowed);
         Assert.Null(item.GovernanceReasonCode);
         Assert.Null(item.GovernanceMessage);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
         // Policy should never be called when tenantId is null
         policy.VerifyNoOtherCalls();
     }
@@ -646,10 +686,16 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         var check = result.Proposals.Single(p => p.ActionId == "check-health");
         Assert.True(check.GovernanceAllowed);
         Assert.Null(check.GovernanceReasonCode);
+        Assert.Null(check.DefinitionValidationErrorCode);
+        Assert.Null(check.DefinitionValidationMessage);
+        Assert.NotNull(check.OperatorPreview);
 
         var restart = result.Proposals.Single(p => p.ActionId == "restart-vm");
         Assert.False(restart.GovernanceAllowed);
         Assert.Equal("tool_not_in_allowlist", restart.GovernanceReasonCode);
+        Assert.Null(restart.DefinitionValidationErrorCode);
+        Assert.Null(restart.DefinitionValidationMessage);
+        Assert.NotNull(restart.OperatorPreview);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -679,5 +725,240 @@ public sealed class PackSafeActionProposerIntegrationTests : IDisposable
         Assert.Equal("unknown", item.ActionType);
         Assert.True(item.GovernanceAllowed);
         Assert.Null(item.GovernanceReasonCode);
+        Assert.Null(item.DefinitionValidationErrorCode);
+        Assert.Null(item.DefinitionValidationMessage);
+        Assert.Null(item.OperatorPreview);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 18. Validation — invalid JSON definition
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_InvalidJsonDefinition_ReturnsParseError()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        WriteFile(dir, "actions/restart.json", "{ NOT VALID JSON }}}");
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[] { new PackSafeAction("restart-vm", "B", "actions/restart.json") }));
+
+        var proposer = CreateProposer(deploymentMode: "C", safeActionsEnabled: true);
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Single(result.Proposals);
+        var p = result.Proposals[0];
+        Assert.Equal("parse_error", p.DefinitionValidationErrorCode);
+        Assert.NotNull(p.DefinitionValidationMessage);
+        Assert.Contains("Invalid JSON", p.DefinitionValidationMessage);
+        Assert.False(p.IsExecutableNow);
+        Assert.Equal("invalid_definition", p.ExecutionBlockedReason);
+        Assert.NotNull(p.OperatorPreview);
+        Assert.Contains("Valid  : no", p.OperatorPreview);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 19. Validation — missing displayName
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_MissingDisplayName_ReturnsMissingDisplayNameError()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        WriteFile(dir, "actions/restart.json", """{"actionType":"AzureResourceAction"}""");
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[] { new PackSafeAction("restart-vm", "B", "actions/restart.json") }));
+
+        var proposer = CreateProposer(deploymentMode: "C", safeActionsEnabled: true);
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Single(result.Proposals);
+        var p = result.Proposals[0];
+        Assert.Equal("missing_display_name", p.DefinitionValidationErrorCode);
+        Assert.Contains("displayName", p.DefinitionValidationMessage!);
+        Assert.False(p.IsExecutableNow);
+        Assert.Equal("invalid_definition", p.ExecutionBlockedReason);
+        Assert.NotNull(p.OperatorPreview);
+        Assert.Contains("Valid  : no", p.OperatorPreview);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 20. Validation — missing actionType
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_MissingActionType_ReturnsMissingActionTypeError()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        WriteFile(dir, "actions/restart.json", """{"displayName":"Restart VM"}""");
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[] { new PackSafeAction("restart-vm", "B", "actions/restart.json") }));
+
+        var proposer = CreateProposer(deploymentMode: "C", safeActionsEnabled: true);
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Single(result.Proposals);
+        var p = result.Proposals[0];
+        Assert.Equal("missing_action_type", p.DefinitionValidationErrorCode);
+        Assert.Contains("actionType", p.DefinitionValidationMessage!);
+        Assert.False(p.IsExecutableNow);
+        Assert.Equal("invalid_definition", p.ExecutionBlockedReason);
+        Assert.NotNull(p.OperatorPreview);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 21. Validation — id mismatch
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_IdMismatch_ReturnsIdMismatchError()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        WriteFile(dir, "actions/restart.json", MakeActionDefinition("Restart VM", "AzureResourceAction") + "");
+        // Write a definition with an explicit id that doesn't match
+        var defJson = """{"displayName":"Restart VM","actionType":"AzureResourceAction","id":"wrong-id"}""";
+        WriteFile(dir, "actions/restart.json", defJson);
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[] { new PackSafeAction("restart-vm", "B", "actions/restart.json") }));
+
+        var proposer = CreateProposer(deploymentMode: "C", safeActionsEnabled: true);
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Single(result.Proposals);
+        var p = result.Proposals[0];
+        Assert.Equal("id_mismatch", p.DefinitionValidationErrorCode);
+        Assert.Contains("wrong-id", p.DefinitionValidationMessage!);
+        Assert.Contains("restart-vm", p.DefinitionValidationMessage!);
+        Assert.False(p.IsExecutableNow);
+        Assert.Equal("invalid_definition", p.ExecutionBlockedReason);
+        Assert.NotNull(p.OperatorPreview);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 22. Valid definition — Operator Preview format verification
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_ValidDefinition_OperatorPreviewContainsExpectedLines()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        WriteFile(dir, "actions/restart.json", MakeActionDefinition(
+            "Restart VM",
+            "AzureResourceAction",
+            new { resourceId = "{resourceId}", action = "restart" }));
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[] { new PackSafeAction("restart-vm", "B", "actions/restart.json") }));
+
+        var proposer = CreateProposer(deploymentMode: "C", safeActionsEnabled: true);
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Single(result.Proposals);
+        var p = result.Proposals[0];
+        Assert.Null(p.DefinitionValidationErrorCode);
+        Assert.NotNull(p.OperatorPreview);
+
+        var preview = p.OperatorPreview!;
+        Assert.Contains("== Operator Card ==", preview);
+        Assert.Contains("Action : Restart VM", preview);
+        Assert.Contains("Type   : AzureResourceAction", preview);
+        Assert.Contains("Params : action, resourceId", preview);
+        Assert.Contains("Valid  : yes", preview);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 23. Mixed valid/invalid definitions — correct per-action results
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_MixedValidInvalidDefinitions_ReturnsCorrectPerActionValidation()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        // Valid definition
+        WriteFile(dir, "actions/check.json", MakeActionDefinition("Check Health", "AzureResourceAction"));
+        // Invalid definition — missing displayName
+        WriteFile(dir, "actions/restart.json", """{"actionType":"AzureResourceAction"}""");
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[]
+            {
+                new PackSafeAction("check-health", "B", "actions/check.json"),
+                new PackSafeAction("restart-vm", "B", "actions/restart.json")
+            }));
+
+        var proposer = CreateProposer(deploymentMode: "C", safeActionsEnabled: true);
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Equal(2, result.Proposals.Count);
+
+        var check = result.Proposals.Single(p => p.ActionId == "check-health");
+        Assert.Null(check.DefinitionValidationErrorCode);
+        Assert.Null(check.DefinitionValidationMessage);
+        Assert.NotNull(check.OperatorPreview);
+        Assert.Contains("Valid  : yes", check.OperatorPreview!);
+        Assert.True(check.IsExecutableNow);
+
+        var restart = result.Proposals.Single(p => p.ActionId == "restart-vm");
+        Assert.Equal("missing_display_name", restart.DefinitionValidationErrorCode);
+        Assert.NotNull(restart.DefinitionValidationMessage);
+        Assert.Contains("Valid  : no", restart.OperatorPreview!);
+        Assert.False(restart.IsExecutableNow);
+        Assert.Equal("invalid_definition", restart.ExecutionBlockedReason);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 24. Governance + Validation — both field sets populated
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FullPipeline_GovernanceDeniedPlusInvalidDefinition_BothFieldSetsCorrect()
+    {
+        var dir = CreatePackDirectory("azure-vm");
+        // Invalid definition — missing displayName
+        WriteFile(dir, "actions/restart.json", """{"actionType":"AzureResourceAction"}""");
+        WritePackJson(dir, MakeManifest(
+            "azure-vm",
+            minimumMode: "A",
+            safeActions: new[] { new PackSafeAction("restart-vm", "B", "actions/restart.json") }));
+
+        var policy = new Mock<IToolAllowlistPolicy>();
+        policy.Setup(p => p.CanUseTool("tenant-integ", "AzureResourceAction"))
+              .Returns(PolicyDecision.Deny("tool_not_in_allowlist", "AzureResourceAction is not permitted."));
+
+        var proposer = CreateProposer(deploymentMode: "C", safeActionsEnabled: true, toolPolicy: policy.Object);
+
+        var result = await proposer.ProposeAsync(MakeRequest("C"));
+
+        Assert.Single(result.Proposals);
+        var item = result.Proposals[0];
+
+        // Validation fields
+        Assert.Equal("missing_display_name", item.DefinitionValidationErrorCode);
+        Assert.NotNull(item.DefinitionValidationMessage);
+        Assert.NotNull(item.OperatorPreview);
+        Assert.Contains("Valid  : no", item.OperatorPreview!);
+
+        // Governance fields
+        Assert.False(item.GovernanceAllowed);
+        Assert.Equal("tool_not_in_allowlist", item.GovernanceReasonCode);
+
+        // Execution blocked
+        Assert.False(item.IsExecutableNow);
+        Assert.Equal("invalid_definition", item.ExecutionBlockedReason);
     }
 }

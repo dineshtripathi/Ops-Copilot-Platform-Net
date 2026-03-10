@@ -83,6 +83,9 @@ public sealed class PackSafeActionRecorderTests
         bool? governanceAllowed = true,
         string? governanceReasonCode = null,
         string? governanceMessage = null,
+        bool? scopeAllowed = true,
+        string? scopeReasonCode = null,
+        string? scopeMessage = null,
         string? parametersJson = """{"size":"standard"}""",
         string? errorMessage = null)
     {
@@ -99,7 +102,10 @@ public sealed class PackSafeActionRecorderTests
             ExecutionBlockedReason: executionBlockedReason,
             GovernanceAllowed: governanceAllowed,
             GovernanceReasonCode: governanceReasonCode,
-            GovernanceMessage: governanceMessage);
+            GovernanceMessage: governanceMessage,
+            ScopeAllowed: scopeAllowed,
+            ScopeReasonCode: scopeReasonCode,
+            ScopeMessage: scopeMessage);
     }
 
     private static PackSafeActionRecordRequest MakeRequest(
@@ -555,5 +561,33 @@ public sealed class PackSafeActionRecorderTests
         telemetry.Verify(
             t => t.RecordSafeActionSkipped("gate", "mode_not_c", It.IsAny<string>(), null),
             Times.Never);
+    }
+
+    // ── Scope tests ───────────────────────────────────────────
+
+    // 17. Scope-denied proposal → Skipped with "scope_denied"
+
+    [Fact]
+    public async Task RecordAsync_SkipsScopeDeniedProposal()
+    {
+        var proposal = CreateProposal(
+            scopeAllowed: false,
+            scopeReasonCode: "target_scope_subscription_not_allowed",
+            scopeMessage: "Subscription not in tenant allowlist.");
+
+        var (recorder, telemetry) = CreateRecorder();
+
+        var result = await recorder.RecordAsync(
+            MakeRequest("C", proposals: new[] { proposal }));
+
+        var item = Assert.Single(result.Records);
+        Assert.Equal("Skipped", item.Status);
+        Assert.Null(item.ActionRecordId);
+        Assert.Equal(0, result.CreatedCount);
+        Assert.Equal(1, result.SkippedCount);
+        Assert.Equal(0, result.FailedCount);
+        telemetry.Verify(
+            t => t.RecordSafeActionSkipped("azure-vm", "sa-restart", TestTenantId, "scope_denied"),
+            Times.Once);
     }
 }
