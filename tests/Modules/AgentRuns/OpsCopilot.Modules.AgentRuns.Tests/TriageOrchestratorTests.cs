@@ -1271,5 +1271,64 @@ public sealed class TriageOrchestratorTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
+
+    [Fact]
+    public async Task RunAsync_WorkspaceScopeDenied_ReturnsFailedAndNoKqlCall()
+    {
+        // Arrange — scope evaluator denies; KQL must never be called
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(
+                agentRun.RunId, AgentRunStatus.Failed,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        // Strict mocks with NO setup — must NOT be called
+        var kqlMock     = new Mock<IKqlToolClient>(MockBehavior.Strict);
+        var runbookMock = new Mock<IRunbookSearchToolClient>(MockBehavior.Strict);
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var scopeEvaluator = new Mock<ITargetScopeEvaluator>(MockBehavior.Strict);
+        scopeEvaluator
+            .Setup(x => x.Evaluate(TenantId, "LogAnalyticsWorkspace", WorkspaceId))
+            .Returns(TargetScopeDecision.Deny("WORKSPACE_NOT_ALLOWED",
+                $"Workspace '{WorkspaceId}' is not in the tenant's approved workspace list."));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object,
+            kqlMock.Object,
+            runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object,
+            budget.Object,
+            degraded.Object,
+            sessionStore.Object,
+            sessionPolicy.Object,
+            TimeProvider.System,
+            scopeEvaluator: scopeEvaluator.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert
+        Assert.Equal(AgentRunStatus.Failed, result.Status);
+
+        // KQL and runbook must never be reached (strict mocks enforce this)
+        kqlMock.VerifyNoOtherCalls();
+        runbookMock.VerifyNoOtherCalls();
+
+        // Scope-deny policy event must have been appended exactly once
+        repoMock.Verify(
+            r => r.AppendPolicyEventAsync(
+                It.Is<AgentRunPolicyEvent>(e =>
+                    e.PolicyName == nameof(ITargetScopeEvaluator) &&
+                    !e.Allowed &&
+                    e.ReasonCode == "WORKSPACE_NOT_ALLOWED"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
 }
 
