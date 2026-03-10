@@ -64,12 +64,31 @@ $RuleDescriptions = @{
 # To add an exception: add an entry here AND document it in
 # docs/architecture/DEPENDENCY_CONFORMANCE.md.
 $Allowlist = @{
+    # ── Composition roots: Presentation wires own Infrastructure via DI ────
     'Mod:AgentRuns:Presentation -> Mod:AgentRuns:Infrastructure' =
         'Composition root: wires EF Core DbContext + migration runner via DI'
+    'Mod:Packs:Presentation -> Mod:Packs:Infrastructure' =
+        'Composition root: wires Packs store + loader via DI'
     'Mod:Rag:Presentation -> Mod:Rag:Infrastructure' =
         'Composition root: wires RAG infrastructure stack via DI'
+    'Mod:Reporting:Presentation -> Mod:Reporting:Infrastructure' =
+        'Composition root: wires Reporting store + EF Core via DI'
     'Mod:SafeActions:Presentation -> Mod:SafeActions:Infrastructure' =
         'Composition root: wires EF Core DbContext + migration runner via DI'
+    'Mod:Tenancy:Presentation -> Mod:Tenancy:Infrastructure' =
+        'Composition root: wires Tenancy EF Core tenant store via DI'
+
+    # ── ApiHost composition root ────────────────────────────────────────────
+    'Host:ApiHost -> Mod:Connectors:Infrastructure' =
+        'Composition root: wires Connectors HttpClient factory and credential provider via DI'
+
+    # ── Cross-module infrastructure reads (query-side access) ───────────────
+    'Mod:AgentRuns:Infrastructure -> Mod:Tenancy:Application' =
+        'AgentRuns infrastructure resolves tenant context during agent execution; TODO: extract ITenantContextAccessor to Contracts'
+    'Mod:Reporting:Infrastructure -> Mod:Evaluation:Application' =
+        'Reporting infrastructure reads evaluation results for report generation; TODO: extract IEvaluationQueryService to Contracts'
+    'Mod:Reporting:Infrastructure -> Mod:SafeActions:Application' =
+        'Reporting infrastructure reads SafeActions audit events for report generation; TODO: extract ISafeActionsQueryService to Contracts'
 }
 
 #endregion
