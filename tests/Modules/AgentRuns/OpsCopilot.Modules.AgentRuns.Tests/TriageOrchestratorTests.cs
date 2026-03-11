@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
+using OpsCopilot.AgentRuns.Application.Acl;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Repositories;
@@ -81,7 +82,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -150,7 +151,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -219,7 +220,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
 
@@ -248,7 +249,7 @@ public sealed class TriageOrchestratorTests
         var sut = new TriageOrchestrator(
             repoMock.Object, kqlMock.Object, runbookMock.Object, logMock.Object,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -324,7 +325,7 @@ public sealed class TriageOrchestratorTests
         var sut = new TriageOrchestrator(
             repoMock.Object, kqlMock.Object, runbookMock.Object, logMock.Object,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -401,7 +402,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -459,7 +460,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -517,7 +518,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -565,7 +566,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -615,7 +616,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -658,7 +659,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -690,7 +691,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -751,7 +752,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, timeMock.Object);
+            sessionStore.Object, sessionPolicy.Object, timeMock.Object, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes, sessionId: existingSessionId);
@@ -793,7 +794,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<SessionTenantMismatchException>(
@@ -840,7 +841,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, timeMock.Object);
+            sessionStore.Object, sessionPolicy.Object, timeMock.Object, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes, sessionId: expiredSessionId);
@@ -882,7 +883,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes, sessionId: unknownSessionId);
@@ -909,7 +910,7 @@ public sealed class TriageOrchestratorTests
             repoMock.Object, kqlMock.Object, runbookMock.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // Act
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -1083,6 +1084,7 @@ public sealed class TriageOrchestratorTests
             sessionStore.Object,
             sessionPolicy.Object,
             TimeProvider.System,
+            new PermissiveRunbookAclFilter(),
             chatClientMock.Object,
             modelRoutingMock.Object,
             promptVersionMock.Object);
@@ -1160,6 +1162,7 @@ public sealed class TriageOrchestratorTests
             sessionStore.Object,
             sessionPolicy.Object,
             TimeProvider.System,
+            new PermissiveRunbookAclFilter(),
             chatClientMock.Object,
             modelRoutingMock.Object,
             promptVersionMock.Object);
@@ -1247,6 +1250,7 @@ public sealed class TriageOrchestratorTests
             sessionStore.Object,
             sessionPolicy.Object,
             TimeProvider.System,
+            new PermissiveRunbookAclFilter(),
             chatClientMock.Object,
             modelRoutingMock.Object,
             promptVersionMock.Object);
@@ -1308,6 +1312,7 @@ public sealed class TriageOrchestratorTests
             sessionStore.Object,
             sessionPolicy.Object,
             TimeProvider.System,
+            new PermissiveRunbookAclFilter(),
             scopeEvaluator: scopeEvaluator.Object);
 
         // Act

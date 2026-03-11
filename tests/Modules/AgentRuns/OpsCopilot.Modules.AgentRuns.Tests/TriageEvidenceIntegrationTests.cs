@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
+using OpsCopilot.AgentRuns.Application.Acl;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Repositories;
@@ -472,7 +473,7 @@ public sealed class TriageEvidenceIntegrationTests
             repo.Object, kql.Object, runbook.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         // ── Pack enricher (returns empty enrichment) ─────────────────────
         var enricher = new Mock<IPackTriageEnricher>(MockBehavior.Strict);
@@ -569,7 +570,7 @@ public sealed class TriageEvidenceIntegrationTests
             .ReturnsAsync((string tenantId, TimeSpan ttl, CancellationToken _) =>
                 new SessionInfo(Guid.NewGuid(), tenantId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.Add(ttl), true));
 
-        var orchestrator = new TriageOrchestrator(repo.Object, kql.Object, runbook.Object, NullLogger<TriageOrchestrator>.Instance, allowlist.Object, budget.Object, degraded.Object, sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+        var orchestrator = new TriageOrchestrator(repo.Object, kql.Object, runbook.Object, NullLogger<TriageOrchestrator>.Instance, allowlist.Object, budget.Object, degraded.Object, sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
         var enricher = new Mock<IPackTriageEnricher>(MockBehavior.Strict);
         enricher.Setup(e => e.EnrichAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new PackTriageEnrichment([], [], []));
 

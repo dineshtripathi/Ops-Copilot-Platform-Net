@@ -7,6 +7,7 @@ using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
+using OpsCopilot.BuildingBlocks.Contracts.Rag;
 
 namespace OpsCopilot.AgentRuns.Application.Orchestration;
 
@@ -36,6 +37,7 @@ public sealed class TriageOrchestrator
     private readonly ISessionStore         _sessionStore;
     private readonly ISessionPolicy        _sessionPolicy;
     private readonly TimeProvider              _timeProvider;
+    private readonly IRunbookAclFilter         _aclFilter;
     private readonly ITargetScopeEvaluator?  _scopeEvaluator;
 
     private readonly IChatClient?           _chatClient;
@@ -60,6 +62,7 @@ public sealed class TriageOrchestrator
         ISessionStore sessionStore,
         ISessionPolicy sessionPolicy,
         TimeProvider timeProvider,
+        IRunbookAclFilter aclFilter,
         IChatClient? chatClient = null,
         IModelRoutingPolicy? modelRouting = null,
         IPromptVersionService? promptVersion = null,
@@ -75,6 +78,7 @@ public sealed class TriageOrchestrator
         _sessionStore  = sessionStore;
         _sessionPolicy = sessionPolicy;
         _timeProvider   = timeProvider;
+        _aclFilter      = aclFilter;
         _scopeEvaluator = scopeEvaluator;
         _chatClient     = chatClient;
         _modelRouting  = modelRouting;
@@ -323,7 +327,11 @@ public sealed class TriageOrchestrator
 
                     if (rbResponse.Ok)
                     {
-                        foreach (var hit in rbResponse.Hits)
+                        var callerCtx  = RunbookCallerContext.TenantOnly(tenantId);
+                        var authorized = _aclFilter.Filter(rbResponse.Hits, callerCtx);
+                        _log.LogDebug("ACL filter: {InCount} hits \u2192 {OutCount} authorized for tenant {TenantId}",
+                            rbResponse.Hits.Count, authorized.Count, tenantId);
+                        foreach (var hit in authorized)
                             runbookCitations.Add(new RunbookCitation(hit.RunbookId, hit.Title, hit.Snippet, hit.Score));
                     }
 

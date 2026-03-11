@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
+using OpsCopilot.AgentRuns.Application.Acl;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Repositories;
@@ -49,6 +50,7 @@ public sealed class KqlGovernedEvidenceIntegrationTests
             allowlist.Object, budget.Object, degraded.Object,
             sessionStore.Object, sessionPolicy.Object,
             TimeProvider.System,
+            new PermissiveRunbookAclFilter(),
             scopeEvaluator: scopeEvaluator.Object);
 
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
@@ -104,6 +106,7 @@ public sealed class KqlGovernedEvidenceIntegrationTests
             allowlist.Object, budget.Object, degraded.Object,
             sessionStore.Object, sessionPolicy.Object,
             TimeProvider.System,
+            new PermissiveRunbookAclFilter(),
             scopeEvaluator: scopeEvaluator.Object);
 
         var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);

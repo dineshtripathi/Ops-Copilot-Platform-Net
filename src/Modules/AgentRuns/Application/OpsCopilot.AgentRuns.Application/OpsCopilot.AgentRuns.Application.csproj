@@ -17,4 +17,8 @@
     <ProjectReference Include="..\..\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpsCopilot.Modules.AgentRuns.Tests" />
+  </ItemGroup>
+
 </Project>

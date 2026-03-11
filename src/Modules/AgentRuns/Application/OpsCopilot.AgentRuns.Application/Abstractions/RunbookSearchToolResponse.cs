@@ -18,4 +18,7 @@ public sealed record RunbookSearchHit(
     string RunbookId,
     string Title,
     string Snippet,
-    double Score);
+    double Score,
+    string? Tier = null,
+    IReadOnlyList<string>? AllowedGroups = null,
+    IReadOnlyList<string>? AllowedRoles = null);

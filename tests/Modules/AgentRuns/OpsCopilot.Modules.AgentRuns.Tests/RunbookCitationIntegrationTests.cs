@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
+using OpsCopilot.AgentRuns.Application.Acl;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Repositories;
@@ -325,7 +326,7 @@ public sealed class RunbookCitationIntegrationTests
             repo.Object, kql.Object, runbook.Object,
             NullLogger<TriageOrchestrator>.Instance,
             allowlist.Object, budget.Object, degraded.Object,
-            sessionStore.Object, sessionPolicy.Object, TimeProvider.System);
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System, new PermissiveRunbookAclFilter());
 
         var enricher = new Mock<IPackTriageEnricher>(MockBehavior.Strict);
         enricher.Setup(e => e.EnrichAsync(It.IsAny<CancellationToken>()))
