@@ -27,7 +27,7 @@ Run the following commands from the **solution root** (where `OpsCopilot.sln` is
 cd src/Hosts/OpsCopilot.ApiHost
 
 # Log Analytics workspace GUID
-dotnet user-secrets set "WORKSPACE_ID" "6b530cc6-14bb-4fad-9577-3a349209ae1c"
+dotnet user-secrets set "WORKSPACE_ID" "<your-log-analytics-workspace-id>"
 
 # SQL Server connection string — LocalDB for local dev
 dotnet user-secrets set "SQL_CONNECTION_STRING" \
@@ -35,7 +35,7 @@ dotnet user-secrets set "SQL_CONNECTION_STRING" \
 ```
 
 > **Note:** User Secrets are stored at  
-> `%APPDATA%\Microsoft\UserSecrets\3f8d1a2e-9c4b-4e77-b8f3-d0c5e6a7f901\secrets.json`
+> `%APPDATA%\Microsoft\UserSecrets\<project-user-secrets-id>\secrets.json`
 > on Windows, completely outside the repository.
 
 ---
@@ -65,7 +65,7 @@ dotnet user-secrets list
 Expected output:
 
 ```
-WORKSPACE_ID = 6b530cc6-...
+WORKSPACE_ID = <your-log-analytics-workspace-id>
 SQL_CONNECTION_STRING = Server=(localdb)\...
 ```
 

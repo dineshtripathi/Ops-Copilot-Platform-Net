@@ -11,6 +11,10 @@
 #
 # Local dev secrets are managed via 'dotnet user-secrets' (stored in AppData,
 # never in the repo).  See docs/local-dev-secrets.md.
+
+# Claude AI local tool config — developer-machine-specific permissions
+.claude/
+
 appsettings.*.Local.json
 appsettings.Local.json
 appsettings.Secrets.json
