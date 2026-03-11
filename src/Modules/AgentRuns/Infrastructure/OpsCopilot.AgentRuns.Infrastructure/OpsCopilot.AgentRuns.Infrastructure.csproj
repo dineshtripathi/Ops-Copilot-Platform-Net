@@ -18,7 +18,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.AI" Version="9.5.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="9.10.2" />
     <!-- MCP stdio client — calls McpHost child process via StdioClientTransport -->
     <PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.1" />
     <!-- Redis session store for durable multi-replica sessions -->
