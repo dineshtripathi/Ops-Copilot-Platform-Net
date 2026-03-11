@@ -44,11 +44,13 @@ public sealed class TriageOrchestrator
     private readonly IModelRoutingPolicy?   _modelRouting;
     private readonly IPromptVersionService? _promptVersion;
     private readonly IIncidentMemoryService? _memory;
+    private readonly IDeploymentDiffToolClient? _deploymentDiff;
 
     private const string ToolName        = "kql_query";
     private const string RunbookToolName = "runbook_search";
-    private const string MemoryToolName  = "memory_recall";
-    private const int    MaxPriorRuns    = 5;
+    private const string MemoryToolName        = "memory_recall";
+    private const string DeploymentDiffToolName = "deployment_diff";
+    private const int    MaxPriorRuns           = 5;
 
     private static readonly JsonSerializerOptions JsonOpts =
         new(JsonSerializerDefaults.Web) { WriteIndented = false };
@@ -69,7 +71,8 @@ public sealed class TriageOrchestrator
         IModelRoutingPolicy? modelRouting = null,
         IPromptVersionService? promptVersion = null,
         ITargetScopeEvaluator? scopeEvaluator = null,
-        IIncidentMemoryService? memory = null)
+        IIncidentMemoryService? memory = null,
+        IDeploymentDiffToolClient? deploymentDiff = null)
     {
         _repo          = repo;
         _kql           = kql;
@@ -87,6 +90,7 @@ public sealed class TriageOrchestrator
         _modelRouting  = modelRouting;
         _promptVersion = promptVersion;
         _memory        = memory;
+        _deploymentDiff = deploymentDiff;
     }
 
     public async Task<TriageResult> RunAsync(
@@ -95,6 +99,8 @@ public sealed class TriageOrchestrator
         string workspaceId,
         int    timeRangeMinutes = 120,
         string? alertTitle = null,
+        string? subscriptionId = null,
+        string? resourceGroup  = null,
         Guid? sessionId = null,
         CancellationToken ct = default)
     {
@@ -193,7 +199,7 @@ public sealed class TriageOrchestrator
             await _repo.CompleteRunAsync(run.RunId, AgentRunStatus.Failed,
                 JsonSerializer.Serialize(new { policy = "ToolAllowlist", reason = allowlistDecision.ReasonCode }, JsonOpts),
                 "[]", ct);
-            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
+            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), Array.Empty<DeploymentDiffCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
         }
 
         // ── Guardrail 2: token budget ───────────────────────────────
@@ -209,7 +215,7 @@ public sealed class TriageOrchestrator
             await _repo.CompleteRunAsync(run.RunId, AgentRunStatus.Failed,
                 JsonSerializer.Serialize(new { policy = "TokenBudget", reason = budgetDecision.ReasonCode }, JsonOpts),
                 "[]", ct);
-            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
+            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), Array.Empty<DeploymentDiffCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
         }
 
         // ── Guardrail 2.5: workspace scope ──────────────────────────────────
@@ -227,7 +233,7 @@ public sealed class TriageOrchestrator
                 await _repo.CompleteRunAsync(run.RunId, AgentRunStatus.Failed,
                     JsonSerializer.Serialize(new { policy = "WorkspaceScope", reason = scopeDecision.ReasonCode }, JsonOpts),
                     "[]", ct);
-                return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
+                return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), Array.Empty<DeploymentDiffCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
             }
         }
 
@@ -289,7 +295,7 @@ public sealed class TriageOrchestrator
                 JsonSerializer.Serialize(new { error = ex.Message, errorCode = degradedDecision.ErrorCode }, JsonOpts),
                 citationsJson, ct);
 
-            return new TriageResult(run.RunId, mappedStatus, null, new[] { citation }, Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
+            return new TriageResult(run.RunId, mappedStatus, null, new[] { citation }, Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), Array.Empty<DeploymentDiffCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
         }
 
         sw.Stop();
@@ -379,6 +385,65 @@ public sealed class TriageOrchestrator
             }
         }
 
+        // ── Deployment diff (partial degradation — failure here does NOT fail the run) ────────
+        var deploymentDiffCitations = new List<DeploymentDiffCitation>();
+        if (_deploymentDiff is not null && subscriptionId is not null)
+        {
+            var ddAllowlist = _allowlist.CanUseTool(tenantId, DeploymentDiffToolName);
+            await _repo.AppendPolicyEventAsync(
+                AgentRunPolicyEvent.Create(run.RunId, nameof(IToolAllowlistPolicy),
+                    ddAllowlist.Allowed, ddAllowlist.ReasonCode, ddAllowlist.Message), ct);
+
+            if (ddAllowlist.Allowed)
+            {
+                var ddBudget = _budget.CheckRunBudget(tenantId, run.RunId);
+                await _repo.AppendPolicyEventAsync(
+                    AgentRunPolicyEvent.Create(run.RunId, nameof(ITokenBudgetPolicy),
+                        ddBudget.Allowed, ddBudget.ReasonCode, ddBudget.Message), ct);
+
+                if (ddBudget.Allowed)
+                {
+                    var ddSw = Stopwatch.StartNew();
+                    try
+                    {
+                        var ddRequest  = new DeploymentDiffRequest(tenantId, subscriptionId, resourceGroup, timeRangeMinutes);
+                        var ddResponse = await _deploymentDiff.ExecuteAsync(ddRequest, ct);
+                        ddSw.Stop();
+
+                        if (ddResponse.Ok)
+                        {
+                            foreach (var change in ddResponse.Changes)
+                                deploymentDiffCitations.Add(new DeploymentDiffCitation(
+                                    ddResponse.SubscriptionId, change.ResourceGroup, change.ResourceId,
+                                    change.ChangeType, change.ChangeTime, change.Summary));
+                        }
+
+                        await _repo.AppendToolCallAsync(
+                            ToolCall.Create(run.RunId, DeploymentDiffToolName,
+                                JsonSerializer.Serialize(ddRequest, JsonOpts),
+                                JsonSerializer.Serialize(ddResponse, JsonOpts),
+                                ddResponse.Ok ? "Success" : "Failed",
+                                ddSw.ElapsedMilliseconds,
+                                JsonSerializer.Serialize(deploymentDiffCitations, JsonOpts)), ct);
+                    }
+                    catch (Exception ddEx)
+                    {
+                        ddSw.Stop();
+                        _log.LogWarning(ddEx, "Deployment diff failed for run {RunId}, continuing with partial results", run.RunId);
+
+                        var ddDeg = _degraded.MapFailure(ddEx);
+                        await _repo.AppendPolicyEventAsync(
+                            AgentRunPolicyEvent.Create(run.RunId, nameof(IDegradedModePolicy),
+                                !ddDeg.IsDegraded, ddDeg.ErrorCode, ddDeg.UserMessage), ct);
+
+                        await _repo.AppendToolCallAsync(
+                            ToolCall.Create(run.RunId, DeploymentDiffToolName,
+                                "{}", "{}", "Failed", ddSw.ElapsedMilliseconds, "[]"), ct);
+                    }
+                }
+            }
+        }
+
         // ── LLM enrichment (runs BEFORE CompleteRunAsync so exceptions can set Degraded) ──────
         string?  modelId         = null;
         string?  promptVersionId = null;
@@ -389,7 +454,7 @@ public sealed class TriageOrchestrator
 
         var finalStatus = response.Ok ? AgentRunStatus.Completed : AgentRunStatus.Degraded;
         var summaryJson = response.Ok
-            ? JsonSerializer.Serialize(new { rowCount = response.Rows.Count, runbookHits = runbookCitations.Count, memoryHits = memoryCitations.Count }, JsonOpts)
+            ? JsonSerializer.Serialize(new { rowCount = response.Rows.Count, runbookHits = runbookCitations.Count, memoryHits = memoryCitations.Count, diffHits = deploymentDiffCitations.Count }, JsonOpts)
             : JsonSerializer.Serialize(new { error = response.Error }, JsonOpts);
 
         if (_chatClient != null)
@@ -433,7 +498,7 @@ public sealed class TriageOrchestrator
 
         return new TriageResult(
             run.RunId, finalStatus, summaryJson, new[] { toolCitation }, runbookCitations,
-            memoryCitations,
+            memoryCitations, deploymentDiffCitations,
             session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode,
             ModelId: modelId, PromptVersionId: promptVersionId,
             InputTokens: inputTokens, OutputTokens: outputTokens,

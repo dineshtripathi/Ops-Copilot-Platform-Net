@@ -112,9 +112,11 @@ public static class AgentRunEndpoints
                     fingerprint,
                     workspaceId,
                     request.TimeRangeMinutes,
-                    request.AlertPayload.Title,
-                    request.SessionId,
-                    ct);
+                    alertTitle:      request.AlertPayload.Title,
+                    subscriptionId:  null,
+                    resourceGroup:   null,
+                    sessionId:       request.SessionId,
+                    ct:              ct);
             }
             catch (SessionTenantMismatchException ex)
             {

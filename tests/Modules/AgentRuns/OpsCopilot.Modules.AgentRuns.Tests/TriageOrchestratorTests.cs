@@ -1335,5 +1335,321 @@ public sealed class TriageOrchestratorTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Slice 60 — deployment_diff MCP tool integration
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_NullSubscriptionId_SkipsDeploymentDiff()
+    {
+        // Arrange
+        var agentRun    = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock    = CreateHappyPathRepo(agentRun);
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        // Strict mock — any call to ExecuteAsync would throw (no setup)
+        var ddMock = new Mock<IDeploymentDiffToolClient>(MockBehavior.Strict);
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            deploymentDiff: ddMock.Object);
+
+        // Act — subscriptionId omitted → null → guard fails, dd block skipped
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Empty(result.DeploymentDiffCitations);
+        repoMock.Verify(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(5));
+        ddMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task RunAsync_NullDeploymentDiffClient_SkipsBlock()
+    {
+        // Arrange — client not wired at all (defaults to null)
+        var agentRun    = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock    = CreateHappyPathRepo(agentRun);
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter());
+        // deploymentDiff defaults to null
+
+        // Act — subscriptionId provided, but client is null → guard fails
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes,
+            subscriptionId: "sub-abc123");
+
+        // Assert
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Empty(result.DeploymentDiffCitations);
+        repoMock.Verify(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(5));
+    }
+
+    [Fact]
+    public async Task RunAsync_DeploymentDiffAllowlistDenied_DoesNotCallClient()
+    {
+        // Arrange
+        var agentRun    = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock    = CreateHappyPathRepo(agentRun);
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (_, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        // Allow all tools EXCEPT deployment_diff (last matching setup wins in Moq)
+        var allowlist = new Mock<IToolAllowlistPolicy>(MockBehavior.Strict);
+        allowlist.Setup(a => a.CanUseTool(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(PolicyDecision.Allow());
+        allowlist.Setup(a => a.CanUseTool(It.IsAny<string>(), "deployment_diff"))
+            .Returns(PolicyDecision.Deny("TOOL_NOT_ALLOWED", "deployment_diff is not in the tenant allowlist"));
+
+        var ddMock = new Mock<IDeploymentDiffToolClient>(MockBehavior.Strict);
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            deploymentDiff: ddMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes,
+            subscriptionId: "sub-abc123");
+
+        // Assert — run completes but no citations; allowlist policy event counted
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Empty(result.DeploymentDiffCitations);
+        // 5 base + 1 DD allowlist = 6
+        repoMock.Verify(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(6));
+        ddMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task RunAsync_DeploymentDiffBudgetDenied_DoesNotCallClient()
+    {
+        // Arrange
+        var agentRun    = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock    = CreateHappyPathRepo(agentRun);
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, _, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        // KQL budget allow, runbook budget allow, dd budget deny (sequence)
+        var budget = new Mock<ITokenBudgetPolicy>(MockBehavior.Strict);
+        budget.SetupSequence(b => b.CheckRunBudget(It.IsAny<string>(), It.IsAny<Guid>()))
+            .Returns(BudgetDecision.Allow())
+            .Returns(BudgetDecision.Allow())
+            .Returns(BudgetDecision.Deny("BUDGET_EXCEEDED", "Tenant monthly token budget exhausted"));
+
+        var ddMock = new Mock<IDeploymentDiffToolClient>(MockBehavior.Strict);
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            deploymentDiff: ddMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes,
+            subscriptionId: "sub-abc123");
+
+        // Assert — run completes; budget exhausted stops the dd call
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Empty(result.DeploymentDiffCitations);
+        // 5 base + 1 DD allowlist + 1 DD budget = 7
+        repoMock.Verify(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(7));
+        ddMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task RunAsync_DeploymentDiffSuccess_PopulatesCitations()
+    {
+        // Arrange
+        var agentRun    = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock    = CreateHappyPathRepo(agentRun);
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var ddMock = new Mock<IDeploymentDiffToolClient>();
+        ddMock.Setup(d => d.ExecuteAsync(It.IsAny<DeploymentDiffRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeploymentDiffResponse(
+                Ok: true,
+                Changes: new List<DeploymentDiffChange>
+                {
+                    new("res-001", "rg-prod", "Create", DateTimeOffset.UtcNow, "Created vnet"),
+                    new("res-002", "rg-prod", "Delete", DateTimeOffset.UtcNow, "Deleted NIC")
+                },
+                SubscriptionId: "sub-abc123",
+                ExecutedAtUtc: DateTimeOffset.UtcNow));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            deploymentDiff: ddMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes,
+            subscriptionId: "sub-abc123");
+
+        // Assert
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal(2, result.DeploymentDiffCitations.Count);
+        Assert.Equal("sub-abc123", result.DeploymentDiffCitations[0].SubscriptionId);
+        Assert.Equal("res-001", result.DeploymentDiffCitations[0].ResourceId);
+        Assert.Equal("res-002", result.DeploymentDiffCitations[1].ResourceId);
+        // 5 base + 1 DD allowlist + 1 DD budget = 7
+        repoMock.Verify(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(7));
+    }
+
+    [Fact]
+    public async Task RunAsync_DeploymentDiffReturnsNotOk_EmptyCitations()
+    {
+        // Arrange
+        var agentRun    = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock    = CreateHappyPathRepo(agentRun);
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var ddMock = new Mock<IDeploymentDiffToolClient>();
+        ddMock.Setup(d => d.ExecuteAsync(It.IsAny<DeploymentDiffRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeploymentDiffResponse(
+                Ok: false,
+                Changes: new List<DeploymentDiffChange>(),
+                SubscriptionId: "sub-abc123",
+                ExecutedAtUtc: DateTimeOffset.UtcNow,
+                Error: "ARM query failed"));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            deploymentDiff: ddMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes,
+            subscriptionId: "sub-abc123");
+
+        // Assert — Ok=false means no citations but run still completes
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Empty(result.DeploymentDiffCitations);
+        // ToolCallAsync still appended (success code path for dd)
+        repoMock.Verify(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(3)); // KQL + runbook + dd
+        // 5 base + 1 DD allowlist + 1 DD budget = 7
+        repoMock.Verify(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(7));
+    }
+
+    [Fact]
+    public async Task RunAsync_DeploymentDiffThrows_PartialDegradation_RunCompletesWithEmptyCitations()
+    {
+        // Arrange
+        var agentRun    = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock    = CreateHappyPathRepo(agentRun);
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var ddMock = new Mock<IDeploymentDiffToolClient>();
+        ddMock.Setup(d => d.ExecuteAsync(It.IsAny<DeploymentDiffRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("ARM endpoint timeout"));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            deploymentDiff: ddMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes,
+            subscriptionId: "sub-abc123");
+
+        // Assert — partial degradation: dd failure does NOT fail the overall run
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Empty(result.DeploymentDiffCitations);
+        // degraded.MapFailure must have been called
+        degraded.Verify(d => d.MapFailure(It.IsAny<Exception>()), Times.Once);
+        // 5 base + 1 DD allowlist + 1 DD budget + 1 DD degraded = 8
+        repoMock.Verify(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(8));
+    }
+
+    [Fact]
+    public async Task RunAsync_DeploymentDiffSuccess_SummaryJsonContainsDiffHits()
+    {
+        // Arrange
+        var agentRun    = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock    = CreateHappyPathRepo(agentRun);
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var ddMock = new Mock<IDeploymentDiffToolClient>();
+        ddMock.Setup(d => d.ExecuteAsync(It.IsAny<DeploymentDiffRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeploymentDiffResponse(
+                Ok: true,
+                Changes: new List<DeploymentDiffChange>
+                {
+                    new("res-001", "rg-prod", "Create", DateTimeOffset.UtcNow, "Created vnet"),
+                    new("res-002", "rg-prod", "Delete", DateTimeOffset.UtcNow, "Deleted NIC")
+                },
+                SubscriptionId: "sub-abc123",
+                ExecutedAtUtc: DateTimeOffset.UtcNow));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            deploymentDiff: ddMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes,
+            subscriptionId: "sub-abc123");
+
+        // Assert — summaryJson must include diffHits=2
+        Assert.NotNull(result.SummaryJson);
+        using var doc = System.Text.Json.JsonDocument.Parse(result.SummaryJson!);
+        Assert.Equal(2, doc.RootElement.GetProperty("diffHits").GetInt32());
+    }
 }
 

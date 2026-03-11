@@ -21,6 +21,9 @@
     <PackageReference Include="Azure.Monitor.Query" Version="1.4.0" />
     <!-- DefaultAzureCredential: MI (Container Apps) / az login (local dev) -->
     <PackageReference Include="Azure.Identity" Version="1.13.2" />
+    <!-- Resource Graph — queries resourcechanges table for deployment-diff tool -->
+    <PackageReference Include="Azure.ResourceManager" Version="1.13.0" />
+    <PackageReference Include="Azure.ResourceManager.ResourceGraph" Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,6 +1,7 @@
 ﻿using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.Query;
+using Azure.ResourceManager;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -186,6 +187,9 @@ else
 
 // ── Azure Monitor Query client (singleton) ────────────────────────────────────
 builder.Services.AddSingleton(_ => new LogsQueryClient(credential));
+
+// ── Azure Resource Manager client (singleton, for deployment_diff tool) ───────
+builder.Services.AddSingleton(_ => new ArmClient(credential));
 
 // ── RAG module (runbook retrieval for the runbook_search tool) ────────────────
 builder.Services.AddRagModule(builder.Configuration);
