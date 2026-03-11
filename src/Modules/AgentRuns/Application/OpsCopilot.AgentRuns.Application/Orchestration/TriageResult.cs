@@ -10,6 +10,7 @@ public sealed record TriageResult(
     string?                           SummaryJson,
     IReadOnlyList<KqlCitation>        Citations,
     IReadOnlyList<RunbookCitation>    RunbookCitations,
+    IReadOnlyList<MemoryCitation>     MemoryCitations,
     Guid?                             SessionId,
     bool                              IsNewSession,
     DateTimeOffset?                   SessionExpiresAtUtc,

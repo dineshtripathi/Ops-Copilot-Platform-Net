@@ -30,6 +30,7 @@
     <ProjectReference Include="..\..\Domain\OpsCopilot.AgentRuns.Domain\OpsCopilot.AgentRuns.Domain.csproj" />
     <ProjectReference Include="..\..\..\..\BuildingBlocks\Contracts\OpsCopilot.BuildingBlocks.Contracts\OpsCopilot.BuildingBlocks.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Tenancy\Application\OpsCopilot.Tenancy.Application\OpsCopilot.Tenancy.Application.csproj" />
+    <ProjectReference Include="..\..\..\Rag\Application\OpsCopilot.Rag.Application\OpsCopilot.Rag.Application.csproj" />
   </ItemGroup>
 
 </Project>

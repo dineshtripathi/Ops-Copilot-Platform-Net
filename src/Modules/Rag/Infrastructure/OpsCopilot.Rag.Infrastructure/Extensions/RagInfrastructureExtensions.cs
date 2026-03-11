@@ -2,6 +2,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpsCopilot.Rag.Application;
+using OpsCopilot.Rag.Application.Memory;
+using OpsCopilot.Rag.Infrastructure.Memory;
 using OpsCopilot.Rag.Infrastructure.Retrieval;
 
 namespace OpsCopilot.Rag.Infrastructure.Extensions;
@@ -30,6 +32,8 @@ public static class RagInfrastructureExtensions
             var entries = RunbookLoader.LoadFromDirectory(runbookPath, loaderLogger);
             return new InMemoryRunbookRetrievalService(entries, logger);
         });
+
+        services.AddSingleton<IIncidentMemoryRetrievalService, InMemoryIncidentMemoryRetrievalService>();
 
         return services;
     }

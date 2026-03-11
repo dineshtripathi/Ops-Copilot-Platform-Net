@@ -43,9 +43,11 @@ public sealed class TriageOrchestrator
     private readonly IChatClient?           _chatClient;
     private readonly IModelRoutingPolicy?   _modelRouting;
     private readonly IPromptVersionService? _promptVersion;
+    private readonly IIncidentMemoryService? _memory;
 
     private const string ToolName        = "kql_query";
     private const string RunbookToolName = "runbook_search";
+    private const string MemoryToolName  = "memory_recall";
     private const int    MaxPriorRuns    = 5;
 
     private static readonly JsonSerializerOptions JsonOpts =
@@ -66,7 +68,8 @@ public sealed class TriageOrchestrator
         IChatClient? chatClient = null,
         IModelRoutingPolicy? modelRouting = null,
         IPromptVersionService? promptVersion = null,
-        ITargetScopeEvaluator? scopeEvaluator = null)
+        ITargetScopeEvaluator? scopeEvaluator = null,
+        IIncidentMemoryService? memory = null)
     {
         _repo          = repo;
         _kql           = kql;
@@ -83,6 +86,7 @@ public sealed class TriageOrchestrator
         _chatClient     = chatClient;
         _modelRouting  = modelRouting;
         _promptVersion = promptVersion;
+        _memory        = memory;
     }
 
     public async Task<TriageResult> RunAsync(
@@ -189,7 +193,7 @@ public sealed class TriageOrchestrator
             await _repo.CompleteRunAsync(run.RunId, AgentRunStatus.Failed,
                 JsonSerializer.Serialize(new { policy = "ToolAllowlist", reason = allowlistDecision.ReasonCode }, JsonOpts),
                 "[]", ct);
-            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
+            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
         }
 
         // ── Guardrail 2: token budget ───────────────────────────────
@@ -205,7 +209,7 @@ public sealed class TriageOrchestrator
             await _repo.CompleteRunAsync(run.RunId, AgentRunStatus.Failed,
                 JsonSerializer.Serialize(new { policy = "TokenBudget", reason = budgetDecision.ReasonCode }, JsonOpts),
                 "[]", ct);
-            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
+            return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
         }
 
         // ── Guardrail 2.5: workspace scope ──────────────────────────────────
@@ -223,7 +227,7 @@ public sealed class TriageOrchestrator
                 await _repo.CompleteRunAsync(run.RunId, AgentRunStatus.Failed,
                     JsonSerializer.Serialize(new { policy = "WorkspaceScope", reason = scopeDecision.ReasonCode }, JsonOpts),
                     "[]", ct);
-                return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
+                return new TriageResult(run.RunId, AgentRunStatus.Failed, null, Array.Empty<KqlCitation>(), Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
             }
         }
 
@@ -285,7 +289,7 @@ public sealed class TriageOrchestrator
                 JsonSerializer.Serialize(new { error = ex.Message, errorCode = degradedDecision.ErrorCode }, JsonOpts),
                 citationsJson, ct);
 
-            return new TriageResult(run.RunId, mappedStatus, null, new[] { citation }, Array.Empty<RunbookCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
+            return new TriageResult(run.RunId, mappedStatus, null, new[] { citation }, Array.Empty<RunbookCitation>(), Array.Empty<MemoryCitation>(), session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode);
         }
 
         sw.Stop();
@@ -361,6 +365,20 @@ public sealed class TriageOrchestrator
             }
         }
 
+        // ── Incident memory recall (soft error — never fails the run) ──────────────────────────
+        IReadOnlyList<MemoryCitation> memoryCitations = Array.Empty<MemoryCitation>();
+        if (_memory is not null && _allowlist.CanUseTool(tenantId, MemoryToolName).Allowed)
+        {
+            try
+            {
+                memoryCitations = await _memory.RecallAsync(alertFingerprint, tenantId, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Incident memory recall failed for tenant {TenantId}; continuing without citations", tenantId);
+            }
+        }
+
         // ── LLM enrichment (runs BEFORE CompleteRunAsync so exceptions can set Degraded) ──────
         string?  modelId         = null;
         string?  promptVersionId = null;
@@ -371,7 +389,7 @@ public sealed class TriageOrchestrator
 
         var finalStatus = response.Ok ? AgentRunStatus.Completed : AgentRunStatus.Degraded;
         var summaryJson = response.Ok
-            ? JsonSerializer.Serialize(new { rowCount = response.Rows.Count, runbookHits = runbookCitations.Count }, JsonOpts)
+            ? JsonSerializer.Serialize(new { rowCount = response.Rows.Count, runbookHits = runbookCitations.Count, memoryHits = memoryCitations.Count }, JsonOpts)
             : JsonSerializer.Serialize(new { error = response.Error }, JsonOpts);
 
         if (_chatClient != null)
@@ -415,6 +433,7 @@ public sealed class TriageOrchestrator
 
         return new TriageResult(
             run.RunId, finalStatus, summaryJson, new[] { toolCitation }, runbookCitations,
+            memoryCitations,
             session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode,
             ModelId: modelId, PromptVersionId: promptVersionId,
             InputTokens: inputTokens, OutputTokens: outputTokens,

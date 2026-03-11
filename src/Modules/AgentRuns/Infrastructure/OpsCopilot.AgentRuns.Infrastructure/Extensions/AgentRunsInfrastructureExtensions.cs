@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Infrastructure.McpClient;
+using OpsCopilot.AgentRuns.Infrastructure.Memory;
 using OpsCopilot.AgentRuns.Infrastructure.Persistence;
 using OpsCopilot.AgentRuns.Infrastructure.Routing;
 using OpsCopilot.AgentRuns.Infrastructure.Sessions;
@@ -109,6 +110,12 @@ public static class AgentRunsInfrastructureExtensions
             new McpStdioRunbookToolClient(
                 mcpOptions,
                 sp.GetRequiredService<ILogger<McpStdioRunbookToolClient>>()));
+
+        // ── Incident recall (opt-in) ──────────────────────────────────────────
+        if (bool.TryParse(configuration["AgentRuns:IncidentRecall:Enabled"], out var incidentRecallEnabled) && incidentRecallEnabled)
+        {
+            services.AddSingleton<IIncidentMemoryService, RagBackedIncidentMemoryService>();
+        }
 
         return services;
     }
