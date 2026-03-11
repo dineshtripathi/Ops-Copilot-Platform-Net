@@ -157,6 +157,209 @@ public sealed class RunbookAclFilterTests
         Assert.Equal("rb-allowed", result.RunbookCitations[0].RunbookId);
     }
 
+    // ─── Unit tests for TenantGroupRoleRunbookAclFilter ────────────────────
+
+    [Fact]
+    public void TenantGroupRoleFilter_NullGroupsNullRoles_HitIsAllowed()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hit    = new RunbookSearchHit("rb-1", "Open Runbook", "No restrictions", 0.9);
+        var caller = RunbookCallerContext.TenantOnly(TenantId);
+
+        var result = filter.Filter([hit], caller);
+
+        Assert.Single(result);
+        Assert.Equal("rb-1", result[0].RunbookId);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_GroupsRestricted_CallerHasNoGroups_IsDenied()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hit    = new RunbookSearchHit("rb-2", "SRE Only", "Restricted", 0.9,
+                         AllowedGroups: ["sre"]);
+        var caller = RunbookCallerContext.TenantOnly(TenantId); // Groups = []
+
+        var result = filter.Filter([hit], caller);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_RolesRestricted_CallerHasNoRoles_IsDenied()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hit    = new RunbookSearchHit("rb-3", "Admin Only", "Restricted", 0.9,
+                         AllowedRoles: ["admin"]);
+        var caller = RunbookCallerContext.TenantOnly(TenantId); // Roles = []
+
+        var result = filter.Filter([hit], caller);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_GroupsRestricted_CallerGroupMatches_IsAllowed()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hit    = new RunbookSearchHit("rb-4", "SRE Runbook", "Group restricted", 0.9,
+                         AllowedGroups: ["sre", "ops"]);
+        var caller = new RunbookCallerContext(TenantId, ["sre"], []);
+
+        var result = filter.Filter([hit], caller);
+
+        Assert.Single(result);
+        Assert.Equal("rb-4", result[0].RunbookId);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_RolesRestricted_CallerRoleMatches_IsAllowed()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hit    = new RunbookSearchHit("rb-5", "Operator Runbook", "Role restricted", 0.9,
+                         AllowedRoles: ["operator", "admin"]);
+        var caller = new RunbookCallerContext(TenantId, [], ["admin"]);
+
+        var result = filter.Filter([hit], caller);
+
+        Assert.Single(result);
+        Assert.Equal("rb-5", result[0].RunbookId);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_GroupsRestricted_CallerGroupNoMatch_IsDenied()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hit    = new RunbookSearchHit("rb-6", "Restricted Runbook", "No match", 0.9,
+                         AllowedGroups: ["sre"]);
+        var caller = new RunbookCallerContext(TenantId, ["dev", "qa"], []);
+
+        var result = filter.Filter([hit], caller);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_MixedHits_ReturnsOnlyAuthorized()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hits = new List<RunbookSearchHit>
+        {
+            new("rb-open",   "Open",        "No ACL",        0.9),                          // allowed
+            new("rb-group",  "Group SRE",   "Group ACL",     0.8, AllowedGroups: ["sre"]),  // allowed
+            new("rb-denied", "Admin Only",  "Role denied",   0.7, AllowedRoles:  ["admin"]), // denied
+            new("rb-both",   "SRE+Ops",     "Group+Role",    0.6,
+                    AllowedGroups: ["ops"], AllowedRoles: ["admin"]),                        // denied
+        };
+        var caller = new RunbookCallerContext(TenantId, ["sre"], []);
+
+        var result = filter.Filter(hits, caller);
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains(result, r => r.RunbookId == "rb-open");
+        Assert.Contains(result, r => r.RunbookId == "rb-group");
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_EmptyInput_ReturnsEmpty()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var caller = RunbookCallerContext.TenantOnly(TenantId);
+
+        var result = filter.Filter([], caller);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_AllDenied_ReturnsEmpty()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hits = new List<RunbookSearchHit>
+        {
+            new("rb-1", "T1", "S1", 0.9, AllowedGroups: ["sre"]),
+            new("rb-2", "T2", "S2", 0.8, AllowedRoles:  ["admin"]),
+        };
+        var caller = RunbookCallerContext.TenantOnly(TenantId); // no groups, no roles
+
+        var result = filter.Filter(hits, caller);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_MultipleGroups_FirstMatches_IsAllowed()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hit    = new RunbookSearchHit("rb-1", "Multi Group", "Snippet", 0.9,
+                         AllowedGroups: ["sre", "ops", "dev"]);
+        var caller = new RunbookCallerContext(TenantId, ["sre", "qa"], []);
+
+        var result = filter.Filter([hit], caller);
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_BothGroupsAndRoles_OnlyRoleMatches_IsAllowed()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hit    = new RunbookSearchHit("rb-1", "OR Logic Role", "Snippet", 0.9,
+                         AllowedGroups: ["sre"],
+                         AllowedRoles:  ["admin"]);
+        // caller has no matching group but has the role
+        var caller = new RunbookCallerContext(TenantId, ["dev"], ["admin"]);
+
+        var result = filter.Filter([hit], caller);
+
+        Assert.Single(result);
+        Assert.Equal("rb-1", result[0].RunbookId);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_BothGroupsAndRoles_OnlyGroupMatches_IsAllowed()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hit    = new RunbookSearchHit("rb-1", "OR Logic Group", "Snippet", 0.9,
+                         AllowedGroups: ["sre"],
+                         AllowedRoles:  ["admin"]);
+        // caller has the group but no matching role
+        var caller = new RunbookCallerContext(TenantId, ["sre"], ["viewer"]);
+
+        var result = filter.Filter([hit], caller);
+
+        Assert.Single(result);
+        Assert.Equal("rb-1", result[0].RunbookId);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_EmptyAllowedGroupsList_NonNullEmptyList_IsDenied()
+    {
+        // AllowedGroups = [] (non-null but empty) means restricted to nobody → deny
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hit    = new RunbookSearchHit("rb-1", "Nobody Allowed", "Snippet", 0.9,
+                         AllowedGroups: []);
+        var caller = new RunbookCallerContext(TenantId, ["sre", "admin"], ["operator"]);
+
+        var result = filter.Filter([hit], caller);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void TenantGroupRoleFilter_GroupMatch_IsCaseInsensitive()
+    {
+        var filter = new TenantGroupRoleRunbookAclFilter();
+        var hit    = new RunbookSearchHit("rb-1", "SRE Runbook", "Snippet", 0.9,
+                         AllowedGroups: ["SRE"]);
+        var caller = new RunbookCallerContext(TenantId, ["sre"], []); // lowercase caller group
+
+        var result = filter.Filter([hit], caller);
+
+        Assert.Single(result);
+        Assert.Equal("rb-1", result[0].RunbookId);
+    }
+
     // ─── Helpers ───────────────────────────────────────────────────────────
 
     private static Mock<IAgentRunRepository> CreateHappyPathRepo(AgentRun agentRun)

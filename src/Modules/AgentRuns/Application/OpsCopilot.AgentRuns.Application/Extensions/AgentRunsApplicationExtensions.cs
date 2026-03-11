@@ -9,7 +9,7 @@ public static class AgentRunsApplicationExtensions
 {
     public static IServiceCollection AddAgentRunsApplication(this IServiceCollection services)
     {
-        services.AddSingleton<IRunbookAclFilter, PermissiveRunbookAclFilter>();
+        services.AddSingleton<IRunbookAclFilter, TenantGroupRoleRunbookAclFilter>();
         services.AddScoped<TriageOrchestrator>();
         return services;
     }
