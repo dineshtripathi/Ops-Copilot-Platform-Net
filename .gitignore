@@ -501,3 +501,9 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# -- OpsCopilot: internal dev-slice evidence / history -------------------------
+# Internal development artefacts (per-slice build evidence logs).
+# Kept locally but not useful to public repo readers.
+docs/dev-slice-*.md
+docs/archive/dev-slices/
