@@ -183,7 +183,7 @@ internal sealed class AgentRunsReportingQueryService : IAgentRunsReportingQueryS
 
         var byDay = runRows
             .GroupBy(r => DateOnly.FromDateTime(r.CreatedAtUtc.UtcDateTime.Date))
-            .OrderBy(d => d)
+            .OrderBy(d => d.Key)
             .ToList();
 
         var result = new List<DeploymentCorrelationPoint>(byDay.Count);
