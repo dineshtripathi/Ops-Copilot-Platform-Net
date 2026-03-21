@@ -32,11 +32,23 @@ public sealed class DashboardQueryService : IDashboardQueryService
         var trend      = await _agentRuns.GetTrendAsync(fromUtc, toUtc, tenantId, ct);
         var tools      = await _agentRuns.GetToolUsageAsync(fromUtc, toUtc, tenantId, ct);
         var recentRuns = await _agentRuns.GetRecentRunsAsync(tenantId, limit ?? 10, status, sort, ct);
+        var exceptionTrend = await _agentRuns.GetExceptionTrendAsync(fromUtc, toUtc, tenantId, ct);
+        var hotResources = await _agentRuns.GetHotResourcesAsync(fromUtc, toUtc, tenantId, maxCount: 8, ct);
+        var blastRadius = await _agentRuns.GetBlastRadiusAsync(fromUtc, toUtc, tenantId, ct);
+        var topDiagnosis = await _agentRuns.GetTopDiagnosisAsync(fromUtc, toUtc, tenantId, maxCount: 3, ct);
+        var deploymentCorrelation = await _agentRuns.GetDeploymentCorrelationAsync(fromUtc, toUtc, tenantId, ct);
+        var activitySignals = await _agentRuns.GetActivitySignalsAsync(fromUtc, toUtc, tenantId, ct);
 
         return new DashboardOverviewResponse(
-            summary,
-            trend,
-            tools,
-            recentRuns);
+            Summary: summary,
+            Trend: trend,
+            TopTools: tools,
+            RecentRuns: recentRuns,
+            ExceptionTrend: exceptionTrend,
+            DeploymentCorrelation: deploymentCorrelation,
+            HotResources: hotResources,
+            BlastRadius: blastRadius,
+            ActivitySignals: activitySignals,
+            TopDiagnosis: topDiagnosis);
     }
 }

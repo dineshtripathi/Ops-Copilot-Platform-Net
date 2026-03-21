@@ -2,6 +2,7 @@ using System.Text.Json;
 using OpsCopilot.BuildingBlocks.Contracts.AgentRuns;
 using OpsCopilot.AlertIngestion.Application.Commands;
 using OpsCopilot.AlertIngestion.Application.Services;
+using OpsCopilot.AlertIngestion.Domain.Models;
 
 namespace OpsCopilot.AlertIngestion.Application.Handlers;
 
@@ -51,10 +52,96 @@ public sealed class IngestAlertCommandHandler
         // Fingerprint from normalized fields
         var fingerprint = NormalizedAlertFingerprintService.Compute(normalized);
 
+        var context = BuildRunContext(normalized);
+
         // Create ledger entry
         var runId = await _runCreator.CreateRunAsync(
-            command.TenantId, fingerprint, sessionId: null, ct);
+            command.TenantId,
+            fingerprint,
+            sessionId: null,
+            context: context,
+            ct: ct);
 
         return new IngestAlertResult(runId, fingerprint);
+    }
+
+    private static AlertRunContext BuildRunContext(NormalizedAlert normalized)
+    {
+        var resourceId = (string?)normalized.ResourceId;
+        var (subscriptionId, resourceGroup) = ExtractArmScope(resourceId);
+
+        var sourceType = ((string?)normalized.SourceType) ?? string.Empty;
+        var title = ((string?)normalized.Title) ?? string.Empty;
+        var description = ((string?)normalized.Description) ?? string.Empty;
+        var isException =
+            sourceType.Contains("application", StringComparison.OrdinalIgnoreCase)
+            || sourceType.Contains("log", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("exception", StringComparison.OrdinalIgnoreCase)
+            || description.Contains("exception", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("error", StringComparison.OrdinalIgnoreCase);
+
+        var azureApplication = ExtractApplicationName(resourceId);
+        var workspaceId = ExtractWorkspaceId(normalized.Dimensions as IReadOnlyDictionary<string, string>);
+
+        return new AlertRunContext(
+            AlertProvider: normalized.Provider,
+            AlertSourceType: normalized.SourceType,
+            IsExceptionSignal: isException,
+            AzureSubscriptionId: subscriptionId,
+            AzureResourceGroup: resourceGroup,
+            AzureResourceId: resourceId,
+            AzureApplication: azureApplication,
+            AzureWorkspaceId: workspaceId);
+    }
+
+    private static (string? SubscriptionId, string? ResourceGroup) ExtractArmScope(string? resourceId)
+    {
+        if (string.IsNullOrWhiteSpace(resourceId))
+            return (null, null);
+
+        var segments = resourceId.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length < 4)
+            return (null, null);
+
+        string? subscriptionId = null;
+        string? resourceGroup = null;
+
+        for (var i = 0; i < segments.Length - 1; i++)
+        {
+            if (segments[i].Equals("subscriptions", StringComparison.OrdinalIgnoreCase))
+                subscriptionId = segments[i + 1];
+
+            if (segments[i].Equals("resourceGroups", StringComparison.OrdinalIgnoreCase))
+                resourceGroup = segments[i + 1];
+        }
+
+        return (subscriptionId, resourceGroup);
+    }
+
+    private static string? ExtractApplicationName(string? resourceId)
+    {
+        if (string.IsNullOrWhiteSpace(resourceId))
+            return null;
+
+        var segments = resourceId.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < segments.Length - 1; i++)
+        {
+            if (segments[i].Equals("components", StringComparison.OrdinalIgnoreCase))
+                return segments[i + 1];
+        }
+
+        return null;
+    }
+
+    private static string? ExtractWorkspaceId(IReadOnlyDictionary<string, string>? dimensions)
+    {
+        if (dimensions is null || dimensions.Count == 0)
+            return null;
+
+        if (dimensions.TryGetValue("workspaceId", out var explicitWorkspaceId) &&
+            !string.IsNullOrWhiteSpace(explicitWorkspaceId))
+            return explicitWorkspaceId;
+
+        return null;
     }
 }

@@ -1,5 +1,6 @@
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
+using OpsCopilot.AgentRuns.Domain.Models;
 
 namespace OpsCopilot.AgentRuns.Domain.Repositories;
 
@@ -17,6 +18,13 @@ public interface IAgentRunRepository
         string tenantId,
         string alertFingerprint,
         Guid? sessionId = null,
+        CancellationToken ct = default);
+
+    Task<AgentRun> CreateRunAsync(
+        string tenantId,
+        string alertFingerprint,
+        Guid? sessionId = null,
+        RunContext? context = null,
         CancellationToken ct = default);
 
     /// <summary>Inserts the tool-call row. Never updates an existing row.</summary>

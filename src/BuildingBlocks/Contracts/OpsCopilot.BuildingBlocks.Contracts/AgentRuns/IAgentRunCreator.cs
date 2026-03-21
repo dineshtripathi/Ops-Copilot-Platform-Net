@@ -11,4 +11,11 @@ public interface IAgentRunCreator
         string alertFingerprint,
         Guid? sessionId = null,
         CancellationToken ct = default);
+
+    Task<Guid> CreateRunAsync(
+        string tenantId,
+        string alertFingerprint,
+        Guid? sessionId = null,
+        AlertRunContext? context = null,
+        CancellationToken ct = default);
 }

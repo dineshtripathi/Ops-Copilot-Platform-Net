@@ -1,5 +1,6 @@
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
+using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,10 +18,21 @@ public sealed class SqlAgentRunRepository : IAgentRunRepository
 
     public SqlAgentRunRepository(AgentRunsDbContext db) => _db = db;
 
+    public Task<AgentRun> CreateRunAsync(
+        string tenantId,
+        string alertFingerprint,
+        Guid? sessionId = null,
+        CancellationToken ct = default)
+        => CreateRunAsync(tenantId, alertFingerprint, sessionId, context: null, ct);
+
     public async Task<AgentRun> CreateRunAsync(
-        string tenantId, string alertFingerprint, Guid? sessionId = null, CancellationToken ct = default)
+        string tenantId,
+        string alertFingerprint,
+        Guid? sessionId = null,
+        RunContext? context = null,
+        CancellationToken ct = default)
     {
-        var run = AgentRun.Create(tenantId, alertFingerprint, sessionId);
+        var run = AgentRun.Create(tenantId, alertFingerprint, sessionId, context);
         _db.AgentRuns.Add(run);
         await _db.SaveChangesAsync(ct);
         return run;

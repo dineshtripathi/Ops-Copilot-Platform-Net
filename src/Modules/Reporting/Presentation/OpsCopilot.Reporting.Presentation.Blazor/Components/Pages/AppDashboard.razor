@@ -33,6 +33,12 @@ else
     var s = _overview.Summary;
     var trend = _overview.Trend;
     var topTools = _overview.TopTools;
+    var exceptionTrend = _overview.ExceptionTrend ?? [];
+    var hotResources = _overview.HotResources ?? [];
+    var blast = _overview.BlastRadius;
+    var topDiagnosis = _overview.TopDiagnosis ?? [];
+    var deploymentCorrelation = _overview.DeploymentCorrelation ?? [];
+    var activitySignals = _overview.ActivitySignals;
     var trendMax = trend.Count > 0 ? trend.Max(x => x.TotalRuns) : 1;
     var topToolsMax = topTools.Count > 0 ? topTools.Max(x => x.TotalCalls) : 1;
 
@@ -161,6 +167,138 @@ else
                 }
             </article>
         </section>
+
+        @if (blast is not null)
+        {
+            <section class="oc-summary-cards" aria-label="Blast radius summary">
+                <div class="oc-card"><span class="oc-card-label">Impacted Subscriptions</span><span class="oc-card-value">@blast.ImpactedSubscriptions</span></div>
+                <div class="oc-card"><span class="oc-card-label">Impacted Resource Groups</span><span class="oc-card-value">@blast.ImpactedResourceGroups</span></div>
+                <div class="oc-card"><span class="oc-card-label">Impacted Resources</span><span class="oc-card-value">@blast.ImpactedResources</span></div>
+                <div class="oc-card"><span class="oc-card-label">Impacted Applications</span><span class="oc-card-value">@blast.ImpactedApplications</span></div>
+            </section>
+        }
+
+        @if (activitySignals is not null)
+        {
+            <section class="oc-summary-cards" aria-label="Activity signal summary">
+                <div class="oc-card"><span class="oc-card-label">Policy Events</span><span class="oc-card-value">@activitySignals.TotalPolicyEvents</span></div>
+                <div class="oc-card"><span class="oc-card-label">Policy Denials</span><span class="oc-card-value">@activitySignals.PolicyDenials</span></div>
+                <div class="oc-card"><span class="oc-card-label">Scope Denials</span><span class="oc-card-value">@activitySignals.ScopeDenials</span></div>
+                <div class="oc-card"><span class="oc-card-label">Budget Denials</span><span class="oc-card-value">@activitySignals.BudgetDenials</span></div>
+            </section>
+        }
+
+        @if (topDiagnosis.Count > 0)
+        {
+            <section class="oc-panel" aria-label="Top diagnosis hypotheses">
+                <div class="oc-panel-heading"><h2>Top Diagnosis</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Cause</th>
+                            <th scope="col">Confidence</th>
+                            <th scope="col">Evidence</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var d in topDiagnosis)
+                    {
+                        <tr>
+                            <td>@d.Cause</td>
+                            <td>@($"{d.Confidence:P0}")</td>
+                            <td>@d.Evidence</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (exceptionTrend.Count > 0)
+        {
+            <section class="oc-panel" aria-label="Exception trend details">
+                <div class="oc-panel-heading"><h2>Exception Trend (Daily)</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Date (UTC)</th>
+                            <th scope="col">Exception Signals</th>
+                            <th scope="col">Failed</th>
+                            <th scope="col">Degraded</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in exceptionTrend)
+                    {
+                        <tr>
+                            <td>@item.DateUtc.ToString("yyyy-MM-dd")</td>
+                            <td>@item.ExceptionSignals</td>
+                            <td>@item.FailedRuns</td>
+                            <td>@item.DegradedRuns</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (deploymentCorrelation.Count > 0)
+        {
+            <section class="oc-panel" aria-label="Deployment correlation details">
+                <div class="oc-panel-heading"><h2>Deployment Correlation (Daily)</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Date (UTC)</th>
+                            <th scope="col">Runs With Changes</th>
+                            <th scope="col">Failed/Degraded</th>
+                            <th scope="col">Failure Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in deploymentCorrelation)
+                    {
+                        <tr>
+                            <td>@item.DateUtc.ToString("yyyy-MM-dd")</td>
+                            <td>@item.RunsWithDeploymentChanges</td>
+                            <td>@item.FailedOrDegradedWithChanges</td>
+                            <td>@($"{item.FailureRate:P0}")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (hotResources.Count > 0)
+        {
+            <section class="oc-panel" aria-label="Hot resources">
+                <div class="oc-panel-heading"><h2>Hot Resources</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Resource</th>
+                            <th scope="col">Resource Group</th>
+                            <th scope="col">Runs</th>
+                            <th scope="col">Exceptions</th>
+                            <th scope="col">Failed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var resource in hotResources)
+                    {
+                        <tr>
+                            <td>@resource.ResourceKey</td>
+                            <td>@(resource.ResourceGroup ?? "—")</td>
+                            <td>@resource.TotalRuns</td>
+                            <td>@resource.ExceptionSignals</td>
+                            <td>@resource.FailedRuns</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </section>
+        }
 
         <section class="oc-recent-runs oc-panel" aria-label="Recent runs">
             <div class="oc-panel-heading">

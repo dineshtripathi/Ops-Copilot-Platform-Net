@@ -8,4 +8,10 @@ public sealed record DashboardOverviewResponse(
     AgentRunsSummaryReport              Summary,
     IReadOnlyList<AgentRunsTrendPoint>   Trend,
     IReadOnlyList<ToolUsageSummaryRow>   TopTools,
-    IReadOnlyList<RecentRunSummary>      RecentRuns);
+    IReadOnlyList<RecentRunSummary>      RecentRuns,
+    IReadOnlyList<ExceptionTrendPoint>?  ExceptionTrend = null,
+    IReadOnlyList<DeploymentCorrelationPoint>? DeploymentCorrelation = null,
+    IReadOnlyList<HotResourceRow>?       HotResources = null,
+    BlastRadiusSummary?                  BlastRadius = null,
+    ActivitySignalSummary?               ActivitySignals = null,
+    IReadOnlyList<DiagnosisHypothesis>?  TopDiagnosis = null);

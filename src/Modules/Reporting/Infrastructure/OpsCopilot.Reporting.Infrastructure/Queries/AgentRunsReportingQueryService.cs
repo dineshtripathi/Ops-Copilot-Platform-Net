@@ -134,6 +134,246 @@ internal sealed class AgentRunsReportingQueryService : IAgentRunsReportingQueryS
             .ToList();
     }
 
+    public async Task<IReadOnlyList<ExceptionTrendPoint>> GetExceptionTrendAsync(
+        DateTime? fromUtc, DateTime? toUtc, string? tenantId, CancellationToken ct)
+    {
+        var query = ApplyRunFilters(_db.AgentRunRecords, fromUtc, toUtc, tenantId)
+            .Where(r => r.IsExceptionSignal ||
+                        (r.AlertSourceType != null && r.AlertSourceType.ToLower().Contains("application")));
+
+        var raw = await query
+            .GroupBy(r => new
+            {
+                r.CreatedAtUtc.Year,
+                r.CreatedAtUtc.Month,
+                r.CreatedAtUtc.Day
+            })
+            .Select(g => new
+            {
+                g.Key.Year,
+                g.Key.Month,
+                g.Key.Day,
+                ExceptionSignals = g.Count(),
+                Failed = g.Count(r => r.Status == "Failed"),
+                Degraded = g.Count(r => r.Status == "Degraded")
+            })
+            .OrderBy(x => x.Year).ThenBy(x => x.Month).ThenBy(x => x.Day)
+            .ToListAsync(ct);
+
+        return raw
+            .Select(x => new ExceptionTrendPoint(
+                DateUtc: new DateOnly(x.Year, x.Month, x.Day),
+                ExceptionSignals: x.ExceptionSignals,
+                FailedRuns: x.Failed,
+                DegradedRuns: x.Degraded))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<DeploymentCorrelationPoint>> GetDeploymentCorrelationAsync(
+        DateTime? fromUtc, DateTime? toUtc, string? tenantId, CancellationToken ct)
+    {
+        var runRows = await ApplyRunFilters(_db.AgentRunRecords, fromUtc, toUtc, tenantId)
+            .Select(r => new
+            {
+                r.CreatedAtUtc,
+                r.Status,
+                r.SummaryJson
+            })
+            .ToListAsync(ct);
+
+        var byDay = runRows
+            .GroupBy(r => DateOnly.FromDateTime(r.CreatedAtUtc.UtcDateTime.Date))
+            .OrderBy(d => d)
+            .ToList();
+
+        var result = new List<DeploymentCorrelationPoint>(byDay.Count);
+        foreach (var dayGroup in byDay)
+        {
+            var runsWithDeploymentChanges = 0;
+            var failedOrDegradedWithChanges = 0;
+
+            foreach (var run in dayGroup)
+            {
+                var hasDeploymentChanges = false;
+                if (!string.IsNullOrWhiteSpace(run.SummaryJson))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(run.SummaryJson);
+                        if (doc.RootElement.TryGetProperty("diffHits", out var diffHits) &&
+                            diffHits.ValueKind == JsonValueKind.Number &&
+                            diffHits.GetInt32() > 0)
+                        {
+                            hasDeploymentChanges = true;
+                        }
+                    }
+                    catch
+                    {
+                        hasDeploymentChanges = false;
+                    }
+                }
+
+                if (!hasDeploymentChanges)
+                    continue;
+
+                runsWithDeploymentChanges++;
+                if (run.Status == "Failed" || run.Status == "Degraded")
+                    failedOrDegradedWithChanges++;
+            }
+
+            var failureRate = runsWithDeploymentChanges > 0
+                ? Math.Round((double)failedOrDegradedWithChanges / runsWithDeploymentChanges, 2)
+                : 0.0;
+
+            result.Add(new DeploymentCorrelationPoint(
+                DateUtc: dayGroup.Key,
+                RunsWithDeploymentChanges: runsWithDeploymentChanges,
+                FailedOrDegradedWithChanges: failedOrDegradedWithChanges,
+                FailureRate: failureRate));
+        }
+
+        return result;
+    }
+
+    public async Task<IReadOnlyList<HotResourceRow>> GetHotResourcesAsync(
+        DateTime? fromUtc, DateTime? toUtc, string? tenantId, int maxCount, CancellationToken ct)
+    {
+        var query = ApplyRunFilters(_db.AgentRunRecords, fromUtc, toUtc, tenantId)
+            .Where(r => !string.IsNullOrWhiteSpace(r.AzureResourceId) || !string.IsNullOrWhiteSpace(r.AzureApplication));
+
+        var rows = await query
+            .Select(r => new
+            {
+                ResourceKey = r.AzureResourceId ?? r.AzureApplication ?? "unknown",
+                r.AzureResourceGroup,
+                r.IsExceptionSignal,
+                r.Status
+            })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(r => new { r.ResourceKey, r.AzureResourceGroup })
+            .Select(g => new HotResourceRow(
+                ResourceKey: g.Key.ResourceKey,
+                ResourceGroup: g.Key.AzureResourceGroup,
+                TotalRuns: g.Count(),
+                ExceptionSignals: g.Count(x => x.IsExceptionSignal),
+                FailedRuns: g.Count(x => x.Status == "Failed")))
+            .OrderByDescending(r => r.ExceptionSignals)
+            .ThenByDescending(r => r.FailedRuns)
+            .ThenByDescending(r => r.TotalRuns)
+            .Take(Math.Clamp(maxCount, 1, 20))
+            .ToList();
+    }
+
+    public async Task<BlastRadiusSummary> GetBlastRadiusAsync(
+        DateTime? fromUtc, DateTime? toUtc, string? tenantId, CancellationToken ct)
+    {
+        var impacted = await ApplyRunFilters(_db.AgentRunRecords, fromUtc, toUtc, tenantId)
+            .Where(r => r.Status == "Failed" || r.Status == "Degraded" || r.IsExceptionSignal)
+            .Select(r => new
+            {
+                r.AzureSubscriptionId,
+                r.AzureResourceGroup,
+                r.AzureResourceId,
+                r.AzureApplication
+            })
+            .ToListAsync(ct);
+
+        return new BlastRadiusSummary(
+            ImpactedSubscriptions: impacted.Select(x => x.AzureSubscriptionId).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            ImpactedResourceGroups: impacted.Select(x => x.AzureResourceGroup).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            ImpactedResources: impacted.Select(x => x.AzureResourceId).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            ImpactedApplications: impacted.Select(x => x.AzureApplication).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    public async Task<ActivitySignalSummary> GetActivitySignalsAsync(
+        DateTime? fromUtc, DateTime? toUtc, string? tenantId, CancellationToken ct)
+    {
+        var runIds = ApplyRunFilters(_db.AgentRunRecords, fromUtc, toUtc, tenantId)
+            .Select(r => r.RunId);
+
+        var policyRows = await _db.PolicyEvents
+            .Where(p => runIds.Contains(p.RunId))
+            .Select(p => new { p.Allowed, p.ReasonCode })
+            .ToListAsync(ct);
+
+        var policyDenials = policyRows.Count(p => !p.Allowed);
+        var scopeDenials = policyRows.Count(p =>
+            !p.Allowed && p.ReasonCode.Contains("scope", StringComparison.OrdinalIgnoreCase));
+        var budgetDenials = policyRows.Count(p =>
+            !p.Allowed &&
+            (p.ReasonCode.Contains("budget", StringComparison.OrdinalIgnoreCase) ||
+             p.ReasonCode.Contains("quota", StringComparison.OrdinalIgnoreCase) ||
+             p.ReasonCode.Contains("cost", StringComparison.OrdinalIgnoreCase)));
+        var degradedModeEvents = policyRows.Count(p =>
+            p.ReasonCode.Contains("degraded", StringComparison.OrdinalIgnoreCase));
+
+        return new ActivitySignalSummary(
+            TotalPolicyEvents: policyRows.Count,
+            PolicyDenials: policyDenials,
+            ScopeDenials: scopeDenials,
+            BudgetDenials: budgetDenials,
+            DegradedModeEvents: degradedModeEvents);
+    }
+
+    public async Task<IReadOnlyList<DiagnosisHypothesis>> GetTopDiagnosisAsync(
+        DateTime? fromUtc, DateTime? toUtc, string? tenantId, int maxCount, CancellationToken ct)
+    {
+        var rows = await ApplyRunFilters(_db.AgentRunRecords, fromUtc, toUtc, tenantId)
+            .Where(r => r.Status == "Failed" || r.Status == "Degraded" || r.IsExceptionSignal)
+            .Select(r => new { r.Status, r.SummaryJson, r.IsExceptionSignal })
+            .Take(500)
+            .ToListAsync(ct);
+
+        if (rows.Count == 0)
+            return [];
+
+        var scores = new Dictionary<string, (int Score, int Evidence)>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Authentication/Authorization"] = (0, 0),
+            ["Network/Connectivity"] = (0, 0),
+            ["Deployment Change Regression"] = (0, 0),
+            ["Service Capacity/Throttling"] = (0, 0),
+            ["Application Exception"] = (0, 0),
+        };
+
+        foreach (var row in rows)
+        {
+            var text = (row.SummaryJson ?? string.Empty).ToLowerInvariant();
+            var isFailed = row.Status == "Failed";
+            var baseWeight = isFailed ? 3 : 2;
+
+            if (text.Contains("401") || text.Contains("403") || text.Contains("unauthorized") || text.Contains("forbidden") || text.Contains("token"))
+                scores["Authentication/Authorization"] = (scores["Authentication/Authorization"].Score + baseWeight, scores["Authentication/Authorization"].Evidence + 1);
+
+            if (text.Contains("timeout") || text.Contains("dns") || text.Contains("refused") || text.Contains("unreachable") || text.Contains("gateway"))
+                scores["Network/Connectivity"] = (scores["Network/Connectivity"].Score + baseWeight, scores["Network/Connectivity"].Evidence + 1);
+
+            if (text.Contains("deployment") || text.Contains("provision") || text.Contains("rollout") || text.Contains("release"))
+                scores["Deployment Change Regression"] = (scores["Deployment Change Regression"].Score + baseWeight, scores["Deployment Change Regression"].Evidence + 1);
+
+            if (text.Contains("429") || text.Contains("throttl") || text.Contains("quota") || text.Contains("capacity"))
+                scores["Service Capacity/Throttling"] = (scores["Service Capacity/Throttling"].Score + baseWeight, scores["Service Capacity/Throttling"].Evidence + 1);
+
+            if (row.IsExceptionSignal || text.Contains("exception") || text.Contains("stack") || text.Contains("nullreference") || text.Contains("argument"))
+                scores["Application Exception"] = (scores["Application Exception"].Score + baseWeight, scores["Application Exception"].Evidence + 1);
+        }
+
+        var totalScore = Math.Max(1, scores.Sum(x => x.Value.Score));
+
+        return scores
+            .Where(x => x.Value.Score > 0)
+            .OrderByDescending(x => x.Value.Score)
+            .Take(Math.Clamp(maxCount, 1, 5))
+            .Select(x => new DiagnosisHypothesis(
+                Cause: x.Key,
+                Score: x.Value.Score,
+                Confidence: Math.Round((double)x.Value.Score / totalScore, 2),
+                Evidence: $"Matched {x.Value.Evidence} run summaries"))
+            .ToList();
+    }
+
     public async Task<IReadOnlyList<ToolUsageSummaryRow>> GetToolUsageAsync(
         DateTime? fromUtc, DateTime? toUtc, string? tenantId, CancellationToken ct)
     {

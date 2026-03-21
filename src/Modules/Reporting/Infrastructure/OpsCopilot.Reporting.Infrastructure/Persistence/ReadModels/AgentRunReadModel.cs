@@ -13,6 +13,14 @@ internal sealed class AgentRunReadModel
     public DateTimeOffset? CompletedAtUtc { get; init; }
     public Guid? SessionId { get; init; }
     public string? AlertFingerprint { get; init; }
+    public string? AlertProvider { get; init; }
+    public string? AlertSourceType { get; init; }
+    public bool IsExceptionSignal { get; init; }
+    public string? AzureSubscriptionId { get; init; }
+    public string? AzureResourceGroup { get; init; }
+    public string? AzureResourceId { get; init; }
+    public string? AzureApplication { get; init; }
+    public string? AzureWorkspaceId { get; init; }
     public string? CitationsJson { get; init; }
     // Slice 86: structural triage counters from TriageOrchestrator
     public string? SummaryJson { get; init; }
