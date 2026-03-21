@@ -1,0 +1,225 @@
+@page "/app/sessions/{SessionId:guid}"
+@inject IAgentRunsReportingQueryService RunsSvc
+
+<PageTitle>Ops Copilot &mdash; Session Detail</PageTitle>
+
+@if (string.IsNullOrWhiteSpace(TenantId))
+{
+    <section class="oc-error-panel" aria-label="Tenant ID required">
+        <h2>Tenant ID Required</h2>
+        <p>Add <code>?tenantId=&lt;your-tenant-id&gt;</code> to the URL to view session details.</p>
+    </section>
+}
+else if (_loadError)
+{
+    <section class="oc-error-panel" aria-label="Session detail load error">
+        <h2>Session Detail Unavailable</h2>
+        <p>An error occurred loading session detail. Please try again later.</p>
+    </section>
+}
+else if (_detail is null && !_loading)
+{
+    <section class="oc-not-found-panel" aria-label="Session not found">
+        <h2>Session Not Found</h2>
+        <p>The requested session could not be found for this tenant.</p>
+    </section>
+    <nav class="oc-breadcrumb" aria-label="Breadcrumb">
+        <a href="@($"/app/dashboard?tenantId={TenantId}{FilterSuffix}")">Dashboard</a>
+        <span class="oc-breadcrumb-sep" aria-hidden="true">›</span>
+        <span>Session @(SessionId.ToString().Substring(0, 8))&hellip;</span>
+    </nav>
+}
+else if (_loading)
+{
+    <p>Loading session detail&#8230;</p>
+}
+else
+{
+    var s = _detail!;
+    var sessionShort = s.SessionId.ToString().Substring(0, 8);
+
+    <header class="oc-page-topbar" aria-label="Session page top bar">
+        <nav class="oc-breadcrumb" aria-label="Breadcrumb">
+            <span>OpsCopilot</span>
+            <span class="oc-breadcrumb-sep" aria-hidden="true">/</span>
+            <span>Operator Console</span>
+            <span class="oc-breadcrumb-sep" aria-hidden="true">/</span>
+            <a href="@($"/app/dashboard?tenantId={TenantId}{FilterSuffix}")">Dashboard</a>
+            <span class="oc-breadcrumb-sep" aria-hidden="true">›</span>
+            <span>Triage Session: session-@sessionShort</span>
+        </nav>
+        <span class="oc-top-tenant">@TenantId</span>
+    </header>
+
+    <section class="oc-run-title-row" aria-label="Session title row">
+        <h1>Session Detail</h1>
+        <span class="oc-inline-pill">session-@sessionShort</span>
+    </section>
+
+    <section class="oc-session-metadata oc-panel" aria-label="Session metadata">
+        <h2>Session Detail</h2>
+        <table>
+            <tbody>
+                <tr><th scope="row">Session ID</th><td>@s.SessionId</td></tr>
+                <tr><th scope="row">Run Count</th><td>@s.Runs.Count</td></tr>
+                @if (s.Runs.Count > 0)
+                {
+                    <tr><th scope="row">First Run</th><td>@s.Runs[0].CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td></tr>
+                    <tr><th scope="row">Last Run</th><td>@(s.Runs[s.Runs.Count - 1].CompletedAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td></tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
+    @* Slice 87: operator session briefing — counts/patterns only, no raw JSON *@
+    @if (s.Briefing is { } b)
+    {
+        <section class="oc-session-briefing oc-panel" aria-label="Session triage briefing">
+            <h2>Session Triage Briefing</h2>
+            <table>
+                <tbody>
+                    <tr><th scope="row">Run Count</th><td>@b.RunCount</td></tr>
+                    <tr><th scope="row">Isolated</th><td>@(b.IsIsolated ? "Yes" : "No")</td></tr>
+                    <tr><th scope="row">Status Pattern</th><td>@b.StatusPattern</td></tr>
+                    <tr><th scope="row">Fingerprint Pattern</th><td>@b.FingerprintPattern</td></tr>
+                    @if (b.DominantFingerprint is { } fp)
+                    {
+                        <tr><th scope="row">Dominant Fingerprint</th><td>@fp</td></tr>
+                    }
+                    @if (b.SequenceConclusion is { } sc)
+                    {
+                        <tr><th scope="row">Sequence</th><td>@sc</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    @* Slice 88: deterministic next-step hints — no LLM, safe for display *@
+    @if (s.SessionRecommendations is { Count: > 0 } sRecs)
+    {
+        <section class="oc-session-recommendations oc-panel" aria-label="Next steps">
+            <h2>What to Inspect Next</h2>
+            <ul>
+            @foreach (var rec in sRecs)
+            {
+                <li class="oc-recommendation">@rec.Instruction</li>
+            }
+            </ul>
+        </section>
+    }
+
+    @* Slice 89: deterministic correlated incident view — no LLM, safe for display *@
+    @if (s.SessionSynthesis is { } ssyn)
+    {
+        <section class="oc-session-synthesis oc-panel" aria-label="Session incident synthesis">
+            <h2>Correlated Incident View</h2>
+            <table>
+                <tbody>
+                    <tr><th scope="row">Assessment</th><td>@ssyn.OverallAssessment</td></tr>
+                    @if (ssyn.FailureMode is { } fm)       { <tr><th scope="row">Failure Mode</th><td>@fm</td></tr> }
+                    @if (ssyn.DataSignal is { } ds)         { <tr><th scope="row">Data Signal</th><td>@ds</td></tr> }
+                    @if (ssyn.KnowledgeGap is { } kg)       { <tr><th scope="row">Knowledge Gap</th><td>@kg</td></tr> }
+                    @if (ssyn.ChangeCorrelation is { } cc)  { <tr><th scope="row">Change Correlation</th><td>@cc</td></tr> }
+                    @if (ssyn.SessionContext is { } sc)     { <tr><th scope="row">Session Context</th><td>@sc</td></tr> }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    <section class="oc-run-progression oc-panel" aria-label="Run progression">
+        <h2>Run Progression Timeline</h2>
+        @if (s.Runs.Count == 0)
+        {
+            <p>No runs in this session.</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Run ID</th>
+                        <th>Status</th>
+                        <th>Started (UTC)</th>
+                        <th>Duration</th>
+                        <th>Alert Fingerprint</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < s.Runs.Count; i++)
+                    {
+                        var run = s.Runs[i];
+                        var duration = run.CompletedAtUtc.HasValue
+                            ? $"{(run.CompletedAtUtc.Value - run.CreatedAtUtc).TotalSeconds:F1}s"
+                            : "—";
+                        <tr>
+                            <td>@(i + 1)</td>
+                            <td><a href="@($"/app/runs/{run.RunId}?tenantId={TenantId}{FilterSuffix}")">@run.RunId</a></td>
+                            <td class="oc-status oc-status-@(run.Status.ToLowerInvariant())">@run.Status</td>
+                            <td>@run.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td>@duration</td>
+                            <td>@(run.AlertFingerprint ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+}
+
+@code {
+    [Parameter]
+    public Guid SessionId { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "tenantId")]
+    public string? TenantId { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "fromUtc")]
+    public string? FromUtc { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "toUtc")]
+    public string? ToUtc { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "status")]
+    public string? Status { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "sort")]
+    public string? Sort { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "limit")]
+    public string? Limit { get; set; }
+
+    private string FilterSuffix =>
+        (string.IsNullOrEmpty(FromUtc) ? "" : $"&fromUtc={Uri.EscapeDataString(FromUtc)}") +
+        (string.IsNullOrEmpty(ToUtc)   ? "" : $"&toUtc={Uri.EscapeDataString(ToUtc)}")   +
+        (string.IsNullOrEmpty(Status)  ? "" : $"&status={Uri.EscapeDataString(Status)}")  +
+        (string.IsNullOrEmpty(Sort)    ? "" : $"&sort={Uri.EscapeDataString(Sort)}")      +
+        (string.IsNullOrEmpty(Limit)   ? "" : $"&limit={Uri.EscapeDataString(Limit)}");
+
+    private SessionDetailResponse? _detail;
+    private bool _loadError;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(TenantId))
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            _detail = await RunsSvc.GetSessionDetailAsync(SessionId, TenantId, CancellationToken.None);
+        }
+        catch
+        {
+            _loadError = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

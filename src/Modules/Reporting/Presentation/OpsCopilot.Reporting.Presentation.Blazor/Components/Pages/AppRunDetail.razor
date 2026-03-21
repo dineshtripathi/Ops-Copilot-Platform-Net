@@ -1,0 +1,437 @@
+@page "/app/runs/{RunId:guid}"
+@inject IAgentRunsReportingQueryService RunsSvc
+
+<PageTitle>Ops Copilot &mdash; Run Detail</PageTitle>
+
+@if (string.IsNullOrWhiteSpace(TenantId))
+{
+    <section class="oc-error-panel" aria-label="Tenant ID required">
+        <h2>Tenant ID Required</h2>
+        <p>Add <code>?tenantId=&lt;your-tenant-id&gt;</code> to the URL to view run details.</p>
+    </section>
+}
+else if (_loadError)
+{
+    <section class="oc-error-panel" aria-label="Run detail load error">
+        <h2>Run Detail Unavailable</h2>
+        <p>An error occurred loading run detail. Please try again later.</p>
+    </section>
+}
+else if (_detail is null && !_loading)
+{
+    <section class="oc-not-found-panel" aria-label="Run not found">
+        <h2>Run Not Found</h2>
+        <p>The requested run could not be found for this tenant.</p>
+    </section>
+    <nav class="oc-breadcrumb" aria-label="Breadcrumb">
+        <a href="@($"/app/dashboard?tenantId={TenantId}{FilterSuffix}")">Dashboard</a>
+        <span class="oc-breadcrumb-sep" aria-hidden="true">›</span>
+        <span>Run @(RunId.ToString().Substring(0, 8))&hellip;</span>
+    </nav>
+}
+else if (_loading)
+{
+    <p>Loading run detail&#8230;</p>
+}
+else
+{
+    var d = _detail!;
+    var duration = d.CompletedAtUtc.HasValue
+        ? (d.CompletedAtUtc.Value - d.CreatedAtUtc).TotalSeconds
+        : (double?)null;
+    var runShort = d.RunId.ToString().Substring(0, 8);
+
+    <header class="oc-page-topbar" aria-label="Run page top bar">
+        <nav class="oc-breadcrumb" aria-label="Breadcrumb">
+            <span>OpsCopilot</span>
+            <span class="oc-breadcrumb-sep" aria-hidden="true">/</span>
+            <span>Operator Console</span>
+            <span class="oc-breadcrumb-sep" aria-hidden="true">/</span>
+            <a href="@($"/app/dashboard?tenantId={TenantId}{FilterSuffix}")">Dashboard</a>
+            <span class="oc-breadcrumb-sep" aria-hidden="true">›</span>
+            <span>Run: run-@runShort</span>
+        </nav>
+        <span class="oc-top-tenant">@TenantId</span>
+    </header>
+
+    <section class="oc-run-title-row" aria-label="Run title row">
+        <h1>Run: @runShort</h1>
+        <span class="oc-status oc-status-@(d.Status.ToLowerInvariant())">@d.Status</span>
+        <span class="oc-inline-pill">@((d.SessionId?.ToString().Substring(0, 8) ?? "no-session"))</span>
+    </section>
+
+    <section class="oc-run-metadata oc-panel" aria-label="Run metadata">
+        <h2>Run Detail</h2>
+        <table>
+            <tbody>
+                <tr><th scope="row">Run ID</th><td>@d.RunId</td></tr>
+                <tr><th scope="row">Status</th><td class="oc-status oc-status-@(d.Status.ToLowerInvariant())">@d.Status</td></tr>
+                @if (d.SessionId.HasValue)
+                {
+                    <tr><th scope="row">Session</th><td><a href="@($"/app/sessions/{d.SessionId.Value}?tenantId={TenantId}{FilterSuffix}")">@d.SessionId.Value</a></td></tr>
+                }
+                <tr><th scope="row">Alert Fingerprint</th><td>@(d.AlertFingerprint ?? "—")</td></tr>
+                <tr><th scope="row">Created (UTC)</th><td>@d.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</td></tr>
+                <tr><th scope="row">Completed (UTC)</th><td>@(d.CompletedAtUtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? "—")</td></tr>
+                <tr><th scope="row">Duration</th><td>@(duration.HasValue ? $"{duration.Value:F1}s" : "—")</td></tr>
+                <tr><th scope="row">Total Tokens</th><td>@(d.TotalTokens?.ToString() ?? "—")</td></tr>
+                <tr><th scope="row">Estimated Cost</th><td>@(d.EstimatedCost.HasValue ? $"${d.EstimatedCost.Value:F4}" : "—")</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="oc-tool-call-summary oc-panel" aria-label="Tool call summary">
+        <h2>Tool Call Summary</h2>
+        <table>
+            <tbody>
+                <tr><th scope="row">Total Tool Calls</th><td>@(d.ToolCallCount?.ToString() ?? "—")</td></tr>
+                <tr><th scope="row">Successful</th><td>@(d.ToolCallSuccessCount?.ToString() ?? "—")</td></tr>
+                <tr><th scope="row">Failed</th><td>@(d.ToolCallFailedCount?.ToString() ?? "—")</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="oc-evidence-summary oc-panel" aria-label="Evidence summary">
+        <h2>Evidence Summary</h2>
+        <table>
+            <tbody>
+                <tr><th scope="row">Has Citations</th><td>@(d.HasCitations.HasValue ? (d.HasCitations.Value ? "Yes" : "No") : "—")</td></tr>
+                <tr><th scope="row">Action Count</th><td>@(d.ActionCount?.ToString() ?? "—")</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    @* Slice 96: Unified Incident Workspace — bands group coherent sections without DTO or route changes *@
+    <section class="oc-incident-workspace" aria-label="Incident workspace">
+
+        @* Band 1: Incident Overview — triage briefing + correlated synthesis *@
+        @if (d.Briefing is not null || d.Synthesis is not null)
+        {
+            <section class="oc-incident-overview" aria-label="Incident overview">
+                @* Slice 86: operator triage briefing — counts/flags only, no raw JSON *@
+                @if (d.Briefing is { } briefing)
+                {
+                    <section class="oc-triage-briefing" aria-label="Triage briefing">
+                        <h2>Triage Briefing</h2>
+                        <table>
+                            <tbody>
+                                <tr><th scope="row">Severity</th><td class="oc-severity-@briefing.StatusSeverity">@briefing.StatusSeverity.ToUpperInvariant()</td></tr>
+                                @if (briefing.DurationSeconds is { } dur)
+                                {
+                                    <tr><th scope="row">Duration</th><td>@($"{dur:F1}") s</td></tr>
+                                }
+                                @if (briefing.ToolSuccessRate is { } rate)
+                                {
+                                    <tr><th scope="row">Tool Success Rate</th><td>@($"{rate * 100:F0}")%</td></tr>
+                                }
+                                <tr><th scope="row">KQL Rows</th><td>@briefing.KqlRowCount</td></tr>
+                                <tr><th scope="row">KQL Citations</th><td>@briefing.KqlCitationCount</td></tr>
+                                <tr><th scope="row">Runbook Hits</th><td>@briefing.RunbookHitCount</td></tr>
+                                <tr><th scope="row">Memory Hits</th><td>@briefing.MemoryHitCount</td></tr>
+                                <tr><th scope="row">Deployment Diff Hits</th><td>@briefing.DeploymentDiffHitCount</td></tr>
+                                <tr><th scope="row">Recommended Actions</th><td>@(briefing.HasRecommendedActions ? "Yes" : "None")</td></tr>
+                                @if (briefing.FailureSignal is { } sig)
+                                {
+                                    <tr><th scope="row">Failure Signal</th><td class="oc-signal-warning">@sig</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+
+                @* Slice 89: deterministic correlated incident view — no LLM, safe for display *@
+                @if (d.Synthesis is { } syn)
+                {
+                    <section class="oc-incident-synthesis" aria-label="Incident synthesis">
+                        <h2>Correlated Incident View</h2>
+                        <table>
+                            <tbody>
+                                <tr><th scope="row">Assessment</th><td>@syn.OverallAssessment</td></tr>
+                                @if (syn.FailureMode is { } fm)      { <tr><th scope="row">Failure Mode</th><td>@fm</td></tr> }
+                                @if (syn.DataSignal is { } ds)        { <tr><th scope="row">Data Signal</th><td>@ds</td></tr> }
+                                @if (syn.KnowledgeGap is { } kg)      { <tr><th scope="row">Knowledge Gap</th><td>@kg</td></tr> }
+                                @if (syn.ChangeCorrelation is { } cc) { <tr><th scope="row">Change Correlation</th><td>@cc</td></tr> }
+                                @if (syn.SessionContext is { } sc)    { <tr><th scope="row">Session Context</th><td>@sc</td></tr> }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+            </section>
+        }
+
+        @* Band 2: Signals — all enrichment signals from infrastructure probes *@
+        @{
+            var _hasSbSignals    = d.ServiceBusSignals?.Queues.Count > 0;
+            var _hasAzureChange  = d.AzureChangeSynthesis?.Deployments.Count > 0;
+            var _hasConnectivity = d.ConnectivitySignals?.TotalSignals > 0;
+            var _hasAuth         = d.AuthSignals?.TotalSignals > 0;
+        }
+        @if (_hasSbSignals || _hasAzureChange || _hasConnectivity || _hasAuth)
+        {
+            <section class="oc-signals-band" aria-label="Signals">
+                @* Slice 91: Service Bus triage signals — read-only, no connection strings, no payloads *@
+                @if (d.ServiceBusSignals is { Queues.Count: > 0 } sbSignals)
+                {
+                    <section class="oc-service-bus-signals" aria-label="Service Bus signals">
+                        <h3>Service Bus Signals</h3>
+                        <table>
+                            <thead><tr><th scope="col">Queue</th><th scope="col">Health</th><th scope="col">Active</th><th scope="col">Dead-Letter</th></tr></thead>
+                            <tbody>
+                            @foreach (var q in sbSignals.Queues)
+                            {
+                                <tr>
+                                    <td>@q.QueueName</td>
+                                    <td class="oc-health-@(q.HealthSignal.ToLowerInvariant())">@q.HealthSignal</td>
+                                    <td>@q.ActiveCount</td>
+                                    <td>@q.DeadLetterCount</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+                @* Slice 93: Azure ARM deployment change signals — read-only, no subscription IDs *@
+                @if (d.AzureChangeSynthesis is { Deployments.Count: > 0 } azChange)
+                {
+                    <section class="oc-azure-change-signals" aria-label="Azure change signals">
+                        <h3>Azure Change Signals</h3>
+                        <table>
+                            <thead><tr><th scope="col">Deployment</th><th scope="col">State</th><th scope="col">Resource Group</th><th scope="col">Date</th></tr></thead>
+                            <tbody>
+                            @foreach (var dep in azChange.Deployments)
+                            {
+                                <tr>
+                                    <td>@dep.DeploymentName</td>
+                                    <td>@dep.ProvisioningState</td>
+                                    <td>@dep.ResourceGroup</td>
+                                    <td class="oc-deployment-timestamp">@(dep.Timestamp is { } ts ? ts.ToString("yyyy-MM-dd") : "\u2014")</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+                @* Slice 94: networking/connectivity triage signals — deterministic, no raw error text *@
+                @if (d.ConnectivitySignals is { TotalSignals: > 0 } conn)
+                {
+                    <section class="oc-connectivity-signals" aria-label="Connectivity signals">
+                        <h3>Connectivity Signals</h3>
+                        <table>
+                            <thead><tr><th scope="col">Category</th><th scope="col">Summary</th></tr></thead>
+                            <tbody>
+                            @foreach (var sig in conn.Signals)
+                            {
+                                <tr><td class="oc-signal-category">@sig.Category</td><td class="oc-signal-summary">@sig.Summary</td></tr>
+                            }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+                @* Slice 95: identity/auth failure signals — deterministic, no secrets/tokens in output *@
+                @if (d.AuthSignals is { TotalSignals: > 0 } auth)
+                {
+                    <section class="oc-auth-signals" aria-label="Auth signals">
+                        <h3>Auth Signals</h3>
+                        <table>
+                            <thead><tr><th scope="col">Category</th><th scope="col">Summary</th></tr></thead>
+                            <tbody>
+                            @foreach (var sig in auth.Signals)
+                            {
+                                <tr><td class="oc-auth-category">@sig.Category</td><td class="oc-auth-summary">@sig.Summary</td></tr>
+                            }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+            </section>
+        }
+
+        @* Band 3: Related Context — memory-backed similar prior incidents *@
+        @if (d.SimilarPriorIncidents is { Count: > 0 } priorIncidents)
+        {
+            <section class="oc-related-context" aria-label="Related context">
+                @* Slice 90: memory-backed similar prior incidents — no LLM, safe for display *@
+                <section class="oc-similar-incidents" aria-label="Similar prior incidents">
+                    <h2>Prior Similar Incidents</h2>
+                    <table>
+                        <thead><tr><th scope="col">Score</th><th scope="col">Alert</th><th scope="col">Summary</th><th scope="col">Date</th></tr></thead>
+                        <tbody>
+                        @foreach (var hit in priorIncidents)
+                        {
+                            <tr class="oc-similar-incident">
+                                <td class="oc-score">@($"{hit.Score:P0}")</td>
+                                <td>@(hit.AlertFingerprint ?? "\u2014")</td>
+                                <td>@hit.SummarySnippet</td>
+                                <td>@hit.OccurredAtUtc.ToString("yyyy-MM-dd")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </section>
+            </section>
+        }
+
+        @* Band 4: Next Steps — deterministic next-step hints *@
+        @if (d.RunRecommendations is { Count: > 0 } runRecs)
+        {
+            <section class="oc-next-steps" aria-label="Next steps">
+                @* Slice 88: deterministic next-step hints — no LLM, safe for display *@
+                <section class="oc-run-recommendations" aria-label="Next steps">
+                    <h2>What to Inspect Next</h2>
+                    <ul>
+                    @foreach (var rec in runRecs)
+                    {
+                        <li class="oc-recommendation">@rec.Instruction</li>
+                    }
+                    </ul>
+                </section>
+            </section>
+        }
+
+        @* Band 5: Proposed Next Actions — Slice 97: deterministic only, no LLM, recommendation-only *@
+        @if (d.ProposedNextActions is { Count: > 0 } proposals)
+        {
+            <section class="oc-proposed-actions" aria-label="Proposed next actions">
+                <h2>Proposed Next Actions</h2>
+                <table>
+                    <thead><tr><th scope="col">Source</th><th scope="col">Action</th><th scope="col">Rationale</th></tr></thead>
+                    <tbody>
+                    @foreach (var p in proposals)
+                    {
+                        <tr class="oc-proposed-@(p.SourceCategory.ToLowerInvariant())">
+                            <td><span class="oc-source-badge">@p.SourceCategory</span></td>
+                            <td>@p.Proposal</td>
+                            <td>@p.Rationale</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @* Band 6: Evidence Quality — Slice 98: deterministic only, no LLM, no raw payloads *@
+        @if (d.EvidenceQuality is { } eq)
+        {
+            <section class="oc-evidence-quality" aria-label="Evidence quality">
+                <h2>Evidence Quality</h2>
+                <div class="oc-eq-header">
+                    <span class="oc-eq-strength oc-eq-@eq.Strength.ToString().ToLowerInvariant()">@eq.Strength</span>
+                    <span class="oc-eq-completeness">@eq.Completeness</span>
+                    <span class="oc-eq-coverage">@eq.SignalFamiliesPresent / @eq.SignalFamiliesTotal signal families</span>
+                </div>
+                @if (eq.MissingAreas.Count > 0)
+                {
+                    <ul class="oc-eq-missing-areas">
+                        @foreach (var area in eq.MissingAreas)
+                        {
+                            <li>@area</li>
+                        }
+                    </ul>
+                }
+                <p class="oc-eq-guidance">@eq.Guidance</p>
+            </section>
+        }
+
+        @* Band 7: Operator Decision Pack — Slice 99: deterministic, no LLM, no raw payloads *@
+        @if (d.DecisionPack is { } pack)
+        {
+            <section class="oc-decision-pack" aria-label="Operator decision pack">
+                <h2>Operator Decision Pack</h2>
+                <div class="oc-pack-header">
+                    <span class="oc-pack-severity">@pack.IncidentSeverity</span>
+                    @if (pack.IncidentAssessment is { Length: > 0 } assessment)
+                    {
+                        <p class="oc-pack-assessment">@assessment</p>
+                    }
+                    <span class="oc-pack-strength oc-pack-@pack.EvidenceStrength.ToString().ToLowerInvariant()">Evidence: @pack.EvidenceStrength</span>
+                </div>
+                @if (pack.KeyFindings.Count > 0)
+                {
+                    <div class="oc-pack-findings">
+                        <h3>Key Findings</h3>
+                        <ul>
+                            @foreach (var finding in pack.KeyFindings)
+                            {
+                                <li class="oc-pack-finding">@finding</li>
+                            }
+                        </ul>
+                    </div>
+                }
+                @if (pack.RecommendedActions.Count > 0)
+                {
+                    <div class="oc-pack-actions">
+                        <h3>Recommended Actions</h3>
+                        <ul>
+                            @foreach (var action in pack.RecommendedActions)
+                            {
+                                <li class="oc-pack-action">@action</li>
+                            }
+                        </ul>
+                    </div>
+                }
+                <p class="oc-pack-guidance">@pack.EvidenceGuidance</p>
+                <footer class="oc-pack-meta">
+                    Generated at <time datetime="@pack.GeneratedAt.ToString("O")">@pack.GeneratedAt.ToString("R")</time>
+                    &middot; Pack version @pack.PackVersion
+                </footer>
+            </section>
+        }
+
+    </section>@* /oc-incident-workspace *@
+}
+
+@code {
+    [Parameter]
+    public Guid RunId { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "tenantId")]
+    public string? TenantId { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "fromUtc")]
+    public string? FromUtc { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "toUtc")]
+    public string? ToUtc { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "status")]
+    public string? Status { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "sort")]
+    public string? Sort { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "limit")]
+    public string? Limit { get; set; }
+
+    private string FilterSuffix =>
+        (string.IsNullOrEmpty(FromUtc) ? "" : $"&fromUtc={Uri.EscapeDataString(FromUtc)}") +
+        (string.IsNullOrEmpty(ToUtc)   ? "" : $"&toUtc={Uri.EscapeDataString(ToUtc)}")   +
+        (string.IsNullOrEmpty(Status)  ? "" : $"&status={Uri.EscapeDataString(Status)}")  +
+        (string.IsNullOrEmpty(Sort)    ? "" : $"&sort={Uri.EscapeDataString(Sort)}")      +
+        (string.IsNullOrEmpty(Limit)   ? "" : $"&limit={Uri.EscapeDataString(Limit)}");
+
+    private RunDetailResponse? _detail;
+    private bool _loadError;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(TenantId))
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            _detail = await RunsSvc.GetRunDetailAsync(RunId, TenantId, CancellationToken.None);
+        }
+        catch
+        {
+            _loadError = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

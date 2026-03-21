@@ -89,6 +89,8 @@ $Allowlist = @{
         'Reporting infrastructure reads evaluation results for report generation; TODO: extract IEvaluationQueryService to Contracts'
     'Mod:Reporting:Infrastructure -> Mod:SafeActions:Application' =
         'Reporting infrastructure reads SafeActions audit events for report generation; TODO: extract ISafeActionsQueryService to Contracts'
+    'Mod:Reporting:Infrastructure -> Mod:Rag:Application' =
+        'Reporting infrastructure queries incident memory for similar prior incidents; TODO: extract IIncidentMemoryQueryService to Contracts'
 }
 
 #endregion

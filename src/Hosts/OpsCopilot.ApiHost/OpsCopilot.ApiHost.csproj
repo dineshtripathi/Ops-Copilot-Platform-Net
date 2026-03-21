@@ -40,6 +40,8 @@
     <ProjectReference Include="..\..\Modules\Evaluation\Presentation\OpsCopilot.Evaluation.Presentation\OpsCopilot.Evaluation.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Tenancy\Presentation\OpsCopilot.Tenancy.Presentation\OpsCopilot.Tenancy.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Packs\Presentation\OpsCopilot.Packs.Presentation\OpsCopilot.Packs.Presentation.csproj" />
+    <ProjectReference Include="..\..\Modules\Reporting\Presentation\OpsCopilot.Reporting.Presentation.Blazor\OpsCopilot.Reporting.Presentation.Blazor.csproj" />
+    <ProjectReference Include="..\..\Modules\Rag\Presentation\OpsCopilot.Rag.Presentation\OpsCopilot.Rag.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

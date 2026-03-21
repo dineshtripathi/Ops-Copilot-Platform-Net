@@ -16,6 +16,8 @@ internal sealed class ReportingReadDbContext : DbContext
     }
 
     public DbSet<ActionRecordReadModel> ActionRecords => Set<ActionRecordReadModel>();
+    public DbSet<AgentRunReadModel> AgentRunRecords => Set<AgentRunReadModel>();
+    public DbSet<ToolCallReadModel> ToolCallRecords => Set<ToolCallReadModel>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +31,24 @@ internal sealed class ReportingReadDbContext : DbContext
             e.Property(a => a.ActionType).HasMaxLength(128);
             e.Property(a => a.Status).HasMaxLength(32);
             e.Property(a => a.RollbackStatus).HasMaxLength(32);
+        });
+
+        modelBuilder.Entity<AgentRunReadModel>(e =>
+        {
+            e.ToTable("AgentRuns", "agentRuns");
+            e.HasKey(a => a.RunId);
+            e.Property(a => a.TenantId).HasMaxLength(128);
+            e.Property(a => a.Status).HasMaxLength(32);
+            e.Property(a => a.CitationsJson).HasColumnType("nvarchar(max)");
+            e.Property(a => a.SummaryJson).HasColumnType("nvarchar(max)");
+        });
+
+        modelBuilder.Entity<ToolCallReadModel>(e =>
+        {
+            e.ToTable("ToolCalls", "agentRuns");
+            e.HasKey(t => t.ToolCallId);
+            e.Property(t => t.ToolName).HasMaxLength(128);
+            e.Property(t => t.Status).HasMaxLength(32);
         });
     }
 }

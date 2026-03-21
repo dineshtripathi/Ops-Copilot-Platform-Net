@@ -15,6 +15,8 @@ using OpsCopilot.Connectors.Infrastructure.Extensions;
 using OpsCopilot.Tenancy.Presentation.Extensions;
 using OpsCopilot.Packs.Presentation.Endpoints;
 using OpsCopilot.Packs.Presentation.Extensions;
+using OpsCopilot.Rag.Presentation.Extensions;
+using OpsCopilot.Reporting.Presentation.Blazor.Components;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -100,10 +102,13 @@ builder.Services
     .AddTenancyModule(builder.Configuration)
     .AddGovernanceModule(builder.Configuration, startupLogger)
     .AddSafeActionsModule(builder.Configuration)
+    .AddRagModule(builder.Configuration)
     .AddReportingModule(builder.Configuration)
     .AddEvaluationModule()
     .AddConnectorsModule()
     .AddPacksModule(builder.Configuration);
+
+builder.Services.AddRazorComponents();
 
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();
@@ -127,9 +132,15 @@ app.MapSessionEndpoints();          // GET  /session/{sessionId}
 app.MapSafeActionEndpoints();       // /safe-actions/*
 app.MapReportingEndpoints();            // /reports/safe-actions/*
 app.MapPlatformReportingEndpoints();    // /reports/platform/*
+app.MapAgentRunsReportingEndpoints();   // /reports/agent-runs/*
+app.MapDashboardEndpoints();            // /reports/dashboard/*
 app.MapEvaluationEndpoints();           // /evaluation/*
 app.MapTenancyEndpoints();              // /tenants/*
 app.MapPlatformPacksEndpoints();        // /reports/platform/packs
+
+app.UseStaticFiles();
+app.UseAntiforgery();
+app.MapRazorComponents<App>();          // /app/dashboard (Blazor SSR operator UI)
 
 app.Run();
 

@@ -1,0 +1,342 @@
+@page "/app/dashboard"
+@inject IDashboardQueryService DashboardSvc
+
+<PageTitle>Ops Copilot &mdash; Dashboard</PageTitle>
+
+@if (string.IsNullOrWhiteSpace(TenantId))
+{
+    <section class="oc-error-panel" aria-label="Tenant ID required">
+        <h2>Tenant ID Required</h2>
+        <p>Add <code>?tenantId=&lt;your-tenant-id&gt;</code> to the URL to view the dashboard.</p>
+    </section>
+}
+else if (_loadError)
+{
+    <section class="oc-error-panel" aria-label="Dashboard load error">
+        <h2>Dashboard Unavailable</h2>
+        <p>An error occurred loading dashboard data. Please try again later.</p>
+    </section>
+}
+else if (_invalidInput)
+{
+    <section class="oc-error-panel" aria-label="Invalid filter">
+        <h2>Invalid Filter Value</h2>
+        <p>One or more filter values are not supported. Supported values &mdash; status: Completed, Failed, Degraded, Pending, Running; sort: newest, oldest, problem-first.</p>
+    </section>
+}
+else if (_overview is null)
+{
+    <p>Loading dashboard data&#8230;</p>
+}
+else
+{
+    var s = _overview.Summary;
+    var trend = _overview.Trend;
+    var topTools = _overview.TopTools;
+    var trendMax = trend.Count > 0 ? trend.Max(x => x.TotalRuns) : 1;
+    var topToolsMax = topTools.Count > 0 ? topTools.Max(x => x.TotalCalls) : 1;
+
+    <section class="oc-dashboard-shell" aria-label="Dashboard operator console">
+        <form method="get" action="/app/dashboard" class="oc-filter-form oc-toolbar-form">
+            <input type="hidden" name="tenantId" value="@TenantId" />
+
+            <div class="oc-toolbar-field">
+                <label for="oc-from">From:</label>
+                <input id="oc-from" type="date" name="fromUtc" value="@(FromUtc ?? string.Empty)" />
+            </div>
+
+            <div class="oc-toolbar-field">
+                <label for="oc-to">To:</label>
+                <input id="oc-to" type="date" name="toUtc" value="@(ToUtc ?? string.Empty)" />
+            </div>
+
+            <div class="oc-toolbar-field">
+                <label for="oc-sort">Sort</label>
+                <select id="oc-sort" name="sort">
+                    <option value="newest" selected="@(Sort == "newest" || string.IsNullOrEmpty(Sort) ? "selected" : null)">Newest First</option>
+                    <option value="oldest" selected="@(Sort == "oldest" ? "selected" : null)">Oldest First</option>
+                    <option value="problem-first" selected="@(Sort == "problem-first" ? "selected" : null)">Problem First</option>
+                </select>
+            </div>
+
+            <div class="oc-toolbar-field">
+                <label for="oc-status">Status</label>
+                <select id="oc-status" name="status">
+                    <option value="">All</option>
+                    <option value="Completed" selected="@(Status == "Completed" ? "selected" : null)">Completed</option>
+                    <option value="Failed" selected="@(Status == "Failed" ? "selected" : null)">Failed</option>
+                    <option value="Degraded" selected="@(Status == "Degraded" ? "selected" : null)">Degraded</option>
+                    <option value="Pending" selected="@(Status == "Pending" ? "selected" : null)">Pending</option>
+                    <option value="Running" selected="@(Status == "Running" ? "selected" : null)">Running</option>
+                </select>
+            </div>
+
+            <div class="oc-toolbar-field">
+                <label for="oc-limit">Show</label>
+                <input id="oc-limit" type="number" name="limit" value="@(Limit ?? "25")" min="10" max="500" step="5" />
+            </div>
+
+            <button type="submit">Apply</button>
+            <a class="oc-filter-reset" href="@($"/app/dashboard?tenantId={Uri.EscapeDataString(TenantId!)}")">Reset</a>
+        </form>
+
+        @if (!string.IsNullOrEmpty(FromUtc) || !string.IsNullOrEmpty(ToUtc) || !string.IsNullOrEmpty(Status) || !string.IsNullOrEmpty(Sort) || !string.IsNullOrEmpty(Limit))
+        {
+            <div class="oc-filter-active" aria-label="Active filters">
+                <span>Active:</span>
+                @if (!string.IsNullOrEmpty(FromUtc)) { <span class="oc-filter-pill">From: @FromUtc</span> }
+                @if (!string.IsNullOrEmpty(ToUtc))   { <span class="oc-filter-pill">To: @ToUtc</span> }
+                @if (!string.IsNullOrEmpty(Status))  { <span class="oc-filter-pill">Status: @Status</span> }
+                @if (!string.IsNullOrEmpty(Sort))    { <span class="oc-filter-pill">Sort: @Sort</span> }
+                @if (!string.IsNullOrEmpty(Limit))   { <span class="oc-filter-pill">Limit: @Limit</span> }
+                <span>Showing @_overview.RecentRuns.Count of @s.TotalRuns runs</span>
+            </div>
+        }
+
+        <section class="oc-summary-cards oc-summary-cards-primary" aria-label="Run summary">
+            <div class="oc-card"><span class="oc-card-label">Total Runs</span><span class="oc-card-value">@s.TotalRuns</span></div>
+            <div class="oc-card"><span class="oc-card-label">Completed</span><span class="oc-card-value">@s.Completed</span></div>
+            <div class="oc-card"><span class="oc-card-label">Failed</span><span class="oc-card-value">@s.Failed</span></div>
+            <div class="oc-card"><span class="oc-card-label">Degraded</span><span class="oc-card-value">@s.Degraded</span></div>
+            <div class="oc-card"><span class="oc-card-label">Pending</span><span class="oc-card-value">@s.Pending</span></div>
+        </section>
+
+        <section class="oc-summary-cards" aria-label="Extended run summary">
+            <div class="oc-card"><span class="oc-card-label">Running</span><span class="oc-card-value">@s.Running</span></div>
+            <div class="oc-card"><span class="oc-card-label">Citation Coverage</span><span class="oc-card-value">@($"{s.CitationCoverageRate * 100:F0}")%</span></div>
+            @if (s.AvgDurationMs.HasValue)
+            {
+                <div class="oc-card"><span class="oc-card-label">Avg Duration</span><span class="oc-card-value">@((s.AvgDurationMs.Value / 1000.0).ToString("F1"))s</span></div>
+            }
+            @if (s.AvgTotalTokens.HasValue)
+            {
+                <div class="oc-card"><span class="oc-card-label">Avg Tokens</span><span class="oc-card-value">@((int)s.AvgTotalTokens.Value)</span></div>
+            }
+            @if (s.TotalEstimatedCost.HasValue)
+            {
+                <div class="oc-card"><span class="oc-card-label">Est. Cost</span><span class="oc-card-value">$@s.TotalEstimatedCost.Value.ToString("F2")</span></div>
+            }
+        </section>
+
+        <section class="oc-dashboard-charts" aria-label="Analytics snapshot">
+            <article class="oc-chart-card" aria-label="Daily trend chart">
+                <h2>Daily Trend</h2>
+                @if (trend.Count == 0)
+                {
+                    <p>No trend data available.</p>
+                }
+                else
+                {
+                    <div class="oc-mini-chart oc-mini-line">
+                        @foreach (var point in trend)
+                        {
+                            var heightPct = trendMax <= 0 ? 0 : (point.TotalRuns * 100.0 / trendMax);
+                            <div class="oc-mini-point" title="@($"{point.DateUtc:yyyy-MM-dd}: {point.TotalRuns}")">
+                                <span style="height:@($"{Math.Max(8, heightPct):F0}%")"></span>
+                                <small>@point.DateUtc.ToString("MM/dd")</small>
+                            </div>
+                        }
+                    </div>
+                }
+            </article>
+
+            <article class="oc-chart-card" aria-label="Top tools chart">
+                <h2>Top Tools</h2>
+                @if (topTools.Count == 0)
+                {
+                    <p>No tool usage data available.</p>
+                }
+                else
+                {
+                    <div class="oc-mini-chart oc-mini-bars">
+                        @foreach (var tool in topTools.Take(8))
+                        {
+                            var widthPct = topToolsMax <= 0 ? 0 : (tool.TotalCalls * 100.0 / topToolsMax);
+                            <div class="oc-mini-bar-row" title="@($"{tool.ToolName}: {tool.TotalCalls}")">
+                                <label>@tool.ToolName</label>
+                                <span><i style="width:@($"{Math.Max(6, widthPct):F0}%")"></i></span>
+                            </div>
+                        }
+                    </div>
+                }
+            </article>
+        </section>
+
+        <section class="oc-recent-runs oc-panel" aria-label="Recent runs">
+            <div class="oc-panel-heading">
+                <h2>Recent Runs</h2>
+                <small>Showing 1 to @_overview.RecentRuns.Count of @s.TotalRuns runs</small>
+            </div>
+            @if (_overview.RecentRuns.Count == 0)
+            {
+                <p>No runs found for the selected filters.</p>
+            }
+            else
+            {
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Run ID</th>
+                            <th scope="col">Session ID</th>
+                            <th scope="col">Started At</th>
+                            <th scope="col">Duration</th>
+                            <th scope="col">Alert Fingerprint</th>
+                            <th scope="col">View</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var run in _overview.RecentRuns)
+                        {
+                            var runShort = run.RunId.ToString("D").Substring(0, 8);
+                            var duration = run.CompletedAtUtc.HasValue ? $"{(run.CompletedAtUtc.Value - run.CreatedAtUtc).TotalSeconds:F1}s" : "—";
+                            <tr>
+                                <td><a href="@($"/app/runs/{run.RunId}?tenantId={TenantId}{FilterSuffix}")">run-@runShort</a></td>
+                                <td>
+                                    @if (run.SessionId.HasValue)
+                                    {
+                                        <a class="oc-inline-pill" href="@($"/app/sessions/{run.SessionId.Value}?tenantId={TenantId}{FilterSuffix}")">session-@run.SessionId.Value.ToString("D").Substring(0, 8)</a>
+                                    }
+                                    <span class="oc-status oc-status-@(run.Status.ToLowerInvariant())">@run.Status</span>
+                                </td>
+                                <td>@run.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>@duration</td>
+                                <td>@(run.AlertFingerprint ?? "—")</td>
+                                <td><a class="oc-view-btn" href="@($"/app/runs/{run.RunId}?tenantId={TenantId}{FilterSuffix}")">View</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        @if (topTools.Count > 0)
+        {
+            <section class="oc-top-tools oc-panel" aria-label="Top tool usage details">
+                <div class="oc-panel-heading"><h2>Top Tool Usage Details</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Tool</th>
+                            <th scope="col">Total Calls</th>
+                            <th scope="col">Successful</th>
+                            <th scope="col">Failed</th>
+                            <th scope="col">Success Rate</th>
+                            <th scope="col">Avg Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in topTools)
+                        {
+                            <tr>
+                                <td>@t.ToolName</td>
+                                <td>@t.TotalCalls</td>
+                                <td>@t.SuccessfulCalls</td>
+                                <td>@t.FailedCalls</td>
+                                <td>@(t.TotalCalls > 0 ? $"{(double)t.SuccessfulCalls / t.TotalCalls:P0}" : "—")</td>
+                                <td>@(t.AvgDurationMs.ToString("F0")) ms</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (trend.Count > 0)
+        {
+            <section class="oc-trend oc-panel" aria-label="Daily run trend details">
+                <div class="oc-panel-heading"><h2>Daily Trend Details</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Date (UTC)</th>
+                            <th scope="col">Total</th>
+                            <th scope="col">Completed</th>
+                            <th scope="col">Failed</th>
+                            <th scope="col">Degraded</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var tp in trend)
+                        {
+                            <tr>
+                                <td>@tp.DateUtc.ToString("yyyy-MM-dd")</td>
+                                <td>@tp.TotalRuns</td>
+                                <td>@tp.CompletedRuns</td>
+                                <td>@tp.FailedRuns</td>
+                                <td>@tp.DegradedRuns</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "tenantId")]
+    public string? TenantId { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "fromUtc")]
+    public string? FromUtc { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "toUtc")]
+    public string? ToUtc { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "status")]
+    public string? Status { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "sort")]
+    public string? Sort { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "limit")]
+    public string? Limit { get; set; }
+
+    private string FilterSuffix =>
+        (string.IsNullOrEmpty(FromUtc) ? "" : $"&fromUtc={Uri.EscapeDataString(FromUtc)}") +
+        (string.IsNullOrEmpty(ToUtc)   ? "" : $"&toUtc={Uri.EscapeDataString(ToUtc)}")   +
+        (string.IsNullOrEmpty(Status)  ? "" : $"&status={Uri.EscapeDataString(Status)}")  +
+        (string.IsNullOrEmpty(Sort)    ? "" : $"&sort={Uri.EscapeDataString(Sort)}")      +
+        (string.IsNullOrEmpty(Limit)   ? "" : $"&limit={Uri.EscapeDataString(Limit)}");
+
+    private static readonly HashSet<string> ValidStatuses = new(StringComparer.Ordinal)
+        { "Completed", "Failed", "Degraded", "Pending", "Running" };
+
+    private static readonly HashSet<string> ValidSortOrders = new(StringComparer.Ordinal)
+        { "newest", "oldest", "problem-first" };
+
+    private DashboardOverviewResponse? _overview;
+    private bool _loadError;
+    private bool _invalidInput;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(TenantId)) return;
+
+        if ((!string.IsNullOrWhiteSpace(Status) && !ValidStatuses.Contains(Status)) ||
+            (!string.IsNullOrWhiteSpace(Sort) && !ValidSortOrders.Contains(Sort)))
+        {
+            _invalidInput = true;
+            return;
+        }
+
+        try
+        {
+            DateTime? from = null;
+            DateTime? to = null;
+
+            if (!string.IsNullOrWhiteSpace(FromUtc) && DateTime.TryParse(FromUtc, out var f))
+                from = DateTime.SpecifyKind(f, DateTimeKind.Utc);
+            if (!string.IsNullOrWhiteSpace(ToUtc) && DateTime.TryParse(ToUtc, out var t))
+                to = DateTime.SpecifyKind(t, DateTimeKind.Utc);
+
+            int? limitInt = int.TryParse(Limit, out var lv) ? lv : null;
+            _overview = await DashboardSvc.GetOverviewAsync(
+                from, to, TenantId, Status, Sort, limitInt, CancellationToken.None);
+        }
+        catch
+        {
+            _loadError = true;
+        }
+    }
+}
