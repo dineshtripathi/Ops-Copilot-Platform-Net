@@ -307,4 +307,98 @@ public class SafeActionsTelemetryTests
         telemetry.Verify(t => t.RecordExecutionAttempt("restart_pod", "t-1"), Times.Once);
         telemetry.Verify(t => t.RecordPolicyDenied("restart_pod", "t-1"), Times.Once);
     }
+
+    // ─── ProposeAsync — Proposed counter ──────────────────────────
+
+    [Fact]
+    public async Task ProposeAsync_Success_RecordsProposed()
+    {
+        var telemetry = new Mock<ISafeActionsTelemetry>();
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+
+        var record = CreateProposedRecord();
+        repo.Setup(r => r.CreateActionRecordAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+
+        var orchestrator = CreateOrchestrator(repo, telemetry);
+
+        await orchestrator.ProposeAsync("t-1", Guid.NewGuid(), "restart_pod", "{}", null, null);
+
+        telemetry.Verify(t => t.RecordProposed("restart_pod", "t-1"), Times.Once);
+    }
+
+    // ─── RequestRollbackAsync — Rollback requested counter ────────
+
+    [Fact]
+    public async Task RequestRollbackAsync_Success_RecordsRollbackRequested()
+    {
+        var telemetry = new Mock<ISafeActionsTelemetry>();
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+
+        var record = CreateProposedRecord();
+        record.Approve();
+        record.MarkExecuting();
+        record.CompleteExecution("{}", "{\"ok\":true}");
+
+        repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record);
+        repo.Setup(r => r.AppendExecutionLogAsync(
+                It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.SaveAsync(record, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var orchestrator = CreateOrchestrator(repo, telemetry);
+
+        await orchestrator.RequestRollbackAsync(record.ActionRecordId);
+
+        telemetry.Verify(t => t.RecordRollbackRequested("restart_pod", "t-1"), Times.Once);
+    }
+
+    // ─── ApproveAsync — Reason rejected counter ───────────────────
+
+    [Fact]
+    public async Task ApproveAsync_GenericReason_RecordsApprovalReasonRejected()
+    {
+        var telemetry = new Mock<ISafeActionsTelemetry>();
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+
+        var orchestrator = CreateOrchestrator(repo, telemetry);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => orchestrator.ApproveAsync(Guid.NewGuid(), "admin@ops.com", "lgtm"));
+
+        telemetry.Verify(t => t.RecordApprovalReasonRejected("approve"), Times.Once);
+    }
+
+    [Fact]
+    public async Task RejectAsync_GenericReason_RecordsApprovalReasonRejected()
+    {
+        var telemetry = new Mock<ISafeActionsTelemetry>();
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+
+        var orchestrator = CreateOrchestrator(repo, telemetry);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => orchestrator.RejectAsync(Guid.NewGuid(), "admin@ops.com", "lgtm"));
+
+        telemetry.Verify(t => t.RecordApprovalReasonRejected("reject"), Times.Once);
+    }
+
+    [Fact]
+    public async Task ApproveRollbackAsync_GenericReason_RecordsApprovalReasonRejected()
+    {
+        var telemetry = new Mock<ISafeActionsTelemetry>();
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+
+        var orchestrator = CreateOrchestrator(repo, telemetry);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => orchestrator.ApproveRollbackAsync(Guid.NewGuid(), "admin@ops.com", "lgtm"));
+
+        telemetry.Verify(t => t.RecordApprovalReasonRejected("rollback_approve"), Times.Once);
+    }
 }

@@ -110,6 +110,8 @@ public sealed class SafeActionOrchestrator
             tenantId, runId, actionType, proposedPayloadJson,
             rollbackPayloadJson, manualRollbackGuidance, ct);
 
+        _telemetry.RecordProposed(actionType, tenantId);
+
         _logger.LogInformation(
             "Action {ActionRecordId} proposed (type={ActionType}, rollback={RollbackStatus})",
             record.ActionRecordId, actionType, record.RollbackStatus);
@@ -125,7 +127,7 @@ public sealed class SafeActionOrchestrator
         string reason,
         CancellationToken ct = default)
     {
-        reason = ValidateAndNormalizeApprovalReason(reason);
+        reason = ValidateAndNormalizeApprovalReason(reason, "approve");
         var record = await GetRequiredAsync(actionRecordId, ct);
 
         record.Approve();
@@ -152,7 +154,7 @@ public sealed class SafeActionOrchestrator
         string reason,
         CancellationToken ct = default)
     {
-        reason = ValidateAndNormalizeApprovalReason(reason);
+        reason = ValidateAndNormalizeApprovalReason(reason, "reject");
         var record = await GetRequiredAsync(actionRecordId, ct);
 
         record.Reject();
@@ -334,6 +336,8 @@ public sealed class SafeActionOrchestrator
         await _repository.AppendExecutionLogAsync(auditLog, ct);
         await _repository.SaveAsync(record, ct);
 
+        _telemetry.RecordRollbackRequested(record.ActionType, record.TenantId);
+
         _logger.LogInformation(
             "Rollback requested for action {ActionRecordId}", actionRecordId);
 
@@ -346,7 +350,7 @@ public sealed class SafeActionOrchestrator
         string reason,
         CancellationToken ct = default)
     {
-        reason = ValidateAndNormalizeApprovalReason(reason);
+        reason = ValidateAndNormalizeApprovalReason(reason, "rollback_approve");
         var record = await GetRequiredAsync(actionRecordId, ct);
 
         record.ApproveRollback();
@@ -559,18 +563,27 @@ public sealed class SafeActionOrchestrator
            ?? throw new KeyNotFoundException(
                $"Action record {actionRecordId} not found.");
 
-    private static string ValidateAndNormalizeApprovalReason(string reason)
+    private string ValidateAndNormalizeApprovalReason(string reason, string operationKind)
     {
         var normalized = reason?.Trim() ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(normalized))
+        {
+            _telemetry.RecordApprovalReasonRejected(operationKind);
             throw new ArgumentException("Reason is required.", nameof(reason));
+        }
 
         if (normalized.Length > 512)
+        {
+            _telemetry.RecordApprovalReasonRejected(operationKind);
             throw new ArgumentException("Reason must be 512 characters or fewer.", nameof(reason));
+        }
 
         if (LowSignalReasons.Contains(normalized))
+        {
+            _telemetry.RecordApprovalReasonRejected(operationKind);
             throw new ArgumentException("Reason is too generic. Provide a specific approval rationale.", nameof(reason));
+        }
 
         return normalized;
     }
