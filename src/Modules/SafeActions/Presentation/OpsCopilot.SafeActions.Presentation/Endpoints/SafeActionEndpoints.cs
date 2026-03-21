@@ -240,6 +240,10 @@ public static class SafeActionEndpoints
             {
                 return Results.NotFound();
             }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.Conflict(ex.Message);
@@ -280,6 +284,10 @@ public static class SafeActionEndpoints
             catch (KeyNotFoundException)
             {
                 return Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
             }
             catch (InvalidOperationException ex)
             {
@@ -344,6 +352,10 @@ public static class SafeActionEndpoints
             catch (KeyNotFoundException)
             {
                 return Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
             }
             catch (InvalidOperationException ex)
             {

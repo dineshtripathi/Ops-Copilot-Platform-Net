@@ -252,6 +252,28 @@ public class SafeActionIdentityEndpointTests
     }
 
     [Fact]
+    public async Task Approve_Returns400_ForGenericReason()
+    {
+        var record = CreateProposedRecord();
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+        var identity = new ActorIdentityResult("claims-user-42", "claim", true);
+        var (app, client) = await CreateHostWithMockResolver(repo.Object, identity);
+        try
+        {
+            var response = await client.PostAsJsonAsync(
+                $"/safe-actions/{record.ActionRecordId}/approve",
+                new { Reason = "lgtm" });
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            repo.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+        finally
+        {
+            await DisposeHost(app);
+        }
+    }
+
+    [Fact]
     public async Task Reject_Returns200_WithHeaderFallback()
     {
         var record = CreateProposedRecord();

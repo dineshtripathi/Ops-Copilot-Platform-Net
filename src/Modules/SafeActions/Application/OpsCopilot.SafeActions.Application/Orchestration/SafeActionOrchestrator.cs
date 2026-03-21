@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpsCopilot.SafeActions.Application.Abstractions;
 using OpsCopilot.SafeActions.Domain;
@@ -16,6 +17,17 @@ namespace OpsCopilot.SafeActions.Application.Orchestration;
 /// </summary>
 public sealed class SafeActionOrchestrator
 {
+    private static readonly HashSet<string> LowSignalReasons = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ok",
+        "yes",
+        "approved",
+        "rejected",
+        "lgtm",
+        "test",
+        "n/a"
+    };
+
     private readonly IActionRecordRepository            _repository;
     private readonly IActionExecutor                    _executor;
     private readonly ISafeActionPolicy                  _policy;
@@ -113,6 +125,7 @@ public sealed class SafeActionOrchestrator
         string reason,
         CancellationToken ct = default)
     {
+        reason = ValidateAndNormalizeApprovalReason(reason);
         var record = await GetRequiredAsync(actionRecordId, ct);
 
         record.Approve();
@@ -139,6 +152,7 @@ public sealed class SafeActionOrchestrator
         string reason,
         CancellationToken ct = default)
     {
+        reason = ValidateAndNormalizeApprovalReason(reason);
         var record = await GetRequiredAsync(actionRecordId, ct);
 
         record.Reject();
@@ -298,7 +312,26 @@ public sealed class SafeActionOrchestrator
     {
         var record = await GetRequiredAsync(actionRecordId, ct);
 
+        var priorActionStatus = record.Status.ToString();
+        var priorRollbackStatus = record.RollbackStatus.ToString();
         record.RequestRollback();
+
+        var auditLog = ExecutionLog.Create(
+            actionRecordId,
+            "RollbackRequest",
+            JsonSerializer.Serialize(new
+            {
+                actionStatus = priorActionStatus,
+                rollbackStatus = priorRollbackStatus
+            }),
+            JsonSerializer.Serialize(new
+            {
+                rollbackStatus = record.RollbackStatus.ToString()
+            }),
+            "Success",
+            durationMs: 0);
+
+        await _repository.AppendExecutionLogAsync(auditLog, ct);
         await _repository.SaveAsync(record, ct);
 
         _logger.LogInformation(
@@ -313,6 +346,7 @@ public sealed class SafeActionOrchestrator
         string reason,
         CancellationToken ct = default)
     {
+        reason = ValidateAndNormalizeApprovalReason(reason);
         var record = await GetRequiredAsync(actionRecordId, ct);
 
         record.ApproveRollback();
@@ -322,6 +356,23 @@ public sealed class SafeActionOrchestrator
             ApprovalDecision.Approved, reason, "Rollback");
 
         await _repository.AppendApprovalAsync(approval, ct);
+
+        var auditLog = ExecutionLog.Create(
+            actionRecordId,
+            "RollbackApproval",
+            JsonSerializer.Serialize(new
+            {
+                actor = approverIdentity,
+                target = "Rollback"
+            }),
+            JsonSerializer.Serialize(new
+            {
+                rollbackStatus = record.RollbackStatus.ToString()
+            }),
+            "Success",
+            durationMs: 0);
+
+        await _repository.AppendExecutionLogAsync(auditLog, ct);
         await _repository.SaveAsync(record, ct);
 
         _logger.LogInformation(
@@ -507,4 +558,20 @@ public sealed class SafeActionOrchestrator
         => await _repository.GetByIdAsync(actionRecordId, ct)
            ?? throw new KeyNotFoundException(
                $"Action record {actionRecordId} not found.");
+
+    private static string ValidateAndNormalizeApprovalReason(string reason)
+    {
+        var normalized = reason?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(normalized))
+            throw new ArgumentException("Reason is required.", nameof(reason));
+
+        if (normalized.Length > 512)
+            throw new ArgumentException("Reason must be 512 characters or fewer.", nameof(reason));
+
+        if (LowSignalReasons.Contains(normalized))
+            throw new ArgumentException("Reason is too generic. Provide a specific approval rationale.", nameof(reason));
+
+        return normalized;
+    }
 }
