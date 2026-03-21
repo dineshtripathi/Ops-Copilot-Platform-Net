@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
+using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.BuildingBlocks.Contracts.Rag;
@@ -102,6 +103,7 @@ public sealed class TriageOrchestrator
         string? subscriptionId = null,
         string? resourceGroup  = null,
         Guid? sessionId = null,
+        RunContext? context = null,
         CancellationToken ct = default)
     {
         _log.LogInformation("Triage run starting for tenant {TenantId}, fingerprint {Fingerprint}",
@@ -179,7 +181,7 @@ public sealed class TriageOrchestrator
             sessionMessage = $"Created new session {session.SessionId}";
         }
 
-        var run = await _repo.CreateRunAsync(tenantId, alertFingerprint, session.SessionId, ct);
+        var run = await _repo.CreateRunAsync(tenantId, alertFingerprint, session.SessionId, context, ct);
 
         // ── Session lifecycle audit event ────────────────────────────
         await _repo.AppendPolicyEventAsync(
@@ -386,8 +388,12 @@ public sealed class TriageOrchestrator
         }
 
         // ── Deployment diff (partial degradation — failure here does NOT fail the run) ────────
+        // Prefer context fields (populated from alert payload) over the legacy named params.
+        var effectiveSubscriptionId = subscriptionId ?? context?.AzureSubscriptionId;
+        var effectiveResourceGroup  = resourceGroup  ?? context?.AzureResourceGroup;
+
         var deploymentDiffCitations = new List<DeploymentDiffCitation>();
-        if (_deploymentDiff is not null && subscriptionId is not null)
+        if (_deploymentDiff is not null && effectiveSubscriptionId is not null)
         {
             var ddAllowlist = _allowlist.CanUseTool(tenantId, DeploymentDiffToolName);
             await _repo.AppendPolicyEventAsync(
@@ -406,7 +412,7 @@ public sealed class TriageOrchestrator
                     var ddSw = Stopwatch.StartNew();
                     try
                     {
-                        var ddRequest  = new DeploymentDiffRequest(tenantId, subscriptionId, resourceGroup, timeRangeMinutes);
+                        var ddRequest  = new DeploymentDiffRequest(tenantId, effectiveSubscriptionId, effectiveResourceGroup, timeRangeMinutes);
                         var ddResponse = await _deploymentDiff.ExecuteAsync(ddRequest, ct);
                         ddSw.Stop();
 

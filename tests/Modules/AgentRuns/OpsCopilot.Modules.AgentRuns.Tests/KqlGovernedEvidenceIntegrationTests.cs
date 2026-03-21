@@ -5,6 +5,7 @@ using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Application.Acl;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
+using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using Xunit;
@@ -135,7 +136,7 @@ public sealed class KqlGovernedEvidenceIntegrationTests
     private static Mock<IAgentRunRepository> CreateHappyPathRepo(AgentRun agentRun)
     {
         var mock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
-        mock.Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        mock.Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         mock.Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);

@@ -7,6 +7,7 @@ using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
+using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
 using OpsCopilot.BuildingBlocks.Domain.Services;
 
@@ -18,6 +19,26 @@ public static class AgentRunEndpoints
     // Used to produce the stable string consumed by AlertFingerprintService.Compute().
     private static readonly JsonSerializerOptions BridgeJsonOpts =
         new(JsonSerializerDefaults.Web) { WriteIndented = false };
+
+    /// <summary>
+    /// Extracts subscription ID and resource group from an ARM resource ID string.
+    /// Format: /subscriptions/{sub}/resourceGroups/{rg}/providers/...
+    /// Returns (null, null) if the path is absent or malformed.
+    /// </summary>
+    private static (string? SubscriptionId, string? ResourceGroup) ParseArmResourceId(string? resourceId)
+    {
+        if (string.IsNullOrEmpty(resourceId)) return (null, null);
+        var parts = resourceId.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        string? sub = null, rg = null;
+        for (var i = 0; i < parts.Length - 1; i++)
+        {
+            if (parts[i].Equals("subscriptions", StringComparison.OrdinalIgnoreCase))
+                sub = parts[i + 1];
+            else if (parts[i].Equals("resourceGroups", StringComparison.OrdinalIgnoreCase))
+                rg = parts[i + 1];
+        }
+        return (sub, rg);
+    }
 
     public static IEndpointRouteBuilder MapAgentRunEndpoints(
         this IEndpointRouteBuilder app)
@@ -103,6 +124,17 @@ public static class AgentRunEndpoints
             var alertPayloadJson = JsonSerializer.Serialize(request.AlertPayload, BridgeJsonOpts);
             var fingerprint      = AlertFingerprintService.Compute(alertPayloadJson);
 
+            // ── Build run context from alert payload ─────────────────────────
+            var (parsedSubId, parsedRg) = ParseArmResourceId(request.AlertPayload.ResourceId);
+            var runContext = new RunContext(
+                AlertProvider:       request.AlertPayload.AlertSource,
+                AlertSourceType:     request.AlertPayload.SignalType,
+                AzureResourceId:     request.AlertPayload.ResourceId,
+                AzureApplication:    request.AlertPayload.ServiceName,
+                AzureWorkspaceId:    workspaceId,
+                AzureSubscriptionId: parsedSubId,
+                AzureResourceGroup:  parsedRg);
+
             // ── Orchestrate ─────────────────────────────────────────────────
             TriageResult result;
             try
@@ -116,6 +148,7 @@ public static class AgentRunEndpoints
                     subscriptionId:  null,
                     resourceGroup:   null,
                     sessionId:       request.SessionId,
+                    context:         runContext,
                     ct:              ct);
             }
             catch (SessionTenantMismatchException ex)

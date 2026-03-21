@@ -14,6 +14,7 @@ using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Application.Acl;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
+using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
 using OpsCopilot.AgentRuns.Presentation.Endpoints;
@@ -411,7 +412,7 @@ public sealed class TriageEvidenceIntegrationTests
 
         var repo = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repo.Setup(r => r.CreateRunAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repo.Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -540,7 +541,7 @@ public sealed class TriageEvidenceIntegrationTests
 
         var agentRun = AgentRun.Create(TenantId, "test-fingerprint");
         var repo = new Mock<IAgentRunRepository>(MockBehavior.Strict);
-        repo.Setup(r => r.CreateRunAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        repo.Setup(r => r.CreateRunAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repo.Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);

@@ -6,6 +6,7 @@ using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Application.Acl;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
+using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using Microsoft.Extensions.AI;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
@@ -40,7 +41,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
@@ -115,7 +116,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
@@ -183,7 +184,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
@@ -291,7 +292,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
@@ -372,7 +373,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
@@ -427,7 +428,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
@@ -485,7 +486,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
@@ -928,7 +929,7 @@ public sealed class TriageOrchestratorTests
     private static Mock<IAgentRunRepository> CreateHappyPathRepo(AgentRun agentRun)
     {
         var mock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
-        mock.Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        mock.Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         mock.Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -1650,6 +1651,67 @@ public sealed class TriageOrchestratorTests
         Assert.NotNull(result.SummaryJson);
         using var doc = System.Text.Json.JsonDocument.Parse(result.SummaryJson!);
         Assert.Equal(2, doc.RootElement.GetProperty("diffHits").GetInt32());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Slice 105: RunContext propagation
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_WithContext_ContextPassedToCreateRunAsync()
+    {
+        // Arrange
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var capturedContext = (RunContext?)null;
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        repoMock
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, Guid?, RunContext?, CancellationToken>((_, _, _, ctx, _) => capturedContext = ctx)
+            .ReturnsAsync(agentRun);
+        repoMock
+            .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(agentRun.RunId, It.IsAny<AgentRunStatus>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var context = new RunContext(
+            AlertProvider:    "AzureMonitor",
+            AlertSourceType:  "Metric",
+            AzureResourceId:  "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Web/sites/myapp",
+            AzureApplication: "myapp",
+            AzureWorkspaceId: WorkspaceId,
+            AzureSubscriptionId: "sub-1",
+            AzureResourceGroup:  "rg-prod");
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter());
+
+        // Act
+        await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes, context: context);
+
+        // Assert
+        Assert.NotNull(capturedContext);
+        Assert.Equal("AzureMonitor", capturedContext!.AlertProvider);
+        Assert.Equal("Metric",       capturedContext.AlertSourceType);
+        Assert.Equal("sub-1",        capturedContext.AzureSubscriptionId);
+        Assert.Equal("rg-prod",      capturedContext.AzureResourceGroup);
+        Assert.Equal("myapp",        capturedContext.AzureApplication);
+        Assert.Equal(WorkspaceId,    capturedContext.AzureWorkspaceId);
     }
 }
 
