@@ -1,0 +1,12 @@
+// Top exceptions in the last 30 minutes
+// Shows exception types, error messages, and frequency
+exceptions
+| where timestamp > ago(30m)
+| summarize 
+    Count = count(),
+    FirstSeen = min(timestamp),
+    LastSeen = max(timestamp),
+    SampleMessage = any(outerMessage)
+    by exceptionType, operation_Id
+| order by Count desc
+| take 20

@@ -1,0 +1,11 @@
+// Failed HTTP requests in the last 30 minutes
+// Shows correlation IDs for tracing, URLs, and response codes
+requests
+| where timestamp > ago(30m) and success == false
+| summarize 
+    Count = count(),
+    FirstSeen = min(timestamp),
+    LastSeen = max(timestamp)
+    by resultCode, url, operation_Id
+| order by Count desc
+| take 25

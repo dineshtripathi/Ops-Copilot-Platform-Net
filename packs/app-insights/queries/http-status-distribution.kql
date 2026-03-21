@@ -1,0 +1,15 @@
+// Distribution of HTTP status codes in the last 30 minutes
+// Reveals patterns (4xx vs 5xx vs 2xx)
+requests
+| where timestamp > ago(30m)
+| extend StatusFamily = case(
+    resultCode >= 500, "5xx",
+    resultCode >= 400, "4xx",
+    resultCode >= 300, "3xx",
+    resultCode >= 200, "2xx",
+    "Other")
+| summarize 
+    Count = count(),
+    Percentage = count() * 100.0 / toscalar(requests | where timestamp > ago(30m) | count())
+    by StatusFamily, resultCode
+| order by Count desc

@@ -1,0 +1,12 @@
+// Failed external dependencies in the last 30 minutes
+// Shows service failures for downstream services/databases
+dependencies
+| where timestamp > ago(30m) and success == false
+| summarize 
+    Count = count(),
+    FirstSeen = min(timestamp),
+    LastSeen = max(timestamp),
+    ResultCodes = make_set(resultCode, 10)
+    by type, target, operation_Id
+| order by Count desc
+| take 25

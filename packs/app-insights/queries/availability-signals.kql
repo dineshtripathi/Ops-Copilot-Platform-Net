@@ -1,0 +1,13 @@
+// Availability signals from Application Insights
+// Shows success rate and trends over the last 30 minutes
+requests
+| where timestamp > ago(30m)
+| summarize 
+    TotalRequests = count(),
+    SuccessfulRequests = sum(iff(success == true, 1, 0)),
+    FailedRequests = sum(iff(success == false, 1, 0)),
+    AvailabilityPercent = sum(iff(success == true, 1, 0)) * 100.0 / count(),
+    AvgResponseTime = avg(duration),
+    P99ResponseTime = percentile(duration, 99)
+    by bin(timestamp, 5m)
+| order by timestamp desc
