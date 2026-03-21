@@ -33,6 +33,34 @@ namespace OpsCopilot.AgentRuns.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("AlertProvider")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AlertSourceType")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AzureApplication")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("AzureResourceGroup")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("AzureResourceId")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("AzureSubscriptionId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AzureWorkspaceId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("CitationsJson")
                         .HasColumnType("nvarchar(max)");
 
@@ -47,6 +75,9 @@ namespace OpsCopilot.AgentRuns.Infrastructure.Persistence.Migrations
 
                     b.Property<int?>("InputTokens")
                         .HasColumnType("int");
+
+                    b.Property<bool>("IsExceptionSignal")
+                        .HasColumnType("bit");
 
                     b.Property<string>("ModelId")
                         .HasMaxLength(128)
@@ -90,6 +121,10 @@ namespace OpsCopilot.AgentRuns.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId");
 
                     b.HasIndex("TenantId", "CreatedAtUtc");
+
+                    b.HasIndex("TenantId", "AzureResourceGroup", "CreatedAtUtc");
+
+                    b.HasIndex("TenantId", "IsExceptionSignal", "CreatedAtUtc");
 
                     b.ToTable("AgentRuns", "agentRuns");
                 });

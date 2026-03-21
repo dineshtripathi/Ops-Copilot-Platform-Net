@@ -3074,6 +3074,99 @@ Content-Type: application/json
 }
 
 ### ================================================================
+### AU. Slice 104 — rollback/approve 400 on generic reason + telemetry
+### ================================================================
+###
+### Dev Slice 104: ValidateAndNormalizeApprovalReason now applied to
+###   rollback/approve. Low-signal reasons (ok, yes, lgtm, approved,
+###   rejected, test, n/a) must return 400. Meaningful reasons → 200.
+###   New telemetry counters: safeactions.proposal.recorded,
+###   safeactions.rollback.recorded, safeactions.approval.recorded.
+###
+### Test cases:
+###   AU1 — rollback/approve with generic reason "lgtm"      → 400
+###   AU2 — rollback/approve with generic reason "ok"        → 400
+###   AU3 — rollback/approve with empty reason               → 400
+###   AU4 — approve with generic reason "yes"                → 400
+###   AU5 — approve with generic reason "approved"           → 400
+###   AU6 — approve with meaningful reason (non-existent ID) → 404
+###
+### NOTE: AU1–AU5 use ID 00000000-0000-0000-0000-000000000099 (non-existent)
+###       but 400 validation fires BEFORE DB lookup, so 400 is returned.
+
+### AU1 · rollback/approve with "lgtm" (low-signal) → 400 Bad Request
+###       Expected: 400, body = "Reason is too generic. Provide a specific approval rationale."
+# @name rollbackApproveLgtm
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000099/rollback/approve
+x-tenant-id: tenant-slice-104
+x-actor-id: dev-operator-104
+Content-Type: application/json
+
+{
+  "reason": "lgtm"
+}
+
+### AU2 · rollback/approve with "ok" (low-signal) → 400 Bad Request
+###       Expected: 400
+# @name rollbackApproveOk
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000099/rollback/approve
+x-tenant-id: tenant-slice-104
+x-actor-id: dev-operator-104
+Content-Type: application/json
+
+{
+  "reason": "ok"
+}
+
+### AU3 · rollback/approve with empty reason → 400 Bad Request
+###       Expected: 400, body = "Reason is required."
+# @name rollbackApproveEmpty
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000099/rollback/approve
+x-tenant-id: tenant-slice-104
+x-actor-id: dev-operator-104
+Content-Type: application/json
+
+{
+  "reason": ""
+}
+
+### AU4 · approve with "yes" (low-signal) → 400 Bad Request
+###       Expected: 400
+# @name approveYes
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000099/approve
+x-tenant-id: tenant-slice-104
+x-actor-id: dev-operator-104
+Content-Type: application/json
+
+{
+  "reason": "yes"
+}
+
+### AU5 · approve with "approved" (low-signal) → 400 Bad Request
+###       Expected: 400
+# @name approveGeneric
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000099/approve
+x-tenant-id: tenant-slice-104
+x-actor-id: dev-operator-104
+Content-Type: application/json
+
+{
+  "reason": "approved"
+}
+
+### AU6 · approve with meaningful reason (non-existent ID) → 404
+###       Expected: 404 — validation passes, then record not found
+# @name approveMeaningfulReason404
+POST {{baseUrl}}/safe-actions/00000000-0000-0000-0000-000000000099/approve
+x-tenant-id: tenant-slice-104
+x-actor-id: dev-operator-104
+Content-Type: application/json
+
+{
+  "reason": "Validated by ops team — incident INC-7842, memory leak confirmed on prod-vm-01. Safe to restart service."
+}
+
+### ================================================================
 ### AT. Packs → SafeActions Record Creation  (Dev Slice 49)
 ### ================================================================
 ###
