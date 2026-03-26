@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpsCopilot.AgentRuns.Application.Extensions;
+using OpsCopilot.AgentRuns.Application.Options;
 using OpsCopilot.AgentRuns.Infrastructure.Extensions;
 using OpsCopilot.AgentRuns.Infrastructure.Persistence;
 
@@ -20,6 +21,8 @@ public static class AgentRunsPresentationExtensions
     {
         services.AddAgentRunsApplication();
         services.AddAgentRunsInfrastructure(configuration);
+        services.Configure<IdempotencyOptions>(
+            configuration.GetSection(IdempotencyOptions.SectionName));
         // Reserved for future presentation-layer registrations (e.g. request validators).
         return services;
     }

@@ -1,7 +1,5 @@
-using Azure.Identity;
-using Azure.Monitor.Query;
-using Azure.ResourceManager;
 using Microsoft.EntityFrameworkCore;
+using OpsCopilot.SafeActions.Infrastructure.McpClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -39,16 +37,12 @@ public static class SafeActionsInfrastructureExtensions
         // ── SSRF validator ──────────────────────────────────────────
         services.AddSingleton<TargetUriValidator>();
 
-        // ── Azure ARM reader (read-only, DefaultAzureCredential) ────
-        services.AddSingleton(_ =>
-        {
-            var tenantId = configuration["SafeActions:AzureTenantId"];
-            var options = string.IsNullOrWhiteSpace(tenantId)
-                ? new DefaultAzureCredentialOptions()
-                : new DefaultAzureCredentialOptions { TenantId = tenantId };
-            return new ArmClient(new DefaultAzureCredential(options));
-        });
-        services.AddSingleton<IAzureResourceReader, ArmResourceReader>();
+        // ── McpHost client (shares one child process across executors) ─
+        var mcpOptions = BuildMcpHostOptions(configuration);
+        services.AddSingleton(mcpOptions);
+        services.AddSingleton<SafeActionsMcpHostClient>();
+        services.AddSingleton<IAzureResourceReader, McpArmResourceReader>();
+        services.AddSingleton<IAzureMonitorLogsReader, McpBackedLogsReader>();
 
         // ── Executors ───────────────────────────────────────────────
         // Dry-run executor: deterministic, zero side-effects (Slice 8)
@@ -59,17 +53,6 @@ public static class SafeActionsInfrastructureExtensions
 
         // Azure resource GET executor: read-only ARM metadata (Slice 10)
         services.AddSingleton<AzureResourceGetActionExecutor>();
-
-        // Azure Monitor query client (read-only, DefaultAzureCredential)
-        services.AddSingleton(_ =>
-        {
-            var tenantId = configuration["SafeActions:AzureTenantId"];
-            var options = string.IsNullOrWhiteSpace(tenantId)
-                ? new DefaultAzureCredentialOptions()
-                : new DefaultAzureCredentialOptions { TenantId = tenantId };
-            return new LogsQueryClient(new DefaultAzureCredential(options));
-        });
-        services.AddSingleton<IAzureMonitorLogsReader, LogsQueryClientReader>();
 
         // Azure Monitor query executor: read-only KQL queries (Slice 11)
         services.AddSingleton<AzureMonitorQueryActionExecutor>();
@@ -121,5 +104,41 @@ public static class SafeActionsInfrastructureExtensions
         }
 
         return services;
+    }
+
+    private static McpHostOptions BuildMcpHostOptions(IConfiguration configuration)
+    {
+        // Config keys: McpKql:ServerCommand (or MCP_KQL_SERVER_COMMAND env var)
+        // McpKql:WorkDir (or MCP_KQL_SERVER_WORKDIR)
+        // McpKql:TimeoutSeconds (or MCP_KQL_TIMEOUT_SECONDS)
+        var serverCommand = configuration["McpKql:ServerCommand"]
+                         ?? configuration["MCP_KQL_SERVER_COMMAND"];
+
+        string   executable = "dotnet";
+        string[] arguments  = ["run", "--project", "src/Hosts/OpsCopilot.McpHost/OpsCopilot.McpHost.csproj"];
+
+        if (!string.IsNullOrWhiteSpace(serverCommand))
+        {
+            var parts = serverCommand.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+            executable = parts[0];
+            arguments  = parts.Length > 1
+                ? parts[1].Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                : [];
+        }
+
+        var workDir = configuration["McpKql:WorkDir"]
+                   ?? configuration["MCP_KQL_SERVER_WORKDIR"];
+
+        var timeoutRaw = configuration["McpKql:TimeoutSeconds"]
+                      ?? configuration["MCP_KQL_TIMEOUT_SECONDS"];
+        var timeout = int.TryParse(timeoutRaw, out var t) ? t : 30;
+
+        return new McpHostOptions
+        {
+            Executable       = executable,
+            Arguments        = arguments,
+            WorkingDirectory = workDir,
+            TimeoutSeconds   = timeout,
+        };
     }
 }

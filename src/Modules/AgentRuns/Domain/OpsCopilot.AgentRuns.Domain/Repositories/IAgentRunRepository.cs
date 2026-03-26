@@ -64,4 +64,34 @@ public interface IAgentRunRepository
         int      totalTokens,
         decimal  estimatedCost,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the most recent Pending or recently-Completed run for the given
+    /// (tenantId, alertFingerprint) within <paramref name="windowMinutes"/>.
+    /// Used by the idempotency guard to avoid duplicate triage runs for the same alert.
+    /// Returns <c>null</c> when no qualifying run exists.
+    /// </summary>
+    Task<AgentRun?> FindRecentRunAsync(
+        string tenantId,
+        string alertFingerprint,
+        int    windowMinutes,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Slice 123: Persists operator feedback for a completed run (INSERT-only).
+    /// Returns the new feedback record. Throws <see cref="InvalidOperationException"/>
+    /// when the runId does not exist or does not belong to tenantId.
+    /// </summary>
+    Task<AgentRunFeedback> SaveFeedbackAsync(
+        Guid    runId,
+        string  tenantId,
+        int     rating,
+        string? comment,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Slice 123: Returns true when at least one feedback record already exists
+    /// for the supplied runId, regardless of tenant.
+    /// </summary>
+    Task<bool> FeedbackExistsAsync(Guid runId, CancellationToken ct = default);
 }

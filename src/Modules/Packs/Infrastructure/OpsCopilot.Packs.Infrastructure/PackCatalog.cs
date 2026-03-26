@@ -68,7 +68,7 @@ internal sealed class PackCatalog : IPackCatalog
     public async Task<IReadOnlyList<PackRunbookSummary>?> GetRunbooksAsync(string name, CancellationToken cancellationToken = default)
     {
         var pack = await GetByNameAsync(name, cancellationToken);
-        return pack?.Manifest.Runbooks
+        return pack?.Manifest.Runbooks?
             .Select(r => new PackRunbookSummary(r.Id, r.File))
             .ToList()
             .AsReadOnly();
@@ -77,7 +77,7 @@ internal sealed class PackCatalog : IPackCatalog
     public async Task<IReadOnlyList<PackEvidenceCollectorSummary>?> GetEvidenceCollectorsAsync(string name, CancellationToken cancellationToken = default)
     {
         var pack = await GetByNameAsync(name, cancellationToken);
-        return pack?.Manifest.EvidenceCollectors
+        return pack?.Manifest.EvidenceCollectors?
             .Select(e => new PackEvidenceCollectorSummary(e.Id, e.RequiredMode, e.QueryFile))
             .ToList()
             .AsReadOnly();
@@ -86,7 +86,7 @@ internal sealed class PackCatalog : IPackCatalog
     public async Task<IReadOnlyList<PackSafeActionSummary>?> GetSafeActionsAsync(string name, CancellationToken cancellationToken = default)
     {
         var pack = await GetByNameAsync(name, cancellationToken);
-        return pack?.Manifest.SafeActions
+        return pack?.Manifest.SafeActions?
             .Select(s => new PackSafeActionSummary(s.Id, s.RequiresMode, s.DefinitionFile))
             .ToList()
             .AsReadOnly();
@@ -153,9 +153,9 @@ internal sealed class PackCatalog : IPackCatalog
         Description: pack.Manifest.Description,
         ResourceTypes: pack.Manifest.ResourceTypes,
         MinimumMode: pack.Manifest.MinimumMode,
-        EvidenceCollectorCount: pack.Manifest.EvidenceCollectors.Count,
-        RunbookCount: pack.Manifest.Runbooks.Count,
-        SafeActionCount: pack.Manifest.SafeActions.Count,
+        EvidenceCollectorCount: pack.Manifest.EvidenceCollectors?.Count ?? 0,
+        RunbookCount: pack.Manifest.Runbooks?.Count ?? 0,
+        SafeActionCount: pack.Manifest.SafeActions?.Count ?? 0,
         IsValid: pack.Validation.IsValid,
         Errors: pack.Validation.Errors,
         PackPath: pack.PackPath);

@@ -14,4 +14,10 @@ public sealed record DashboardOverviewResponse(
     IReadOnlyList<HotResourceRow>?       HotResources = null,
     BlastRadiusSummary?                  BlastRadius = null,
     ActivitySignalSummary?               ActivitySignals = null,
-    IReadOnlyList<DiagnosisHypothesis>?  TopDiagnosis = null);
+    IReadOnlyList<DiagnosisHypothesis>?  TopDiagnosis = null,
+    ObservabilityEvidenceSpotlight?      ObservabilitySpotlight = null,
+    ObservabilityEvidenceSummary?        LiveObservabilityEvidence = null,
+    LiveImpactEvidenceSummary?           LiveImpactEvidence = null,
+    TenantEstateSummary?                 TenantEstate = null,
+    TenantResourceInventory?             ResourceInventory = null,
+    DashboardDataFreshness?              DataFreshness = null);

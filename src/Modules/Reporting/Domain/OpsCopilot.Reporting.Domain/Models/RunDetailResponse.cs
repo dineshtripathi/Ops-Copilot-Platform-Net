@@ -37,6 +37,8 @@ public sealed record RunDetailResponse(
     ConnectivitySignals? ConnectivitySignals = null,
     // Slice 95: identity/auth failure signals — deterministic, no secrets/tokens in output
     AuthSignals? AuthSignals = null,
+    // Slice 107: governed App Insights / Azure Monitor evidence summary — safe summaries only
+    ObservabilityEvidenceSummary? ObservabilityEvidence = null,
     // Slice 97: governed proposal drafting — deterministic only, no LLM, recommendation-only
     IReadOnlyList<ProposedNextAction>? ProposedNextActions = null,
     // Slice 98: evidence quality assessment — deterministic only, no LLM, no raw payloads

@@ -42,7 +42,7 @@ public sealed class KqlGovernedEvidenceIntegrationTests
 
         var scopeEvaluator = new Mock<ITargetScopeEvaluator>(MockBehavior.Strict);
         scopeEvaluator
-            .Setup(x => x.Evaluate(TenantId, "LogAnalyticsWorkspace", WorkspaceId))
+            .Setup(x => x.Evaluate(TenantId, "log_analytics_workspace", WorkspaceId))
             .Returns(TargetScopeDecision.Allow());
 
         var sut = new TriageOrchestrator(
@@ -97,7 +97,7 @@ public sealed class KqlGovernedEvidenceIntegrationTests
 
         var scopeEvaluator = new Mock<ITargetScopeEvaluator>(MockBehavior.Strict);
         scopeEvaluator
-            .Setup(x => x.Evaluate(TenantId, "LogAnalyticsWorkspace", WorkspaceId))
+            .Setup(x => x.Evaluate(TenantId, "log_analytics_workspace", WorkspaceId))
             .Returns(TargetScopeDecision.Deny("WORKSPACE_NOT_ALLOWED",
                 $"Workspace '{WorkspaceId}' is not in the tenant's approved workspace list."));
 

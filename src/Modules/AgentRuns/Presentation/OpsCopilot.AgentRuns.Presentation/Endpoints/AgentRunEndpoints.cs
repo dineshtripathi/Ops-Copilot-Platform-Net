@@ -5,19 +5,18 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
+using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
 using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
-using OpsCopilot.BuildingBlocks.Domain.Services;
 
 namespace OpsCopilot.AgentRuns.Presentation.Endpoints;
 
 public static class AgentRunEndpoints
 {
-    // Compact serializer for the compatibility bridge: AlertPayloadDto → JSON string.
-    // Used to produce the stable string consumed by AlertFingerprintService.Compute().
-    private static readonly JsonSerializerOptions BridgeJsonOpts =
+    // Compact serializer for SSE streaming output (error and response events).
+    private static readonly JsonSerializerOptions SseJsonOpts =
         new(JsonSerializerDefaults.Web) { WriteIndented = false };
 
     /// <summary>
@@ -116,13 +115,10 @@ public static class AgentRunEndpoints
                     ["WorkspaceId"] = [$"'{workspaceId}' is not a valid GUID."],
                 });
 
-            // ── Compatibility bridge ────────────────────────────────────────
-            // The application layer (AlertFingerprintService) currently expects
-            // a raw JSON string. Serialize the typed DTO to compact JSON here so
-            // no application-layer contract changes are needed in this slice.
-            // TODO: remove this bridge when TriageOrchestrator accepts AlertPayloadDto directly.
-            var alertPayloadJson = JsonSerializer.Serialize(request.AlertPayload, BridgeJsonOpts);
-            var fingerprint      = AlertFingerprintService.Compute(alertPayloadJson);
+            // ── Fingerprint ─────────────────────────────────────────────────
+            // Use the caller-supplied fingerprint from the alert payload.
+            // The source system embeds this to correlate repeated firings.
+            var fingerprint = request.AlertPayload.Fingerprint;
 
             // ── Build run context from alert payload ─────────────────────────
             var (parsedSubId, parsedRg) = ParseArmResourceId(request.AlertPayload.ResourceId);
@@ -273,7 +269,9 @@ public static class AgentRunEndpoints
                 InputTokens:                 result.InputTokens,
                 OutputTokens:                result.OutputTokens,
                 TotalTokens:                 result.TotalTokens,
-                EstimatedCost:               result.EstimatedCost));
+                EstimatedCost:               result.EstimatedCost,
+                LlmNarrative:                result.LlmNarrative,
+                WasDeduplicated:             result.WasDeduplicated));
         })
         .WithName("PostTriage")
         .WithTags("AgentRuns")
@@ -281,6 +279,257 @@ public static class AgentRunEndpoints
         .Produces<TriageResponse>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        // POST /agent/chat
+        // Header  (required): x-tenant-id
+        // Body    (JSON)     : ChatRequest { Query }
+        //
+        // Returns a grounded answer from incident memory + runbook search.
+        app.MapPost("/agent/chat", async (
+            HttpContext         httpContext,
+            ChatRequest         request,
+            ChatOrchestrator    chatOrchestrator,
+            CancellationToken   ct) =>
+        {
+            var tenantId = httpContext.Request.Headers["x-tenant-id"].FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(tenantId))
+                return Results.Problem(
+                    detail: "The x-tenant-id header is required.",
+                    statusCode: StatusCodes.Status400BadRequest);
+
+            if (string.IsNullOrWhiteSpace(request?.Query))
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]>
+                    {
+                        ["Query"] = ["Query is required and must not be empty."]
+                    });
+
+            var result = await chatOrchestrator.ChatAsync(tenantId, request.Query, ct);
+
+            var memoryCitations = result.MemoryCitations
+                .Select(m => new MemoryCitationDto(
+                    m.RunId, m.AlertFingerprint, m.SummarySnippet,
+                    m.Score, m.CreatedAtUtc))
+                .ToList();
+
+            var runbookCitations = result.RunbookCitations
+                .Select(r => new RunbookCitationDto(r.RunbookId, r.Title, r.Snippet, r.Score))
+                .ToList();
+
+            return Results.Ok(new ChatResponse(result.Answer, memoryCitations, runbookCitations));
+        })
+        .WithName("PostChat")
+        .WithTags("AgentRuns")
+        .Accepts<ChatRequest>("application/json")
+        .Produces<ChatResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest);
+
+        // POST /agent/triage/stream
+        // Same contract as POST /agent/triage but uses Server-Sent Events.
+        // Immediately yields {"event":"started"} so the client knows the server is alive,
+        // then {"event":"completed","response":{...}} when orchestration finishes.
+        app.MapPost("/agent/triage/stream", async (
+            HttpContext              httpContext,
+            TriageRequest            request,
+            TriageOrchestrator       orchestrator,
+            IPackTriageEnricher      packTriageEnricher,
+            IPackEvidenceExecutor    packEvidenceExecutor,
+            IPackSafeActionProposer  packSafeActionProposer,
+            IPackSafeActionRecorder  packSafeActionRecorder,
+            IConfiguration           config,
+            CancellationToken        ct) =>
+        {
+            // ── Header validation ────────────────────────────────────────────
+            var tenantId = httpContext.Request.Headers["x-tenant-id"].FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(tenantId))
+                return Results.Problem(
+                    detail:     "The 'x-tenant-id' header is required.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title:      "Missing required header");
+
+            if (request.AlertPayload is null)
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["AlertPayload"] = ["AlertPayload is required."],
+                });
+
+            var streamErrors = new Dictionary<string, string[]>();
+            if (string.IsNullOrWhiteSpace(request.AlertPayload.AlertSource))
+                streamErrors["AlertPayload.AlertSource"] =
+                    ["AlertSource is required and must not be empty or whitespace."];
+            if (string.IsNullOrWhiteSpace(request.AlertPayload.Fingerprint))
+                streamErrors["AlertPayload.Fingerprint"] =
+                    ["Fingerprint is required and must not be empty or whitespace."];
+            if (request.TimeRangeMinutes is < 1 or > 1440)
+                streamErrors["TimeRangeMinutes"] =
+                    ["TimeRangeMinutes must be between 1 and 1440 (24 hours)."];
+            if (streamErrors.Count > 0)
+                return Results.ValidationProblem(streamErrors);
+
+            var streamWorkspaceId = !string.IsNullOrWhiteSpace(request.WorkspaceId)
+                ? request.WorkspaceId
+                : config["WORKSPACE_ID"];
+            if (string.IsNullOrWhiteSpace(streamWorkspaceId))
+                return Results.Problem(
+                    detail:     "Supply 'workspaceId' in the request body or set the WORKSPACE_ID "
+                              + "environment variable / config entry.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title:      "Missing WorkspaceId");
+            if (!Guid.TryParse(streamWorkspaceId, out _))
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["WorkspaceId"] = [$"'{streamWorkspaceId}' is not a valid GUID."],
+                });
+
+            var streamFingerprint = request.AlertPayload.Fingerprint;
+
+            var (streamSubId, streamRg) = ParseArmResourceId(request.AlertPayload.ResourceId);
+            var streamRunContext = new RunContext(
+                AlertProvider:       request.AlertPayload.AlertSource,
+                AlertSourceType:     request.AlertPayload.SignalType,
+                AzureResourceId:     request.AlertPayload.ResourceId,
+                AzureApplication:    request.AlertPayload.ServiceName,
+                AzureWorkspaceId:    streamWorkspaceId,
+                AzureSubscriptionId: streamSubId,
+                AzureResourceGroup:  streamRg);
+
+            // ── Begin SSE response ───────────────────────────────────────────
+            httpContext.Response.StatusCode  = StatusCodes.Status200OK;
+            httpContext.Response.ContentType = "text/event-stream";
+            httpContext.Response.Headers["Cache-Control"]     = "no-cache";
+            httpContext.Response.Headers["X-Accel-Buffering"] = "no";
+
+            await httpContext.Response.WriteAsync("data: {\"event\":\"started\"}\n\n", ct);
+            await httpContext.Response.Body.FlushAsync(ct);
+
+            // ── Orchestrate ──────────────────────────────────────────────────
+            TriageResult streamResult;
+            try
+            {
+                streamResult = await orchestrator.RunAsync(
+                    tenantId, streamFingerprint, streamWorkspaceId, request.TimeRangeMinutes,
+                    alertTitle:     request.AlertPayload.Title,
+                    subscriptionId: null,
+                    resourceGroup:  null,
+                    sessionId:      request.SessionId,
+                    context:        streamRunContext,
+                    ct:             ct);
+            }
+            catch (SessionTenantMismatchException ex)
+            {
+                var errMsg = JsonSerializer.Serialize(ex.Message, SseJsonOpts);
+                await httpContext.Response.WriteAsync(
+                    $"data: {{\"event\":\"error\",\"message\":{errMsg}}}\n\n", ct);
+                await httpContext.Response.WriteAsync("data: [DONE]\n\n", ct);
+                await httpContext.Response.Body.FlushAsync(ct);
+                return Results.Empty;
+            }
+
+            // ── Build full response (same shape as PostTriage) ───────────────
+            var streamCitations = streamResult.Citations
+                .Select(c => new CitationDto(c.WorkspaceId, c.ExecutedQuery, c.Timespan, c.ExecutedAtUtc))
+                .ToList();
+            var streamRunbookCitations = streamResult.RunbookCitations
+                .Select(c => new RunbookCitationDto(c.RunbookId, c.Title, c.Snippet, c.Score))
+                .ToList();
+
+            var streamDeploymentMode = config["Packs:DeploymentMode"] ?? "A";
+            var streamPackEnrichment = await packTriageEnricher.EnrichAsync(ct);
+            var streamEvidenceResult = await packEvidenceExecutor.ExecuteAsync(
+                new PackEvidenceExecutionRequest(streamDeploymentMode, tenantId), ct);
+            var streamProposalResult = await packSafeActionProposer.ProposeAsync(
+                new PackSafeActionProposalRequest(streamDeploymentMode, tenantId), ct);
+
+            var streamPackRunbooks = streamPackEnrichment.PackRunbooks
+                .Select(r => new PackRunbookDto(r.PackName, r.RunbookId, r.File, r.ContentSnippet))
+                .ToList();
+            var streamPackEvidenceCollectors = streamPackEnrichment.PackEvidenceCollectors
+                .Select(e => new PackEvidenceCollectorDto(
+                    e.PackName, e.EvidenceCollectorId, e.RequiredMode, e.QueryFile, e.KqlContent))
+                .ToList();
+            var streamPackEvidenceResults = streamEvidenceResult.EvidenceItems
+                .Select(e => new PackEvidenceResultDto(
+                    e.PackName, e.CollectorId, e.ConnectorName,
+                    e.QueryFile, e.QueryContent, e.ResultJson, e.RowCount, e.ErrorMessage))
+                .ToList();
+            var streamPackSafeActionProposals = streamProposalResult.Proposals
+                .Select(p => new PackSafeActionProposalDto(
+                    p.PackName, p.ActionId, p.DisplayName, p.ActionType,
+                    p.RequiresMode, p.DefinitionFile, p.ParametersJson,
+                    p.ErrorMessage, p.IsExecutableNow, p.ExecutionBlockedReason,
+                    p.GovernanceAllowed, p.GovernanceReasonCode, p.GovernanceMessage,
+                    p.ScopeAllowed, p.ScopeReasonCode, p.ScopeMessage,
+                    p.DefinitionValidationErrorCode, p.DefinitionValidationMessage,
+                    p.OperatorPreview))
+                .ToList();
+
+            var streamRecordResult = await packSafeActionRecorder.RecordAsync(
+                new PackSafeActionRecordRequest(
+                    streamDeploymentMode, tenantId, streamResult.RunId, streamProposalResult.Proposals),
+                ct);
+
+            PackSafeActionRecordSummaryDto? streamRecordSummary =
+                streamRecordResult.Records.Count > 0
+                    ? new PackSafeActionRecordSummaryDto(
+                        streamRecordResult.Records
+                            .Select(r => new PackSafeActionRecordItemDto(
+                                r.PackName, r.ActionId, r.ActionType,
+                                r.ActionRecordId, r.Status, r.ErrorMessage, r.PolicyDenialReasonCode))
+                            .ToList(),
+                        streamRecordResult.CreatedCount,
+                        streamRecordResult.SkippedCount,
+                        streamRecordResult.FailedCount,
+                        streamRecordResult.Errors)
+                    : null;
+
+            JsonElement? streamSummary = null;
+            if (streamResult.SummaryJson is not null)
+            {
+                using var doc = JsonDocument.Parse(streamResult.SummaryJson);
+                streamSummary = doc.RootElement.Clone();
+            }
+
+            var streamResponse = new TriageResponse(
+                streamResult.RunId,
+                streamResult.Status.ToString(),
+                streamSummary,
+                streamCitations,
+                streamRunbookCitations,
+                streamResult.SessionId,
+                streamResult.IsNewSession,
+                streamResult.SessionExpiresAtUtc,
+                streamResult.UsedSessionContext,
+                SessionReasonCode:           streamResult.SessionReasonCode,
+                PackRunbooks:                streamPackRunbooks,
+                PackEvidenceCollectors:      streamPackEvidenceCollectors,
+                PackErrors:                  streamPackEnrichment.PackErrors.Count > 0
+                    ? streamPackEnrichment.PackErrors : null,
+                PackEvidenceResults:         streamPackEvidenceResults.Count > 0
+                    ? streamPackEvidenceResults : null,
+                PackSafeActionProposals:     streamPackSafeActionProposals.Count > 0
+                    ? streamPackSafeActionProposals : null,
+                PackSafeActionRecordSummary: streamRecordSummary,
+                ModelId:                     streamResult.ModelId,
+                PromptVersionId:             streamResult.PromptVersionId,
+                InputTokens:                 streamResult.InputTokens,
+                OutputTokens:                streamResult.OutputTokens,
+                TotalTokens:                 streamResult.TotalTokens,
+                EstimatedCost:               streamResult.EstimatedCost,
+                LlmNarrative:                streamResult.LlmNarrative,
+                WasDeduplicated:             streamResult.WasDeduplicated);
+
+            var responseJson = JsonSerializer.Serialize(streamResponse, SseJsonOpts);
+            await httpContext.Response.WriteAsync(
+                $"data: {{\"event\":\"completed\",\"response\":{responseJson}}}\n\n", ct);
+            await httpContext.Response.WriteAsync("data: [DONE]\n\n", ct);
+            await httpContext.Response.Body.FlushAsync(ct);
+
+            return Results.Empty;
+        })
+        .WithName("PostTriageStream")
+        .WithTags("AgentRuns")
+        .Accepts<TriageRequest>("application/json")
+        .ProducesProblem(StatusCodes.Status400BadRequest);
 
         return app;
     }
@@ -337,6 +586,90 @@ public static class AgentRunEndpoints
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status403Forbidden)
         .ProducesProblem(StatusCodes.Status404NotFound);
+
+        return app;
+    }
+
+    public static IEndpointRouteBuilder MapFeedbackEndpoints(
+        this IEndpointRouteBuilder app)
+    {
+        // POST /agent/runs/{runId}/feedback
+        // Header  (required): x-tenant-id
+        // Body    (JSON)     : SubmitFeedbackRequest { Rating, Comment? }
+        //
+        // Validation:
+        //   • x-tenant-id header present and non-empty
+        //   • runId must be a valid Guid (enforced by route constraint)
+        //   • Rating must be 1–5
+        //   • Run must exist and belong to the tenant (404 / 403)
+        //   • Only one feedback allowed per run (409 Conflict)
+        app.MapPost("/agent/runs/{runId:guid}/feedback", async (
+            Guid                    runId,
+            HttpContext             httpContext,
+            SubmitFeedbackRequest   request,
+            IAgentRunRepository     runRepository,
+            CancellationToken       ct) =>
+        {
+            // ── Header validation ────────────────────────────────────────────
+            var tenantId = httpContext.Request.Headers["x-tenant-id"].FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(tenantId))
+                return Results.Problem(
+                    detail:     "The 'x-tenant-id' header is required.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title:      "Missing required header");
+
+            // ── Body validation ──────────────────────────────────────────────
+            if (request.Rating is < 1 or > 5)
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["Rating"] = ["Rating must be between 1 (poor) and 5 (excellent)."],
+                });
+
+            // ── Duplicate check ──────────────────────────────────────────────
+            if (await runRepository.FeedbackExistsAsync(runId, ct))
+                return Results.Problem(
+                    detail:     $"Feedback for run {runId} has already been submitted.",
+                    statusCode: StatusCodes.Status409Conflict,
+                    title:      "Feedback already exists");
+
+            // ── Persist ──────────────────────────────────────────────────────
+            AgentRunFeedback feedback;
+            try
+            {
+                feedback = await runRepository.SaveFeedbackAsync(
+                    runId, tenantId, request.Rating, request.Comment, ct);
+            }
+            catch (InvalidOperationException ex)
+                when (ex.Message.Contains("not found"))
+            {
+                return Results.NotFound(new { detail = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+                when (ex.Message.Contains("does not belong"))
+            {
+                return Results.Problem(
+                    detail:     ex.Message,
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title:      "Run tenant mismatch");
+            }
+
+            return Results.Created(
+                $"/agent/runs/{runId}/feedback",
+                new RunFeedbackResponse(
+                    feedback.FeedbackId,
+                    feedback.RunId,
+                    feedback.Rating,
+                    feedback.Comment,
+                    feedback.SubmittedAtUtc));
+        })
+        .WithName("PostRunFeedback")
+        .WithTags("AgentRuns")
+        .Accepts<SubmitFeedbackRequest>("application/json")
+        .Produces<RunFeedbackResponse>(StatusCodes.Status201Created)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict);
 
         return app;
     }

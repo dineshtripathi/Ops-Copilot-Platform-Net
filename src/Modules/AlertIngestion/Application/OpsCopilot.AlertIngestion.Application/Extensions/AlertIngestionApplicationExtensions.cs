@@ -20,6 +20,9 @@ public static class AlertIngestionApplicationExtensions
         // Router (depends on IEnumerable<IAlertNormalizer>)
         services.AddSingleton<AlertNormalizerRouter>();
 
+        // Dispatch port — no-op by default; replace at composition root for real dispatch.
+        services.AddSingleton<IAlertTriageDispatcher, NullAlertTriageDispatcher>();
+
         // Command handler
         services.AddScoped<IngestAlertCommandHandler>();
 

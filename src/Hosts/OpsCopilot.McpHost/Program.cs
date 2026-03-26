@@ -1,4 +1,5 @@
-﻿using Azure.Core;
+﻿using System.Runtime.InteropServices;
+using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.Query;
 using Azure.ResourceManager;
@@ -26,6 +27,25 @@ using OpsCopilot.Rag.Presentation.Extensions;
 //
 // See docs/local-dev-auth.md for full troubleshooting.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── Win32 stdin handle non-inheritance guard ──────────────────────────────────
+// Azure.Identity's AzureCliCredential (and AzurePowerShellCredential) spawn child
+// processes WITHOUT redirecting stdin, so they would inherit McpHost's stdin
+// handle — the live MCP protocol pipe.  The .NET MCP SDK reads that same handle
+// concurrently (reading ahead for the next JSON-RPC message while a tool runs),
+// so az.exe / pwsh.exe race the SDK for MCP data instead of receiving nothing or
+// a clean EOF, causing Python / pwsh to block indefinitely.
+//
+// Fix: mark the Win32 STDIN handle non-inheritable right at process start.
+// This does NOT affect McpHost's own Console.In reading — the handle stays open
+// and fully usable for the MCP SDK.  Only new child processes will no longer
+// inherit it.  On non-Windows this is a no-op.
+if (OperatingSystem.IsWindows())
+{
+    var hIn = Win32Stdin.GetStdHandle(Win32Stdin.StdInputHandle);
+    if (hIn != IntPtr.Zero && hIn != Win32Stdin.InvalidHandleValue)
+        Win32Stdin.SetHandleInformation(hIn, Win32Stdin.HandleFlagInherit, 0);
+}
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -213,39 +233,50 @@ builder.Services
 startupLogger.LogInformation("[Startup] MCP server configured — stdio transport, tools from assembly");
 
 // ── Development-only auth probe ─────────────────────────────────────────────
-// Attempt to acquire a real token before the MCP wire starts. This surfaces
+// Attempt to acquire real tokens before the MCP wire starts. This surfaces
 // credential problems (expired `az login`, wrong tenant, missing CLI) as a
 // clear log message instead of a cryptic MCP tool-call failure later.
+// Probing both scopes here also pre-warms the MSAL token cache so that
+// concurrent tool calls (KQL + list_subscriptions) do not race on the
+// first `az account get-access-token` invocation and hit cache-lock contention.
 if (isDevelopment)
 {
-    const string logAnalyticsScope = "https://api.loganalytics.io/.default";
-    try
-    {
-        startupLogger.LogInformation("[Auth-Probe] Acquiring token for {Scope} …", logAnalyticsScope);
-        var tokenResult = await credential.GetTokenAsync(
-            new TokenRequestContext(new[] { logAnalyticsScope }),
-            CancellationToken.None);
+    string[] probedScopes =
+    [
+        "https://api.loganalytics.io/.default",
+        "https://management.azure.com/.default",
+    ];
 
-        startupLogger.LogInformation(
-            "[Auth-Probe] ✔ Token acquired — expires {ExpiresOn:u}",
-            tokenResult.ExpiresOn);
-    }
-    catch (AuthenticationFailedException ex)
+    foreach (var scope in probedScopes)
     {
-        startupLogger.LogError(
-            ex,
-            "[Auth-Probe] ✘ Failed to acquire a token for {Scope}.  " +
-            "Ensure you are logged in:  az login --tenant <tenant-id>  or  " +
-            "Connect-AzAccount -TenantId <tenant-id>",
-            logAnalyticsScope);
-    }
-    catch (Exception ex)
-    {
-        startupLogger.LogWarning(
-            ex,
-            "[Auth-Probe] ✘ Unexpected error during probe for {Scope}. " +
-            "The MCP server will still start, but KQL tool calls may fail.",
-            logAnalyticsScope);
+        try
+        {
+            startupLogger.LogInformation("[Auth-Probe] Acquiring token for {Scope} …", scope);
+            var tokenResult = await credential.GetTokenAsync(
+                new TokenRequestContext(new[] { scope }),
+                CancellationToken.None);
+
+            startupLogger.LogInformation(
+                "[Auth-Probe] ✔ Token acquired for {Scope} — expires {ExpiresOn:u}",
+                scope, tokenResult.ExpiresOn);
+        }
+        catch (AuthenticationFailedException ex)
+        {
+            startupLogger.LogError(
+                ex,
+                "[Auth-Probe] ✘ Failed to acquire a token for {Scope}.  " +
+                "Ensure you are logged in:  az login --tenant <tenant-id>  or  " +
+                "Connect-AzAccount -TenantId <tenant-id>",
+                scope);
+        }
+        catch (Exception ex)
+        {
+            startupLogger.LogWarning(
+                ex,
+                "[Auth-Probe] ✘ Unexpected error during probe for {Scope}. " +
+                "The MCP server will still start, but tool calls may fail.",
+                scope);
+        }
     }
 }
 
@@ -280,6 +311,22 @@ static int ReadInt(string? raw, int defaultValue)
 /// <see cref="CredentialUnavailableException"/>, allowing
 /// <see cref="ChainedTokenCredential"/> to try the next credential.
 /// </summary>
+// ── Win32 P/Invoke helpers (stdin handle non-inheritance) ───────────────────
+file static class Win32Stdin
+{
+    internal const int  StdInputHandle     = -10;
+    internal const uint HandleFlagInherit  = 0x00000001;
+    internal static readonly IntPtr InvalidHandleValue = new IntPtr(-1);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern IntPtr GetStdHandle(int nStdHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetHandleInformation(
+        IntPtr hObject, uint dwMask, uint dwFlags);
+}
+
 internal sealed class ResilientCredential : TokenCredential
 {
     private readonly string          _name;

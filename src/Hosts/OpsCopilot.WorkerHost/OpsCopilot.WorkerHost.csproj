@@ -13,6 +13,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Modules\Packs\Infrastructure\OpsCopilot.Packs.Infrastructure\OpsCopilot.Packs.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Packs\Presentation\OpsCopilot.Packs.Presentation\OpsCopilot.Packs.Presentation.csproj" />
+    <ProjectReference Include="..\..\Modules\Connectors\Infrastructure\OpsCopilot.Connectors.Infrastructure\OpsCopilot.Connectors.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

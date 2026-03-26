@@ -1,12 +1,12 @@
 // Failed external dependencies in the last 30 minutes
-// Shows service failures for downstream services/databases
-dependencies
-| where timestamp > ago(30m) and success == false
-| summarize 
+// Workspace schema: AppDependencies
+AppDependencies
+| where TimeGenerated > ago(2d) and Success == false
+| summarize
     Count = count(),
-    FirstSeen = min(timestamp),
-    LastSeen = max(timestamp),
-    ResultCodes = make_set(resultCode, 10)
-    by type, target, operation_Id
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated),
+    ResultCodes = make_set(tostring(ResultCode), 10)
+    by type = tostring(DependencyType), target = tostring(Target)
 | order by Count desc
 | take 25

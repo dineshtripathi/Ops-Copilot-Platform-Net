@@ -1,9 +1,14 @@
+using Azure;
+using Azure.AI.OpenAI;
+using Azure.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Repositories;
+using OpsCopilot.AgentRuns.Infrastructure.AI;
 using OpsCopilot.AgentRuns.Infrastructure.McpClient;
 using OpsCopilot.AgentRuns.Infrastructure.Memory;
 using OpsCopilot.AgentRuns.Infrastructure.Persistence;
@@ -68,7 +73,7 @@ public static class AgentRunsInfrastructureExtensions
         services.AddScoped<IAgentRunRepository, SqlAgentRunRepository>();
         services.AddScoped<BuildingBlocks.Contracts.AgentRuns.IAgentRunCreator, Adapters.AgentRunCreatorAdapter>();
         services.AddScoped<IModelRoutingPolicy,   TenantConfigModelRoutingPolicy>();
-        services.AddScoped<IPromptVersionService, ConfigPromptVersionService>();
+        // IPromptVersionService is registered by AddPromptingModule (Prompting.Infrastructure)
 
         // ── Session store (config-driven: InMemory or Redis) ──────────────
         // Provider selection: AgentRuns:SessionStore:Provider
@@ -115,7 +120,50 @@ public static class AgentRunsInfrastructureExtensions
         if (bool.TryParse(configuration["AgentRuns:IncidentRecall:Enabled"], out var incidentRecallEnabled) && incidentRecallEnabled)
         {
             services.AddSingleton<IIncidentMemoryService, RagBackedIncidentMemoryService>();
+            // Override the null indexer registered in AddAgentRunsApplication so
+            // completed runs are indexed into vector memory when recall is enabled.
+            services.AddSingleton<IIncidentMemoryIndexer, RagBackedIncidentMemoryIndexer>();
         }
+
+        // ── LLM / IChatClient (config-driven, optional) ───────────────────────
+        // AI:Provider = "AzureOpenAI"  → Azure OpenAI / AI Foundry, Managed Identity or API key
+        // AI:Provider = "GitHubModels" → GitHub Models endpoint, GITHUB_TOKEN / User Secret
+        // AI:Provider = "" or absent   → skip; IChatClient stays unregistered → graceful degradation
+        var llmOpts = configuration.GetSection("AI").Get<LlmOptions>() ?? new LlmOptions();
+
+        if (string.Equals(llmOpts.Provider, "AzureOpenAI", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(llmOpts.AzureOpenAI.Endpoint))
+                throw new InvalidOperationException(
+                    "AI:AzureOpenAI:Endpoint is required when AI:Provider is 'AzureOpenAI'. " +
+                    "Set this value in appsettings.json, User Secrets, or Key Vault.");
+
+            AzureOpenAIClient aoaiRaw = string.IsNullOrWhiteSpace(llmOpts.AzureOpenAI.ApiKey)
+                ? new AzureOpenAIClient(new Uri(llmOpts.AzureOpenAI.Endpoint), new DefaultAzureCredential())
+                : new AzureOpenAIClient(new Uri(llmOpts.AzureOpenAI.Endpoint), new AzureKeyCredential(llmOpts.AzureOpenAI.ApiKey));
+
+            services.AddSingleton<IChatClient>(
+                aoaiRaw.GetChatClient(llmOpts.AzureOpenAI.DeploymentName).AsIChatClient());
+        }
+        else if (string.Equals(llmOpts.Provider, "GitHubModels", StringComparison.OrdinalIgnoreCase))
+        {
+            var token = string.IsNullOrWhiteSpace(llmOpts.GitHubModels.Token)
+                ? Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? ""
+                : llmOpts.GitHubModels.Token;
+
+            if (string.IsNullOrWhiteSpace(token))
+                throw new InvalidOperationException(
+                    "GitHub token is not configured for AI:Provider 'GitHubModels'. " +
+                    "Set 'AI:GitHubModels:Token' via User Secrets, or set the 'GITHUB_TOKEN' environment variable.");
+
+            var ghRaw = new AzureOpenAIClient(
+                new Uri(llmOpts.GitHubModels.Endpoint),
+                new AzureKeyCredential(token));
+
+            services.AddSingleton<IChatClient>(
+                ghRaw.GetChatClient(llmOpts.GitHubModels.ModelId).AsIChatClient());
+        }
+        // else: no provider — IChatClient unregistered; orchestrators degrade gracefully
 
         return services;
     }

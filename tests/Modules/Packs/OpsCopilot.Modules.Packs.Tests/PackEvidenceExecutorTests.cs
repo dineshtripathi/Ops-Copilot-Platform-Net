@@ -85,6 +85,9 @@ public sealed class PackEvidenceExecutorTests
             ?? new WorkspaceResolutionResult(true, TestWorkspaceId, null);
 
         workspaceResolver.Setup(r => r.Resolve(It.IsAny<string>())).Returns(wsResult);
+        workspaceResolver
+            .Setup(r => r.ResolveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(ValueTask.FromResult(wsResult));
 
         var executor = new PackEvidenceExecutor(
             queryExecutor.Object,

@@ -1,8 +1,11 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.VectorData;
 using OpsCopilot.Rag.Application;
 using OpsCopilot.Rag.Application.Memory;
+using OpsCopilot.Rag.Domain;
 using OpsCopilot.Rag.Infrastructure.Memory;
 using OpsCopilot.Rag.Infrastructure.Retrieval;
 
@@ -23,17 +26,41 @@ public static class RagInfrastructureExtensions
     {
         var runbookPath = ResolveRunbookPath(configuration);
 
-        services.AddSingleton<IRunbookRetrievalService>(sp =>
+        // ── Runbook retrieval (opt-in vector search) ──────────────────────────
+        // Set Rag:UseVectorRunbooks=true + register VectorStoreCollection<Guid, VectorRunbookDocument>
+        // to enable semantic search over runbooks using Azure AI Search (or compatible store).
+        // Default: in-memory keyword search loaded from markdown files.
+        if (bool.TryParse(configuration["Rag:UseVectorRunbooks"], out var useVectorRunbooks) && useVectorRunbooks)
         {
-            var logger = sp.GetRequiredService<ILogger<InMemoryRunbookRetrievalService>>();
-            var loaderLogger = sp.GetRequiredService<ILoggerFactory>()
-                .CreateLogger(typeof(RunbookLoader).FullName!);
+            services.AddSingleton<IRunbookRetrievalService>(sp =>
+                new VectorRunbookRetrievalService(
+                    sp.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>(),
+                    sp.GetRequiredService<VectorStoreCollection<Guid, VectorRunbookDocument>>(),
+                    sp.GetRequiredService<ILogger<VectorRunbookRetrievalService>>()));
+        }
+        else
+        {
+            services.AddSingleton<IRunbookRetrievalService>(sp =>
+            {
+                var logger = sp.GetRequiredService<ILogger<InMemoryRunbookRetrievalService>>();
+                var loaderLogger = sp.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger(typeof(RunbookLoader).FullName!);
 
-            var entries = RunbookLoader.LoadFromDirectory(runbookPath, loaderLogger);
-            return new InMemoryRunbookRetrievalService(entries, logger);
-        });
+                var entries = RunbookLoader.LoadFromDirectory(runbookPath, loaderLogger);
+                return new InMemoryRunbookRetrievalService(entries, logger);
+            });
+        }
 
         services.AddSingleton<IIncidentMemoryRetrievalService, InMemoryIncidentMemoryRetrievalService>();
+
+        // ── Vector memory indexer (opt-in) ────────────────────────────────────
+        // Requires IEmbeddingGenerator and VectorStoreCollection to be registered
+        // externally (e.g. by ApiHost via Azure OpenAI + Azure AI Search).
+        // Default: NullRagIncidentMemoryIndexer (no-op, safe for all environments).
+        if (bool.TryParse(configuration["Rag:UseVectorMemory"], out var useVectorMemory) && useVectorMemory)
+            services.AddSingleton<IIncidentMemoryIndexer, VectorIncidentMemoryIndexer>();
+        else
+            services.AddSingleton<IIncidentMemoryIndexer, NullRagIncidentMemoryIndexer>();
 
         return services;
     }

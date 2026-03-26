@@ -1,11 +1,11 @@
 // Error trends: count and rate of errors over time
-// Binned into 5-minute intervals to show progression
-requests
-| where timestamp > ago(30m)
-| extend IsError = iff(success == false, 1, 0)
-| summarize 
+// Workspace schema: AppRequests
+AppRequests
+| where TimeGenerated > ago(2d)
+| extend IsError = iff(Success == false, 1, 0)
+| summarize
     TotalRequests = count(),
     FailedCount = sum(IsError),
-    ErrorRate = sum(IsError) * 100.0 / count()
-    by bin(timestamp, 5m)
+    ErrorRate = iff(count() == 0, 0.0, sum(IsError) * 100.0 / count())
+    by timestamp = bin(TimeGenerated, 5m)
 | order by timestamp desc

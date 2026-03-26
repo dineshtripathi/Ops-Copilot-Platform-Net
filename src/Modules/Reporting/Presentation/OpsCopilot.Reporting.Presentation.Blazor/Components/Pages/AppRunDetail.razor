@@ -40,6 +40,10 @@ else
         ? (d.CompletedAtUtc.Value - d.CreatedAtUtc).TotalSeconds
         : (double?)null;
     var runShort = d.RunId.ToString().Substring(0, 8);
+    var signalCardCount = (d.ServiceBusSignals?.TotalQueues ?? 0)
+        + (d.AzureChangeSynthesis?.TotalDeployments ?? 0)
+        + (d.ConnectivitySignals?.TotalSignals ?? 0)
+        + (d.AuthSignals?.TotalSignals ?? 0);
 
     <header class="oc-page-topbar" aria-label="Run page top bar">
         <nav class="oc-breadcrumb" aria-label="Breadcrumb">
@@ -54,52 +58,157 @@ else
         <span class="oc-top-tenant">@TenantId</span>
     </header>
 
-    <section class="oc-run-title-row" aria-label="Run title row">
-        <h1>Run: @runShort</h1>
-        <span class="oc-status oc-status-@(d.Status.ToLowerInvariant())">@d.Status</span>
-        <span class="oc-inline-pill">@((d.SessionId?.ToString().Substring(0, 8) ?? "no-session"))</span>
+    <section class="oc-hero oc-hero-detail" aria-label="Run title row">
+        <div class="oc-hero-copy">
+            <span class="oc-eyebrow">Run Detail</span>
+            <h1>Run @runShort</h1>
+            <p>Focused incident workspace for one execution, with evidence quality, signal families, and recommended operator next steps.</p>
+            <div class="oc-hero-tags">
+                <span class="oc-status oc-status-@(d.Status.ToLowerInvariant())">@d.Status</span>
+                <span class="oc-inline-pill">Session @((d.SessionId?.ToString().Substring(0, 8) ?? "none"))</span>
+                <span class="oc-inline-pill">Fingerprint @(d.AlertFingerprint ?? "not-set")</span>
+            </div>
+        </div>
+        <div class="oc-hero-metrics" aria-label="Run highlights">
+            <div class="oc-hero-metric">
+                <span class="oc-hero-metric-label">Duration</span>
+                <strong>@(duration.HasValue ? $"{duration.Value:F1}s" : "Running")</strong>
+                <small>Created @d.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</small>
+            </div>
+            <div class="oc-hero-metric">
+                <span class="oc-hero-metric-label">Tooling</span>
+                <strong>@(d.ToolCallCount?.ToString() ?? "0") calls</strong>
+                <small>@(d.ToolCallSuccessCount?.ToString() ?? "0") successful</small>
+            </div>
+            <div class="oc-hero-metric">
+                <span class="oc-hero-metric-label">Evidence</span>
+                <strong>@(d.HasCitations == true ? "Citations present" : "Citations pending")</strong>
+                <small>@(d.ActionCount?.ToString() ?? "0") proposed actions</small>
+            </div>
+        </div>
     </section>
 
-    <section class="oc-run-metadata oc-panel" aria-label="Run metadata">
-        <h2>Run Detail</h2>
-        <table>
-            <tbody>
-                <tr><th scope="row">Run ID</th><td>@d.RunId</td></tr>
-                <tr><th scope="row">Status</th><td class="oc-status oc-status-@(d.Status.ToLowerInvariant())">@d.Status</td></tr>
-                @if (d.SessionId.HasValue)
+    <section class="oc-detail-grid" aria-label="Run summary cards">
+        <section class="oc-run-metadata oc-panel" aria-label="Run metadata">
+            <h2>Run metadata</h2>
+            <table>
+                <tbody>
+                    <tr><th scope="row">Run ID</th><td>@d.RunId</td></tr>
+                    <tr><th scope="row">Status</th><td class="oc-status oc-status-@(d.Status.ToLowerInvariant())">@d.Status</td></tr>
+                    @if (d.SessionId.HasValue)
+                    {
+                        <tr><th scope="row">Session</th><td><a href="@($"/app/sessions/{d.SessionId.Value}?tenantId={TenantId}{FilterSuffix}")">@d.SessionId.Value</a></td></tr>
+                    }
+                    <tr><th scope="row">Alert Fingerprint</th><td>@(d.AlertFingerprint ?? "—")</td></tr>
+                    <tr><th scope="row">Created (UTC)</th><td>@d.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</td></tr>
+                    <tr><th scope="row">Completed (UTC)</th><td>@(d.CompletedAtUtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? "—")</td></tr>
+                    <tr><th scope="row">Duration</th><td>@(duration.HasValue ? $"{duration.Value:F1}s" : "—")</td></tr>
+                    <tr><th scope="row">Total Tokens</th><td>@(d.TotalTokens?.ToString() ?? "—")</td></tr>
+                    <tr><th scope="row">Estimated Cost</th><td>@(d.EstimatedCost.HasValue ? $"${d.EstimatedCost.Value:F4}" : "—")</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="oc-tool-call-summary oc-panel" aria-label="Tool call summary">
+            <h2>Tool call summary</h2>
+            <table>
+                <tbody>
+                    <tr><th scope="row">Total Tool Calls</th><td>@(d.ToolCallCount?.ToString() ?? "—")</td></tr>
+                    <tr><th scope="row">Successful</th><td>@(d.ToolCallSuccessCount?.ToString() ?? "—")</td></tr>
+                    <tr><th scope="row">Failed</th><td>@(d.ToolCallFailedCount?.ToString() ?? "—")</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="oc-evidence-summary oc-panel" aria-label="Evidence summary">
+            <h2>Evidence summary</h2>
+            <table>
+                <tbody>
+                    <tr><th scope="row">Has Citations</th><td>@(d.HasCitations.HasValue ? (d.HasCitations.Value ? "Yes" : "No") : "—")</td></tr>
+                    <tr><th scope="row">Action Count</th><td>@(d.ActionCount?.ToString() ?? "—")</td></tr>
+                </tbody>
+            </table>
+        </section>
+    </section>
+
+    <section class="oc-section-intro" aria-label="Incident workspace intro">
+        <div>
+            <span class="oc-section-kicker">Incident Workspace</span>
+            <h2>Correlated operational picture</h2>
+        </div>
+        <p>This run combines deterministic triage briefing, signal families, prior incident context, and governed next actions into one operator-focused workspace.</p>
+    </section>
+
+    <section class="oc-signal-overview" aria-label="Signal overview tiles">
+        <article class="oc-signal-tile">
+            <span class="oc-section-kicker">Service Bus</span>
+            <h3>Queue health</h3>
+            <strong>@(d.ServiceBusSignals?.TotalQueues.ToString() ?? "0")</strong>
+            <p>@(d.ServiceBusSignals is null ? "No queue evidence" : $"{d.ServiceBusSignals.TotalDeadLetterMessages} dead-letter messages across tracked queues")</p>
+        </article>
+        <article class="oc-signal-tile">
+            <span class="oc-section-kicker">Azure Change</span>
+            <h3>Deployment activity</h3>
+            <strong>@(d.AzureChangeSynthesis?.TotalDeployments.ToString() ?? "0")</strong>
+            <p>@(d.AzureChangeSynthesis is null ? "No deployment signals" : "Recent ARM deployment signals correlated to this run")</p>
+        </article>
+        <article class="oc-signal-tile">
+            <span class="oc-section-kicker">Connectivity</span>
+            <h3>Network posture</h3>
+            <strong>@(d.ConnectivitySignals?.TotalSignals.ToString() ?? "0")</strong>
+            <p>@(d.ConnectivitySignals is null ? "No connectivity degradation" : "Connectivity and downstream reachability signals attached")</p>
+        </article>
+        <article class="oc-signal-tile">
+            <span class="oc-section-kicker">Identity</span>
+            <h3>Auth failures</h3>
+            <strong>@(d.AuthSignals?.TotalSignals.ToString() ?? "0")</strong>
+            <p>@(d.AuthSignals is null ? "No auth risk surfaced" : "Identity and access failure indicators attached")</p>
+        </article>
+    </section>
+
+    @if (d.ObservabilityEvidence is { CollectorSummaries.Count: > 0 } observability)
+    {
+        <section class="oc-observability-evidence oc-panel" aria-label="App Insights evidence">
+            <div class="oc-panel-heading">
+                <div>
+                    <span class="oc-section-kicker">Observability</span>
+                    <h2>App Insights evidence</h2>
+                </div>
+                <small>@observability.SuccessfulCollectors ready · @observability.FailedCollectors unavailable</small>
+            </div>
+            <div class="oc-observability-grid">
+                @foreach (var collector in observability.CollectorSummaries)
                 {
-                    <tr><th scope="row">Session</th><td><a href="@($"/app/sessions/{d.SessionId.Value}?tenantId={TenantId}{FilterSuffix}")">@d.SessionId.Value</a></td></tr>
+                    <article class="oc-observability-card">
+                        <div class="oc-observability-card-header">
+                            <div>
+                                <h3>@collector.Title</h3>
+                                <span class="oc-inline-pill">@collector.RowCount rows</span>
+                            </div>
+                            <span class="oc-status @(collector.Status == "Ready" ? "oc-status-running" : "oc-status-degraded")">@collector.Status</span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(collector.ErrorMessage))
+                        {
+                            <p class="oc-observability-error">@collector.ErrorMessage</p>
+                        }
+                        else if (collector.Highlights.Count > 0)
+                        {
+                            <ul class="oc-observability-highlights">
+                                @foreach (var highlight in collector.Highlights)
+                                {
+                                    <li>@highlight</li>
+                                }
+                            </ul>
+                        }
+                        else
+                        {
+                            <p class="oc-observability-empty">No summarised highlights were returned.</p>
+                        }
+                    </article>
                 }
-                <tr><th scope="row">Alert Fingerprint</th><td>@(d.AlertFingerprint ?? "—")</td></tr>
-                <tr><th scope="row">Created (UTC)</th><td>@d.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</td></tr>
-                <tr><th scope="row">Completed (UTC)</th><td>@(d.CompletedAtUtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? "—")</td></tr>
-                <tr><th scope="row">Duration</th><td>@(duration.HasValue ? $"{duration.Value:F1}s" : "—")</td></tr>
-                <tr><th scope="row">Total Tokens</th><td>@(d.TotalTokens?.ToString() ?? "—")</td></tr>
-                <tr><th scope="row">Estimated Cost</th><td>@(d.EstimatedCost.HasValue ? $"${d.EstimatedCost.Value:F4}" : "—")</td></tr>
-            </tbody>
-        </table>
-    </section>
-
-    <section class="oc-tool-call-summary oc-panel" aria-label="Tool call summary">
-        <h2>Tool Call Summary</h2>
-        <table>
-            <tbody>
-                <tr><th scope="row">Total Tool Calls</th><td>@(d.ToolCallCount?.ToString() ?? "—")</td></tr>
-                <tr><th scope="row">Successful</th><td>@(d.ToolCallSuccessCount?.ToString() ?? "—")</td></tr>
-                <tr><th scope="row">Failed</th><td>@(d.ToolCallFailedCount?.ToString() ?? "—")</td></tr>
-            </tbody>
-        </table>
-    </section>
-
-    <section class="oc-evidence-summary oc-panel" aria-label="Evidence summary">
-        <h2>Evidence Summary</h2>
-        <table>
-            <tbody>
-                <tr><th scope="row">Has Citations</th><td>@(d.HasCitations.HasValue ? (d.HasCitations.Value ? "Yes" : "No") : "—")</td></tr>
-                <tr><th scope="row">Action Count</th><td>@(d.ActionCount?.ToString() ?? "—")</td></tr>
-            </tbody>
-        </table>
-    </section>
+            </div>
+        </section>
+    }
 
     @* Slice 96: Unified Incident Workspace — bands group coherent sections without DTO or route changes *@
     <section class="oc-incident-workspace" aria-label="Incident workspace">

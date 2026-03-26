@@ -10,12 +10,19 @@ namespace OpsCopilot.Reporting.Infrastructure.Queries;
 
 internal sealed class AgentRunsReportingQueryService : IAgentRunsReportingQueryService
 {
+    private sealed record ObservabilitySpotlightCandidate(
+        Guid RunId,
+        string Status,
+        DateTimeOffset CreatedAtUtc,
+        string? AzureWorkspaceId);
+
     private readonly ReportingReadDbContext          _db;
     private readonly IIncidentMemoryRetrievalService _memory;
     private readonly IServiceBusEvidenceProvider     _sbProvider;
     private readonly IAzureChangeEvidenceProvider    _azureChangeProvider;
     private readonly IConnectivityEvidenceProvider   _connectivityProvider;
     private readonly IAuthEvidenceProvider            _authProvider;
+    private readonly IObservabilityEvidenceProvider   _observabilityProvider;
     private readonly IProposalDraftingService         _proposals;
     private readonly IEvidenceQualityEvaluator        _evaluator;
     private readonly IDecisionPackBuilder             _packBuilder;
@@ -27,6 +34,7 @@ internal sealed class AgentRunsReportingQueryService : IAgentRunsReportingQueryS
         IAzureChangeEvidenceProvider    azureChangeProvider,
         IConnectivityEvidenceProvider   connectivityProvider,
         IAuthEvidenceProvider           authProvider,
+        IObservabilityEvidenceProvider  observabilityProvider,
         IProposalDraftingService        proposals,
         IEvidenceQualityEvaluator       evaluator,
         IDecisionPackBuilder            packBuilder)
@@ -37,6 +45,7 @@ internal sealed class AgentRunsReportingQueryService : IAgentRunsReportingQueryS
         _azureChangeProvider  = azureChangeProvider;
         _connectivityProvider = connectivityProvider;
         _authProvider         = authProvider;
+        _observabilityProvider = observabilityProvider;
         _proposals            = proposals;
         _evaluator            = evaluator;
         _packBuilder          = packBuilder;
@@ -374,6 +383,23 @@ internal sealed class AgentRunsReportingQueryService : IAgentRunsReportingQueryS
             .ToList();
     }
 
+    public async Task<ObservabilityEvidenceSpotlight?> GetObservabilitySpotlightAsync(
+        DateTime? fromUtc, DateTime? toUtc, string tenantId, CancellationToken ct)
+    {
+        var candidates = await ApplyRunFilters(_db.AgentRunRecords, fromUtc, toUtc, tenantId)
+            .Where(r => !string.IsNullOrWhiteSpace(r.AzureWorkspaceId))
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .Take(5)
+            .Select(r => new ObservabilitySpotlightCandidate(
+                r.RunId,
+                r.Status,
+                r.CreatedAtUtc,
+                r.AzureWorkspaceId))
+            .ToListAsync(ct);
+
+        return await ResolveObservabilitySpotlightAsync(candidates, tenantId, ct);
+    }
+
     public async Task<IReadOnlyList<ToolUsageSummaryRow>> GetToolUsageAsync(
         DateTime? fromUtc, DateTime? toUtc, string? tenantId, CancellationToken ct)
     {
@@ -527,6 +553,8 @@ internal sealed class AgentRunsReportingQueryService : IAgentRunsReportingQueryS
         var azureChangeSignals   = await GetAzureChangeSynthesisAsync(r.RunId, r.TenantId, ct);
         var connectivitySignals  = await GetConnectivitySignalsAsync(r.RunId, r.TenantId, ct);
         var authSignals          = await GetAuthSignalsAsync(r.RunId, r.TenantId, ct);
+        var observabilityEvidence = await _observabilityProvider.GetSummaryAsync(
+            r.RunId, r.TenantId, r.AzureWorkspaceId, ct);
 
         var proposedActions = _proposals.DraftProposals(
             briefing, synthesis,
@@ -577,6 +605,8 @@ internal sealed class AgentRunsReportingQueryService : IAgentRunsReportingQueryS
             ConnectivitySignals:  connectivitySignals,
             // Slice 95: identity/auth failure signals
             AuthSignals:          authSignals,
+            // Slice 107: governed App Insights / Azure Monitor evidence summary
+            ObservabilityEvidence: observabilityEvidence,
             // Slice 97: deterministic proposals from evidence — null when no proposals derived
             ProposedNextActions:  proposedActions is { Count: > 0 } ? proposedActions : null,
             // Slice 98: deterministic evidence-quality assessment
@@ -618,13 +648,51 @@ internal sealed class AgentRunsReportingQueryService : IAgentRunsReportingQueryS
         var sessionSynthesis = sessionBriefing is not null
             ? BuildSessionIncidentSynthesis(sessionBriefing)
             : null;
+        var observabilitySpotlight = await ResolveObservabilitySpotlightAsync(
+            rows
+                .OrderByDescending(r => r.CreatedAtUtc)
+                .Select(r => new ObservabilitySpotlightCandidate(
+                    r.RunId,
+                    r.Status,
+                    r.CreatedAtUtc,
+                    r.AzureWorkspaceId))
+                .ToList(),
+            tenantId,
+            ct);
 
         return new SessionDetailResponse(
             SessionId:              sessionId,
             Runs:                   runs,
             Briefing:               sessionBriefing,
             SessionRecommendations: sessionRecs is { Count: > 0 } ? sessionRecs : null,
-            SessionSynthesis:       sessionSynthesis);
+            SessionSynthesis:       sessionSynthesis,
+            ObservabilitySpotlight: observabilitySpotlight);
+    }
+
+    private async Task<ObservabilityEvidenceSpotlight?> ResolveObservabilitySpotlightAsync(
+        IReadOnlyList<ObservabilitySpotlightCandidate> candidates,
+        string tenantId,
+        CancellationToken ct)
+    {
+        foreach (var candidate in candidates)
+        {
+            var evidence = await _observabilityProvider.GetSummaryAsync(
+                candidate.RunId,
+                tenantId,
+                candidate.AzureWorkspaceId,
+                ct);
+
+            if (evidence is null)
+                continue;
+
+            return new ObservabilityEvidenceSpotlight(
+                candidate.RunId,
+                candidate.Status,
+                candidate.CreatedAtUtc,
+                evidence);
+        }
+
+        return null;
     }
 
     // Slice 87: derive SessionBriefing

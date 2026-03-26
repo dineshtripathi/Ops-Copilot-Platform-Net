@@ -39,4 +39,9 @@ jobs:
         run: dotnet build OpsCopilot.sln --no-restore --configuration Release
 
       - name: Test
+        env:
+          # GitHub PAT with model-inference access — stored as a repo/env secret.
+          # Maps to AI:GitHubModels:Token so the LLM path is active in integration tests.
+          # Secret name: AI_TOKEN  (Settings → Secrets and variables → Actions → New secret)
+          AI__GitHubModels__Token: ${{ secrets.AI_TOKEN }}
         run: dotnet test OpsCopilot.sln --no-build --configuration Release --verbosity normal

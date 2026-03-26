@@ -1,12 +1,12 @@
 // Timeout patterns: requests exceeding 30 seconds
-// Indicates performance degradation or resource exhaustion
-requests
-| where timestamp > ago(30m) and duration > 30000
-| summarize 
+// Workspace schema: AppRequests.DurationMs
+AppRequests
+| where TimeGenerated > ago(2d) and todouble(DurationMs) > 30000
+| summarize
     Count = count(),
-    AvgDuration = avg(duration),
-    MaxDuration = max(duration),
-    P95Duration = percentile(duration, 95)
-    by url, resultCode
+    AvgDuration = avg(todouble(DurationMs)),
+    MaxDuration = max(todouble(DurationMs)),
+    P95Duration = percentile(todouble(DurationMs), 95)
+    by url = tostring(Url), resultCode = tostring(ResultCode)
 | order by Count desc
 | take 20

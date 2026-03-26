@@ -38,6 +38,9 @@ public interface IAgentRunsReportingQueryService
     Task<IReadOnlyList<DiagnosisHypothesis>> GetTopDiagnosisAsync(
         DateTime? fromUtc, DateTime? toUtc, string? tenantId, int maxCount, CancellationToken ct);
 
+    Task<ObservabilityEvidenceSpotlight?> GetObservabilitySpotlightAsync(
+        DateTime? fromUtc, DateTime? toUtc, string tenantId, CancellationToken ct);
+
     /// <summary>
     /// Slice 66: Returns detail for a single run scoped to the tenant.
     /// Returns null for both "not found" and "wrong tenant" — no cross-tenant oracle.

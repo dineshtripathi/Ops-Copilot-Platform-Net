@@ -238,7 +238,7 @@ public sealed class DeploymentDiffTool
             changeCount    = 0,
             changes        = Array.Empty<object>(),
             executedAtUtc,
-            error          = new { message, type = errorType }
+            error          = $"[{errorType}] {message}"
         };
 
         return JsonSerializer.Serialize(envelope, JsonOpts);

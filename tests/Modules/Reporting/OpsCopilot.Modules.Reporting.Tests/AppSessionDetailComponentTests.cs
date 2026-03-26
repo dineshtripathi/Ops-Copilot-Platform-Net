@@ -78,6 +78,36 @@ public sealed class AppSessionDetailComponentTests
                 DominantFingerprint: "fp-run1",
                 SequenceConclusion:  "Worsening"));
 
+    private static SessionDetailResponse SampleDetailWithObservability(Guid sessionId) =>
+        SampleDetail(sessionId) with
+        {
+            ObservabilitySpotlight = new ObservabilityEvidenceSpotlight(
+                RunId: Run2Id,
+                Status: "Failed",
+                CreatedAtUtc: new DateTimeOffset(2025, 4, 1, 9, 1, 0, TimeSpan.Zero),
+                Evidence: new ObservabilityEvidenceSummary(
+                    Source: "app-insights",
+                    CollectorCount: 2,
+                    SuccessfulCollectors: 1,
+                    FailedCollectors: 1,
+                    CollectorSummaries:
+                    [
+                        new ObservabilityEvidenceCollectorSummary(
+                            CollectorId: "top-exceptions",
+                            Title: "Top Exceptions",
+                            RowCount: 1,
+                            Status: "Ready",
+                            Highlights: ["NullReferenceException (42) - Object reference not set"]),
+                        new ObservabilityEvidenceCollectorSummary(
+                            CollectorId: "failed-requests",
+                            Title: "Failed Requests",
+                            RowCount: 0,
+                            Status: "Unavailable",
+                            Highlights: [],
+                            ErrorMessage: "workspace query timeout")
+                    ]))
+        };
+
     // ───── AC-93: missing tenantId → 200 + required-panel ───────────────
 
     [Fact]
@@ -176,6 +206,25 @@ public sealed class AppSessionDetailComponentTests
 
             Assert.Contains($"/app/runs/{Run1Id}?tenantId=t1", html);
             Assert.Contains($"/app/runs/{Run2Id}?tenantId=t1", html);
+        }
+    }
+
+    [Fact]
+    public async Task BlazorSessionDetail_WithObservabilitySpotlight_RendersAppInsightsSection()
+    {
+        var sessionId = Guid.NewGuid();
+        var (app, client, _) = await CreateBlazorTestHost(m =>
+            m.Setup(x => x.GetSessionDetailAsync(sessionId, "t1", It.IsAny<CancellationToken>()))
+             .ReturnsAsync(SampleDetailWithObservability(sessionId)));
+        await using (app)
+        {
+            var html = await (await client.GetAsync($"/app/sessions/{sessionId}?tenantId=t1"))
+                .Content.ReadAsStringAsync();
+
+            Assert.Contains("Session App Insights evidence", html, StringComparison.Ordinal);
+            Assert.Contains("Top Exceptions", html, StringComparison.Ordinal);
+            Assert.Contains("workspace query timeout", html, StringComparison.Ordinal);
+            Assert.Contains($"/app/runs/{Run2Id}?tenantId=t1", html, StringComparison.Ordinal);
         }
     }
 
@@ -376,7 +425,7 @@ public sealed class AppSessionDetailComponentTests
                 .Content.ReadAsStringAsync();
 
             Assert.Contains("oc-session-briefing",     html, StringComparison.Ordinal);
-            Assert.Contains("Session Triage Briefing", html, StringComparison.Ordinal);
+                Assert.Contains("Session triage briefing", html, StringComparison.Ordinal);
             Assert.Contains("Worsening",               html, StringComparison.Ordinal);
             Assert.Contains("degrading",               html, StringComparison.Ordinal);
         }

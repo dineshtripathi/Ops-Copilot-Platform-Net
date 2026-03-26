@@ -1,15 +1,15 @@
 // Distribution of HTTP status codes in the last 30 minutes
-// Reveals patterns (4xx vs 5xx vs 2xx)
-requests
-| where timestamp > ago(30m)
+// Workspace schema: AppRequests
+let Total = toscalar(AppRequests | where TimeGenerated > ago(2d) | count);
+AppRequests
+| where TimeGenerated > ago(2d)
+| extend statusCode = toint(ResultCode)
 | extend StatusFamily = case(
-    resultCode >= 500, "5xx",
-    resultCode >= 400, "4xx",
-    resultCode >= 300, "3xx",
-    resultCode >= 200, "2xx",
+    statusCode >= 500, "5xx",
+    statusCode >= 400, "4xx",
+    statusCode >= 300, "3xx",
+    statusCode >= 200, "2xx",
     "Other")
-| summarize 
-    Count = count(),
-    Percentage = count() * 100.0 / toscalar(requests | where timestamp > ago(30m) | count())
-    by StatusFamily, resultCode
+| summarize Count = count() by StatusFamily, resultCode = tostring(ResultCode)
+| extend Percentage = iff(Total == 0, 0.0, Count * 100.0 / todouble(Total))
 | order by Count desc

@@ -16,7 +16,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <!-- MCP client used to start McpHost child process and call tools -->
-    <PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.1" />
+    <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
     <!-- Console logging in test output -->
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.2" />
   </ItemGroup>

@@ -42,6 +42,8 @@
     <ProjectReference Include="..\..\Modules\Packs\Presentation\OpsCopilot.Packs.Presentation\OpsCopilot.Packs.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Reporting\Presentation\OpsCopilot.Reporting.Presentation.Blazor\OpsCopilot.Reporting.Presentation.Blazor.csproj" />
     <ProjectReference Include="..\..\Modules\Rag\Presentation\OpsCopilot.Rag.Presentation\OpsCopilot.Rag.Presentation.csproj" />
+    <!-- Prompting module: no Presentation layer, ApiHost refs Infrastructure directly for DI wiring -->
+    <ProjectReference Include="..\..\Modules\Prompting\Infrastructure\OpsCopilot.Prompting.Infrastructure\OpsCopilot.Prompting.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

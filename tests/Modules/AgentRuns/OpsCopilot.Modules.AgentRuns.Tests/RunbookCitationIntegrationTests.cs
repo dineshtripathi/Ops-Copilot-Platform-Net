@@ -19,6 +19,7 @@ using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
 using OpsCopilot.AgentRuns.Presentation.Endpoints;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
+using Microsoft.Extensions.AI;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
 using Xunit;
 
@@ -360,6 +361,13 @@ public sealed class RunbookCitationIntegrationTests
                 It.IsAny<PackSafeActionRecordRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PackSafeActionRecordResult([], 0, 0, 0, []));
         builder.Services.AddSingleton<IPackSafeActionRecorder>(recorder.Object);
+
+        // ChatOrchestrator: needed by /agent/chat endpoint registered in MapAgentRunEndpoints (Slice 115)
+        builder.Services.AddSingleton<IChatClient>(new Mock<IChatClient>().Object);
+        builder.Services.AddSingleton<IIncidentMemoryService>(new Mock<IIncidentMemoryService>().Object);
+        builder.Services.AddSingleton<IRunbookSearchToolClient>(runbook.Object);
+        builder.Services.AddSingleton<IRunbookAclFilter>(new Mock<IRunbookAclFilter>().Object);
+        builder.Services.AddScoped<ChatOrchestrator>();
 
         var app = builder.Build();
         app.MapAgentRunEndpoints();

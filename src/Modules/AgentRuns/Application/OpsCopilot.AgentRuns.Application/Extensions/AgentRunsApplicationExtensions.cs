@@ -12,7 +12,9 @@ public static class AgentRunsApplicationExtensions
     {
         services.AddSingleton<IRunbookAclFilter, TenantGroupRoleRunbookAclFilter>();
         services.AddSingleton<IIncidentMemoryService, NullIncidentMemoryService>();
+        services.AddSingleton<IIncidentMemoryIndexer, NullIncidentMemoryIndexer>();
         services.AddScoped<TriageOrchestrator>();
+        services.AddScoped<ChatOrchestrator>();
         return services;
     }
 }

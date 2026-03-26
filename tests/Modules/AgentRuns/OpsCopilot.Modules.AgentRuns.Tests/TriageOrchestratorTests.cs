@@ -1,14 +1,16 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using OpsCopilot.AgentRuns.Application.Abstractions;
-using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Application.Acl;
+using OpsCopilot.AgentRuns.Application.Options;
+using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
-using Microsoft.Extensions.AI;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using System.Net.Http;
 using Xunit;
@@ -1298,7 +1300,7 @@ public sealed class TriageOrchestratorTests
 
         var scopeEvaluator = new Mock<ITargetScopeEvaluator>(MockBehavior.Strict);
         scopeEvaluator
-            .Setup(x => x.Evaluate(TenantId, "LogAnalyticsWorkspace", WorkspaceId))
+            .Setup(x => x.Evaluate(TenantId, "log_analytics_workspace", WorkspaceId))
             .Returns(TargetScopeDecision.Deny("WORKSPACE_NOT_ALLOWED",
                 $"Workspace '{WorkspaceId}' is not in the tenant's approved workspace list."));
 
@@ -1712,6 +1714,183 @@ public sealed class TriageOrchestratorTests
         Assert.Equal("rg-prod",      capturedContext.AzureResourceGroup);
         Assert.Equal("myapp",        capturedContext.AzureApplication);
         Assert.Equal(WorkspaceId,    capturedContext.AzureWorkspaceId);
+    }
+
+    // ── Dev Slice 122 — Triage Run Idempotency ───────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_WithIdempotency_PendingRunExists_ReturnsDeduplicatedResult()
+    {
+        // Arrange — a run with the same fingerprint is already Pending
+        var sessionId   = Guid.NewGuid();
+        var existingRun = AgentRun.Create(TenantId, AlertFingerprint, sessionId: sessionId);
+        // existingRun.Status is Pending by default
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        repoMock
+            .Setup(r => r.FindRecentRunAsync(TenantId, AlertFingerprint, 60, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingRun);
+        // CreateRunAsync is NOT set up — dedup must short-circuit before it is called
+
+        var opts = Options.Create(new IdempotencyOptions { WindowMinutes = 60 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object,
+            new Mock<IKqlToolClient>(MockBehavior.Strict).Object,
+            new Mock<IRunbookSearchToolClient>(MockBehavior.Strict).Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            new Mock<IToolAllowlistPolicy>(MockBehavior.Strict).Object,
+            new Mock<ITokenBudgetPolicy>(MockBehavior.Strict).Object,
+            new Mock<IDegradedModePolicy>(MockBehavior.Strict).Object,
+            new Mock<ISessionStore>(MockBehavior.Strict).Object,
+            new Mock<ISessionPolicy>(MockBehavior.Strict).Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            idempotencyOptions: opts);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert
+        Assert.True(result.WasDeduplicated);
+        Assert.Equal(existingRun.RunId, result.RunId);
+        Assert.Equal(existingRun.Status, result.Status);
+        Assert.Equal(sessionId, result.SessionId);
+        Assert.Equal("DedupReused", result.SessionReasonCode);
+        Assert.Empty(result.Citations);
+        Assert.Empty(result.RunbookCitations);
+        Assert.Empty(result.MemoryCitations);
+        Assert.Empty(result.DeploymentDiffCitations);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithIdempotency_CompletedRunWithinWindow_ReturnsDeduplicatedResult()
+    {
+        // Arrange — a Completed run exists within the window
+        var existingRun = AgentRun.Create(TenantId, AlertFingerprint);
+        existingRun.Complete(AgentRunStatus.Completed, "{}", "[]");
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        repoMock
+            .Setup(r => r.FindRecentRunAsync(TenantId, AlertFingerprint, 60, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingRun);
+        // CreateRunAsync is NOT set up — dedup must short-circuit
+
+        var opts = Options.Create(new IdempotencyOptions { WindowMinutes = 60 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object,
+            new Mock<IKqlToolClient>(MockBehavior.Strict).Object,
+            new Mock<IRunbookSearchToolClient>(MockBehavior.Strict).Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            new Mock<IToolAllowlistPolicy>(MockBehavior.Strict).Object,
+            new Mock<ITokenBudgetPolicy>(MockBehavior.Strict).Object,
+            new Mock<IDegradedModePolicy>(MockBehavior.Strict).Object,
+            new Mock<ISessionStore>(MockBehavior.Strict).Object,
+            new Mock<ISessionPolicy>(MockBehavior.Strict).Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            idempotencyOptions: opts);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert
+        Assert.True(result.WasDeduplicated);
+        Assert.Equal(existingRun.RunId, result.RunId);
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal("DedupReused", result.SessionReasonCode);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithIdempotency_NoExistingRun_ProceedsNormally()
+    {
+        // Arrange — FindRecentRunAsync returns null → full triage runs
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock
+            .Setup(r => r.FindRecentRunAsync(TenantId, AlertFingerprint, 60, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AgentRun?)null);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+        var opts = Options.Create(new IdempotencyOptions { WindowMinutes = 60 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            idempotencyOptions: opts);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — normal triage completed, NOT deduplicated
+        Assert.False(result.WasDeduplicated);
+        Assert.Equal(agentRun.RunId, result.RunId);
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.NotEmpty(result.Citations);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithIdempotency_WindowMinutesZero_SkipsGuard()
+    {
+        // Arrange — WindowMinutes = 0 disables dedup; FindRecentRunAsync must NOT be called
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        // FindRecentRunAsync is intentionally NOT set up on MockBehavior.Strict mock
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+        var opts = Options.Create(new IdempotencyOptions { WindowMinutes = 0 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            idempotencyOptions: opts);
+
+        // Act — must not throw (Strict mock verifies FindRecentRunAsync not called)
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — normal triage, guard skipped
+        Assert.False(result.WasDeduplicated);
+        Assert.Equal(agentRun.RunId, result.RunId);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithIdempotencyOptionsNull_SkipsGuard()
+    {
+        // Arrange — no IOptions injected; FindRecentRunAsync must NOT be called
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        // FindRecentRunAsync is intentionally NOT set up on MockBehavior.Strict mock
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter()
+            /* idempotencyOptions omitted → null */);
+
+        // Act — must not throw
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — normal triage, guard skipped
+        Assert.False(result.WasDeduplicated);
+        Assert.Equal(agentRun.RunId, result.RunId);
     }
 }
 

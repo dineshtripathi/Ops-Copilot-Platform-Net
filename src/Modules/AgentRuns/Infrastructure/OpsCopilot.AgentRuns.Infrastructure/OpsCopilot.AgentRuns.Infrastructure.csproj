@@ -18,9 +18,13 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.AI" Version="9.10.2" />
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.2" />
+    <PackageReference Include="Azure.Identity" Version="1.13.2" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.4.1" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.1" />
     <!-- MCP stdio client — calls McpHost child process via StdioClientTransport -->
-    <PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.1" />
+    <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
     <!-- Redis session store for durable multi-replica sessions -->
     <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
   </ItemGroup>

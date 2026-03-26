@@ -37,6 +37,8 @@ else
 {
     var s = _detail!;
     var sessionShort = s.SessionId.ToString().Substring(0, 8);
+    var recommendationCount = s.SessionRecommendations?.Count ?? 0;
+    var observabilitySpotlight = s.ObservabilitySpotlight;
 
     <header class="oc-page-topbar" aria-label="Session page top bar">
         <nav class="oc-breadcrumb" aria-label="Breadcrumb">
@@ -51,31 +53,60 @@ else
         <span class="oc-top-tenant">@TenantId</span>
     </header>
 
-    <section class="oc-run-title-row" aria-label="Session title row">
-        <h1>Session Detail</h1>
-        <span class="oc-inline-pill">session-@sessionShort</span>
+    <section class="oc-hero oc-hero-detail" aria-label="Session title row">
+        <div class="oc-hero-copy">
+            <span class="oc-eyebrow">Session Detail</span>
+            <h1>Session @sessionShort</h1>
+            <p>Cross-run context for repeated incident work, showing recurrence patterns, synthesis, and operator guidance across the whole session.</p>
+            <div class="oc-hero-tags">
+                <span class="oc-inline-pill">session-@sessionShort</span>
+                <span class="oc-inline-pill">@s.Runs.Count runs</span>
+                @if (s.Briefing is not null)
+                {
+                    <span class="oc-inline-pill">Pattern @s.Briefing.StatusPattern</span>
+                }
+            </div>
+        </div>
+        <div class="oc-hero-metrics" aria-label="Session highlights">
+            <div class="oc-hero-metric">
+                <span class="oc-hero-metric-label">Run count</span>
+                <strong>@s.Runs.Count</strong>
+                <small>@(s.Runs.Count > 0 ? $"Started {s.Runs[0].CreatedAtUtc:yyyy-MM-dd HH:mm} UTC" : "No runs yet")</small>
+            </div>
+            <div class="oc-hero-metric">
+                <span class="oc-hero-metric-label">Sequence</span>
+                <strong>@(s.Briefing?.StatusPattern ?? "Unknown")</strong>
+                <small>@(s.Briefing?.SequenceConclusion ?? "Awaiting session synthesis")</small>
+            </div>
+            <div class="oc-hero-metric">
+                <span class="oc-hero-metric-label">Fingerprint</span>
+                <strong>@(s.Briefing?.DominantFingerprint ?? "Mixed")</strong>
+                <small>@(s.Briefing?.FingerprintPattern ?? "No dominant fingerprint yet")</small>
+            </div>
+        </div>
     </section>
 
-    <section class="oc-session-metadata oc-panel" aria-label="Session metadata">
-        <h2>Session Detail</h2>
-        <table>
-            <tbody>
-                <tr><th scope="row">Session ID</th><td>@s.SessionId</td></tr>
-                <tr><th scope="row">Run Count</th><td>@s.Runs.Count</td></tr>
-                @if (s.Runs.Count > 0)
-                {
-                    <tr><th scope="row">First Run</th><td>@s.Runs[0].CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td></tr>
-                    <tr><th scope="row">Last Run</th><td>@(s.Runs[s.Runs.Count - 1].CompletedAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td></tr>
-                }
-            </tbody>
-        </table>
-    </section>
+    <section class="oc-detail-grid" aria-label="Session summary cards">
+        <section class="oc-session-metadata oc-panel" aria-label="Session metadata">
+            <h2>Session metadata</h2>
+            <table>
+                <tbody>
+                    <tr><th scope="row">Session ID</th><td>@s.SessionId</td></tr>
+                    <tr><th scope="row">Run Count</th><td>@s.Runs.Count</td></tr>
+                    @if (s.Runs.Count > 0)
+                    {
+                        <tr><th scope="row">First Run</th><td>@s.Runs[0].CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td></tr>
+                        <tr><th scope="row">Last Run</th><td>@(s.Runs[s.Runs.Count - 1].CompletedAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
 
     @* Slice 87: operator session briefing — counts/patterns only, no raw JSON *@
     @if (s.Briefing is { } b)
     {
         <section class="oc-session-briefing oc-panel" aria-label="Session triage briefing">
-            <h2>Session Triage Briefing</h2>
+            <h2>Session triage briefing</h2>
             <table>
                 <tbody>
                     <tr><th scope="row">Run Count</th><td>@b.RunCount</td></tr>
@@ -92,6 +123,94 @@ else
                     }
                 </tbody>
             </table>
+        </section>
+    }
+    </section>
+
+    <section class="oc-signal-overview" aria-label="Session snapshot tiles">
+        <article class="oc-signal-tile">
+            <span class="oc-section-kicker">Sequence</span>
+            <h3>Run progression</h3>
+            <strong>@(s.Briefing?.StatusPattern ?? "Unknown")</strong>
+            <p>@(s.Briefing?.SequenceConclusion ?? "Awaiting deterministic sequence analysis")</p>
+        </article>
+        <article class="oc-signal-tile">
+            <span class="oc-section-kicker">Fingerprint</span>
+            <h3>Dominant pattern</h3>
+            <strong>@(s.Briefing?.DominantFingerprint ?? "Mixed")</strong>
+            <p>@(s.Briefing?.FingerprintPattern ?? "No dominant fingerprint detected")</p>
+        </article>
+        <article class="oc-signal-tile">
+            <span class="oc-section-kicker">Guidance</span>
+            <h3>Next inspections</h3>
+            <strong>@recommendationCount</strong>
+            <p>@(recommendationCount > 0 ? "Deterministic next-step guidance is available" : "No session-level follow-up guidance yet")</p>
+        </article>
+        <article class="oc-signal-tile">
+            <span class="oc-section-kicker">Observability</span>
+            <h3>App Insights</h3>
+            <strong>@(observabilitySpotlight?.Evidence.CollectorCount.ToString() ?? "0")</strong>
+            <p>@(observabilitySpotlight is null ? "No governed App Insights evidence captured for this session" : $"Latest evidence from run {observabilitySpotlight.RunId.ToString("D").Substring(0, 8)}")</p>
+        </article>
+    </section>
+
+    <section class="oc-section-intro" aria-label="Session workspace intro">
+        <div>
+            <span class="oc-section-kicker">Session Workspace</span>
+            <h2>Repeated incident context</h2>
+        </div>
+        <p>Track whether this incident pattern is isolated, recurring, or improving across the full session timeline.</p>
+    </section>
+
+    @if (observabilitySpotlight is { } spotlight)
+    {
+        <section class="oc-observability-evidence oc-panel" aria-label="Session App Insights evidence">
+            <div class="oc-panel-heading">
+                <div>
+                    <span class="oc-section-kicker">Observability</span>
+                    <h2>Session App Insights evidence</h2>
+                </div>
+                <small>
+                    <a href="@($"/app/runs/{spotlight.RunId}?tenantId={TenantId}{FilterSuffix}")">Source run</a>
+                    · @spotlight.Status · @spotlight.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC
+                </small>
+            </div>
+            <section class="oc-summary-cards oc-observability-summary" aria-label="Session App Insights summary">
+                <div class="oc-card"><span class="oc-card-label">Collectors</span><span class="oc-card-value">@spotlight.Evidence.CollectorCount</span></div>
+                <div class="oc-card"><span class="oc-card-label">Ready</span><span class="oc-card-value">@spotlight.Evidence.SuccessfulCollectors</span></div>
+                <div class="oc-card"><span class="oc-card-label">Unavailable</span><span class="oc-card-value">@spotlight.Evidence.FailedCollectors</span></div>
+            </section>
+            <div class="oc-observability-grid">
+                @foreach (var collector in spotlight.Evidence.CollectorSummaries.Take(3))
+                {
+                    <article class="oc-observability-card">
+                        <div class="oc-observability-card-header">
+                            <div>
+                                <h3>@collector.Title</h3>
+                                <span class="oc-inline-pill">@collector.RowCount rows</span>
+                            </div>
+                            <span class="oc-status @(collector.Status == "Ready" ? "oc-status-running" : "oc-status-degraded")">@collector.Status</span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(collector.ErrorMessage))
+                        {
+                            <p class="oc-observability-error">@collector.ErrorMessage</p>
+                        }
+                        else if (collector.Highlights.Count > 0)
+                        {
+                            <ul class="oc-observability-highlights">
+                                @foreach (var highlight in collector.Highlights.Take(2))
+                                {
+                                    <li>@highlight</li>
+                                }
+                            </ul>
+                        }
+                        else
+                        {
+                            <p class="oc-observability-empty">No summarised highlights were returned.</p>
+                        }
+                    </article>
+                }
+            </div>
         </section>
     }
 
@@ -155,8 +274,8 @@ else
                             : "—";
                         <tr>
                             <td>@(i + 1)</td>
-                            <td><a href="@($"/app/runs/{run.RunId}?tenantId={TenantId}{FilterSuffix}")">@run.RunId</a></td>
-                            <td class="oc-status oc-status-@(run.Status.ToLowerInvariant())">@run.Status</td>
+                            <td><a href="@($"/app/runs/{run.RunId}?tenantId={TenantId}{FilterSuffix}")">run-@run.RunId.ToString("D").Substring(0, 8)</a></td>
+                            <td><span class="oc-status oc-status-@(run.Status.ToLowerInvariant())">@run.Status</span></td>
                             <td>@run.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
                             <td>@duration</td>
                             <td>@(run.AlertFingerprint ?? "—")</td>

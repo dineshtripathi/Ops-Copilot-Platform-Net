@@ -91,7 +91,7 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         }
 
         // ── Gate 3: workspace resolution ─────────────────────────────────
-        var workspaceResult = _workspaceResolver.Resolve(tenantId);
+        var workspaceResult = await _workspaceResolver.ResolveAsync(tenantId, ct);
         if (!workspaceResult.Success)
         {
             _logger.LogWarning(
@@ -110,9 +110,10 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
 
         _telemetry.RecordEvidenceAttempt(request.DeploymentMode, tenantId, correlationId);
 
-        var workspaceId = workspaceResult.WorkspaceId!;
-        var maxRows     = _configuration.GetValue("Packs:EvidenceMaxRows",  DefaultMaxRows);
-        var maxChars    = _configuration.GetValue("Packs:EvidenceMaxChars", DefaultMaxChars);
+        var workspaceId             = workspaceResult.WorkspaceId!;
+        var appInsightsResourcePath = workspaceResult.AppInsightsResourcePath;
+        var maxRows                 = _configuration.GetValue("Packs:EvidenceMaxRows",  DefaultMaxRows);
+        var maxChars                = _configuration.GetValue("Packs:EvidenceMaxChars", DefaultMaxChars);
 
         IReadOnlyList<LoadedPack> packs;
         try
@@ -138,7 +139,7 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         foreach (var pack in eligiblePacks)
         {
             await ExecutePackCollectorsAsync(
-                pack, request.DeploymentMode, workspaceId, maxRows, maxChars,
+                pack, request.DeploymentMode, workspaceId, appInsightsResourcePath, maxRows, maxChars,
                 tenantId, correlationId, evidenceItems, errors, ct);
         }
 
@@ -197,6 +198,7 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         LoadedPack pack,
         string deploymentMode,
         string workspaceId,
+        string? appInsightsResourcePath,
         int maxRows,
         int maxChars,
         string tenantId,
@@ -211,7 +213,7 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         foreach (var ec in eligibleCollectors)
         {
             await ExecuteSingleCollectorAsync(
-                pack, ec, workspaceId, maxRows, maxChars,
+                pack, ec, workspaceId, appInsightsResourcePath, maxRows, maxChars,
                 tenantId, correlationId, evidenceItems, errors, ct);
         }
     }
@@ -220,6 +222,7 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         LoadedPack pack,
         EvidenceCollector ec,
         string workspaceId,
+        string? appInsightsResourcePath,
         int maxRows,
         int maxChars,
         string tenantId,
@@ -262,6 +265,11 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
                 _telemetry.RecordQueryBlocked(packName, ec.Id, tenantId, correlationId);
                 return;
             }
+
+            // Apply App Insights resource filter if discovery identified the linked AI component.
+            // Only applied to App Insights table queries; workspace-level tables are unaffected.
+            if (appInsightsResourcePath is not null && IsAppInsightsQuery(queryContent))
+                queryContent = InjectResourceIdFilter(queryContent, appInsightsResourcePath);
 
             // Execute the query — queryContent is passed as parameter, never logged
             var result = await _queryExecutor.ExecuteQueryAsync(workspaceId, queryContent, null, ct);
@@ -348,6 +356,69 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
     {
         var value = _configuration["Packs:EvidenceExecutionEnabled"];
         return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── App Insights query detection and _ResourceId filter injection ─────
+
+    private static readonly HashSet<string> AppInsightsTables =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "AppExceptions", "AppRequests", "AppDependencies", "AppTraces", "AppEvents",
+            "AppMetrics", "AppAvailabilityResults", "AppBrowserTimings", "AppPageViews",
+            "AppPerformanceCounters", "AppSystemEvents",
+        };
+
+    /// <summary>
+    /// Returns <c>true</c> when the query's first non-whitespace line starts with an App Insights table name.
+    /// </summary>
+    private static bool IsAppInsightsQuery(string queryContent)
+    {
+        var trimmed = queryContent.TrimStart();
+        foreach (var table in AppInsightsTables)
+        {
+            if (trimmed.StartsWith(table + "\n", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith(table + "\r", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith(table + " ",  StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith(table + "|",  StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed.Trim(), table, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Injects a <c>| where _ResourceId has "…"</c> line after the first non-comment,
+    /// non-pipe, non-let line (the table name line).
+    /// Example: <c>AppExceptions\n| where TimeGenerated &gt; ago(1h)</c>
+    /// becomes:  <c>AppExceptions\n| where _ResourceId has "/providers/…"\n| where TimeGenerated &gt; ago(1h)</c>
+    /// </summary>
+    private static string InjectResourceIdFilter(string queryContent, string resourcePath)
+    {
+        var lines    = queryContent.Split('\n');
+        var injected = false;
+        var result   = new List<string>(lines.Length + 1);
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.TrimEnd('\r');
+            result.Add(line);
+
+            if (!injected && !string.IsNullOrWhiteSpace(line))
+            {
+                var trimmedLine = line.TrimStart();
+                if (!trimmedLine.StartsWith("//") &&
+                    !trimmedLine.StartsWith("|") &&
+                    !trimmedLine.StartsWith("let ", StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Add($"| where _ResourceId has \"{resourcePath}\"");
+                    injected = true;
+                }
+            }
+        }
+
+        return string.Join('\n', result).TrimEnd();
     }
 
 }

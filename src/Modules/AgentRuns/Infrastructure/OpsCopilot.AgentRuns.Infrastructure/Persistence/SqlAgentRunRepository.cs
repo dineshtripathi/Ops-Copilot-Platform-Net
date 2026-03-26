@@ -93,4 +93,47 @@ public sealed class SqlAgentRunRepository : IAgentRunRepository
         run.SetLedgerMetadata(modelId, promptVersionId, inputTokens, outputTokens, totalTokens, estimatedCost);
         await _db.SaveChangesAsync(ct);
     }
+
+    /// <inheritdoc />
+    public async Task<AgentRun?> FindRecentRunAsync(
+        string tenantId,
+        string alertFingerprint,
+        int    windowMinutes,
+        CancellationToken ct = default)
+    {
+        var since = DateTimeOffset.UtcNow.AddMinutes(-windowMinutes);
+        return await _db.AgentRuns
+            .Where(r => r.TenantId        == tenantId
+                     && r.AlertFingerprint == alertFingerprint
+                     && (r.Status == AgentRunStatus.Pending
+                         || (r.Status == AgentRunStatus.Completed && r.CompletedAtUtc >= since)))
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<AgentRunFeedback> SaveFeedbackAsync(
+        Guid    runId,
+        string  tenantId,
+        int     rating,
+        string? comment,
+        CancellationToken ct = default)
+    {
+        // Guard: run must exist and belong to this tenant.
+        var run = await _db.AgentRuns.FindAsync([runId], ct)
+                  ?? throw new InvalidOperationException($"AgentRun {runId} not found.");
+
+        if (!string.Equals(run.TenantId, tenantId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"AgentRun {runId} does not belong to tenant '{tenantId}'.");
+
+        var feedback = AgentRunFeedback.Create(runId, tenantId, rating, comment);
+        _db.Feedbacks.Add(feedback);
+        await _db.SaveChangesAsync(ct);
+        return feedback;
+    }
+
+    /// <inheritdoc />
+    public Task<bool> FeedbackExistsAsync(Guid runId, CancellationToken ct = default)
+        => _db.Feedbacks.AnyAsync(f => f.RunId == runId, ct);
 }

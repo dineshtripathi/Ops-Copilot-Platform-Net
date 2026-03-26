@@ -9,11 +9,23 @@ namespace OpsCopilot.Reporting.Application.Services;
 /// </summary>
 public sealed class DashboardQueryService : IDashboardQueryService
 {
-    private readonly IAgentRunsReportingQueryService _agentRuns;
+    private static readonly TimeSpan HistoricalStalenessThreshold = TimeSpan.FromHours(6);
 
-    public DashboardQueryService(IAgentRunsReportingQueryService agentRuns)
+    private readonly IAgentRunsReportingQueryService _agentRuns;
+    private readonly IObservabilityEvidenceProvider _observability;
+    private readonly ITenantEstateProvider _tenantEstate;
+    private readonly ITenantResourceInventoryProvider _resourceInventory;
+
+    public DashboardQueryService(
+        IAgentRunsReportingQueryService agentRuns,
+        IObservabilityEvidenceProvider observability,
+        ITenantEstateProvider tenantEstate,
+        ITenantResourceInventoryProvider resourceInventory)
     {
         _agentRuns = agentRuns;
+        _observability = observability;
+        _tenantEstate = tenantEstate;
+        _resourceInventory = resourceInventory;
     }
 
     public async Task<DashboardOverviewResponse> GetOverviewAsync(
@@ -38,6 +50,29 @@ public sealed class DashboardQueryService : IDashboardQueryService
         var topDiagnosis = await _agentRuns.GetTopDiagnosisAsync(fromUtc, toUtc, tenantId, maxCount: 3, ct);
         var deploymentCorrelation = await _agentRuns.GetDeploymentCorrelationAsync(fromUtc, toUtc, tenantId, ct);
         var activitySignals = await _agentRuns.GetActivitySignalsAsync(fromUtc, toUtc, tenantId, ct);
+        var observabilitySpotlight = await _agentRuns.GetObservabilitySpotlightAsync(fromUtc, toUtc, tenantId, ct);
+        // The three external-service calls below (estate, inventory, observability) do not
+        // share the EF Core DbContext, so they can be parallelised safely.
+        // ObservabilityEvidenceProvider.GetLiveCombinedAsync runs the evidence pack once and
+        // splits the result into both summaries, avoiding a redundant second pack execution.
+        var tenantEstateTask      = _tenantEstate.GetTenantEstateSummaryAsync(tenantId, ct);
+        var resourceInventoryTask = _resourceInventory.GetInventoryAsync(tenantId, ct);
+        var liveCombinedTask      = _observability.GetLiveCombinedAsync(tenantId, ct);
+
+        await Task.WhenAll(tenantEstateTask, resourceInventoryTask, liveCombinedTask);
+
+        var tenantEstate              = tenantEstateTask.Result;
+        var resourceInventory         = resourceInventoryTask.Result;
+        var (liveObservabilityEvidence, liveImpactEvidence) = liveCombinedTask.Result;
+        var latestHistoricalRunAtUtc = recentRuns.Count > 0
+            ? recentRuns.Max(r => r.CreatedAtUtc)
+            : (DateTimeOffset?)null;
+        var liveEvaluatedAtUtc = DateTimeOffset.UtcNow;
+        var dataFreshness = new DashboardDataFreshness(
+            LiveEvaluatedAtUtc: liveEvaluatedAtUtc,
+            LatestHistoricalRunAtUtc: latestHistoricalRunAtUtc,
+            HistoricalDataIsStale: !latestHistoricalRunAtUtc.HasValue ||
+                                  (liveEvaluatedAtUtc - latestHistoricalRunAtUtc.Value) > HistoricalStalenessThreshold);
 
         return new DashboardOverviewResponse(
             Summary: summary,
@@ -49,6 +84,12 @@ public sealed class DashboardQueryService : IDashboardQueryService
             HotResources: hotResources,
             BlastRadius: blastRadius,
             ActivitySignals: activitySignals,
-            TopDiagnosis: topDiagnosis);
+            TopDiagnosis: topDiagnosis,
+            ObservabilitySpotlight: observabilitySpotlight,
+            LiveObservabilityEvidence: liveObservabilityEvidence,
+            LiveImpactEvidence: liveImpactEvidence,
+            TenantEstate: tenantEstate,
+            ResourceInventory: resourceInventory,
+            DataFreshness: dataFreshness);
     }
 }

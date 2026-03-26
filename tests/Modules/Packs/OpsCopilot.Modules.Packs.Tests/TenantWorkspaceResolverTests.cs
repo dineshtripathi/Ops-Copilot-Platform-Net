@@ -141,4 +141,19 @@ public sealed class TenantWorkspaceResolverTests
         Assert.True(result.Success);
         Assert.Equal(ValidGuid, result.WorkspaceId);
     }
+
+    [Fact]
+    public void Resolve_LegacyWorkspaceIdFallback_UsedWhenOtherKeysAbsent()
+    {
+        var cfg = BuildConfig(new Dictionary<string, string?>
+        {
+            ["WORKSPACE_ID"] = ValidGuid
+        });
+        var resolver = BuildResolver(cfg);
+
+        var result = resolver.Resolve(TenantId);
+
+        Assert.True(result.Success);
+        Assert.Equal(ValidGuid, result.WorkspaceId);
+    }
 }

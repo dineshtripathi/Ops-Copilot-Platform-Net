@@ -1,11 +1,12 @@
 // Failed HTTP requests in the last 30 minutes
-// Shows correlation IDs for tracing, URLs, and response codes
-requests
-| where timestamp > ago(30m) and success == false
-| summarize 
+// Workspace schema: AppRequests
+AppRequests
+| where TimeGenerated > ago(2d) and Success == false
+| extend requestName = tostring(Name)
+| summarize
     Count = count(),
-    FirstSeen = min(timestamp),
-    LastSeen = max(timestamp)
-    by resultCode, url, operation_Id
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated)
+    by resultCode = tostring(ResultCode), requestName, url = tostring(Url)
 | order by Count desc
 | take 25

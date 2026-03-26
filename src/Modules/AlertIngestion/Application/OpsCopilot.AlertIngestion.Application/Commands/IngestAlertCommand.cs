@@ -15,6 +15,11 @@ public sealed record IngestAlertCommand(
 /// <summary>Result returned by <see cref="IngestAlertCommandHandler"/>.</summary>
 /// <param name="RunId">New AgentRun identifier created for this alert.</param>
 /// <param name="Fingerprint">Deterministic SHA-256 hex fingerprint of normalized fields.</param>
+/// <param name="Dispatched">
+/// <c>true</c> when the configured <c>IAlertTriageDispatcher</c> successfully enqueued or
+/// triggered a downstream triage; <c>false</c> when no real dispatcher is wired (default).
+/// </param>
 public sealed record IngestAlertResult(
     Guid   RunId,
-    string Fingerprint);
+    string Fingerprint,
+    bool   Dispatched = false);

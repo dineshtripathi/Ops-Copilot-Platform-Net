@@ -152,7 +152,7 @@ internal sealed class PackSafeActionProposer : IPackSafeActionProposer
             && !string.IsNullOrWhiteSpace(tenantId)
             && tenantId != "unknown";
 
-        foreach (var action in pack.Manifest.SafeActions)
+        foreach (var action in pack.Manifest.SafeActions ?? [])
         {
             // Per-action eligibility check — actions are always included as recommendations;
             // IsExecutableNow indicates whether the current mode can actually run them.

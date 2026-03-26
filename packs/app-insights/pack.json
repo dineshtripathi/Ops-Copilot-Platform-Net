@@ -47,6 +47,18 @@
       "requiredMode": "B",
       "queryFile":    "queries/availability-signals.kql",
       "description":  "Availability metrics and SLO impact"
+    },
+    {
+      "id":           "live-blast-radius",
+      "requiredMode": "B",
+      "queryFile":    "queries/live-blast-radius.kql",
+      "description":  "Live tenant estate impact derived from Azure activity signals"
+    },
+    {
+      "id":           "live-policy-activity",
+      "requiredMode": "B",
+      "queryFile":    "queries/live-policy-activity.kql",
+      "description":  "Live governance policy activity and denials from Azure activity"
     }
   ],
 

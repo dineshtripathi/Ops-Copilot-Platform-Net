@@ -129,6 +129,40 @@ namespace OpsCopilot.AgentRuns.Infrastructure.Persistence.Migrations
                     b.ToTable("AgentRuns", "agentRuns");
                 });
 
+            modelBuilder.Entity("OpsCopilot.AgentRuns.Domain.Entities.AgentRunFeedback", b =>
+                {
+                    b.Property<Guid>("FeedbackId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("SubmittedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("FeedbackId");
+
+                    b.HasIndex("RunId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "SubmittedAtUtc");
+
+                    b.ToTable("RunFeedback", "agentRuns");
+                });
+
             modelBuilder.Entity("OpsCopilot.AgentRuns.Domain.Entities.AgentRunPolicyEvent", b =>
                 {
                     b.Property<Guid>("PolicyEventId")

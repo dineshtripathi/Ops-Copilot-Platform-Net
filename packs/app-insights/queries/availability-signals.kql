@@ -1,13 +1,13 @@
 // Availability signals from Application Insights
-// Shows success rate and trends over the last 30 minutes
-requests
-| where timestamp > ago(30m)
-| summarize 
+// Workspace schema: AppRequests
+AppRequests
+| where TimeGenerated > ago(2d)
+| summarize
     TotalRequests = count(),
-    SuccessfulRequests = sum(iff(success == true, 1, 0)),
-    FailedRequests = sum(iff(success == false, 1, 0)),
-    AvailabilityPercent = sum(iff(success == true, 1, 0)) * 100.0 / count(),
-    AvgResponseTime = avg(duration),
-    P99ResponseTime = percentile(duration, 99)
-    by bin(timestamp, 5m)
+    SuccessfulRequests = sum(iff(Success == true, 1, 0)),
+    FailedRequests = sum(iff(Success == false, 1, 0)),
+    AvailabilityPercent = iff(count() == 0, 0.0, sum(iff(Success == true, 1, 0)) * 100.0 / count()),
+    AvgResponseTime = avg(todouble(DurationMs)),
+    P99ResponseTime = percentile(todouble(DurationMs), 99)
+    by timestamp = bin(TimeGenerated, 5m)
 | order by timestamp desc

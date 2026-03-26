@@ -14,7 +14,7 @@
 
   <ItemGroup>
     <!-- Official C# MCP SDK — stdio server + attribute-based tool registration -->
-    <PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.1" />
+    <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
     <!-- Generic host for DI / logging / lifetime management -->
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.2" />
     <!-- KQL execution against Azure Log Analytics -->
@@ -23,6 +23,7 @@
     <PackageReference Include="Azure.Identity" Version="1.13.2" />
     <!-- Resource Graph — queries resourcechanges table for deployment-diff tool -->
     <PackageReference Include="Azure.ResourceManager" Version="1.13.0" />
+    <PackageReference Include="Azure.ResourceManager.Resources" Version="1.7.0" />
     <PackageReference Include="Azure.ResourceManager.ResourceGraph" Version="1.0.0" />
   </ItemGroup>
 

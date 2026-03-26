@@ -11,4 +11,6 @@ public sealed record SessionDetailResponse(
     // Slice 88: deterministic next-step hints — no LLM, no raw data
     IReadOnlyList<RunRecommendation>? SessionRecommendations = null,
     // Slice 89: deterministic correlated incident view — no LLM, no raw data
-    IncidentSynthesis? SessionSynthesis = null);
+    IncidentSynthesis? SessionSynthesis = null,
+    // Slice 107.1: latest governed App Insights evidence summary for this session
+    ObservabilityEvidenceSpotlight? ObservabilitySpotlight = null);

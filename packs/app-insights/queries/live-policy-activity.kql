@@ -1,0 +1,28 @@
+// Live policy and governance activity signals (fallback across workspace schemas)
+let ActivitySignals = union isfuzzy=true
+(
+    AzureActivity
+    | project
+        TimeGenerated,
+        operation = tostring(column_ifexists("OperationNameValue", "")),
+        category = tostring(column_ifexists("CategoryValue", "")),
+        status = tostring(column_ifexists("ActivityStatusValue", "")),
+        subStatus = tostring(column_ifexists("SubStatusValue", ""))
+),
+(
+    AzureDiagnostics
+    | project
+        TimeGenerated,
+        operation = tostring(column_ifexists("OperationName", column_ifexists("OperationNameValue", ""))),
+        category = tostring(column_ifexists("Category", column_ifexists("CategoryValue", ""))),
+        status = tostring(column_ifexists("ActivityStatusValue", column_ifexists("activityStatusValue_s", ""))),
+        subStatus = tostring(column_ifexists("SubStatusValue", column_ifexists("resultDescription_s", "")))
+);
+ActivitySignals
+| where TimeGenerated > ago(2d)
+| summarize
+    TotalPolicyEvents = countif(operation has_cs "policy" or category has_cs "Policy"),
+    PolicyDenials = countif((operation has_cs "policy" or category has_cs "Policy") and (status =~ "Failed" or subStatus has_cs "deny" or subStatus has_cs "denied")),
+    ScopeDenials = countif((operation has_cs "policy" or category has_cs "Policy") and subStatus has_cs "scope" and (subStatus has_cs "deny" or subStatus has_cs "denied")),
+    BudgetDenials = countif((operation has_cs "budget" or operation has_cs "quota") and (status =~ "Failed" or subStatus has_cs "deny" or subStatus has_cs "denied")),
+    DegradedModeEvents = countif(operation has_cs "degraded" or operation has_cs "throttle")

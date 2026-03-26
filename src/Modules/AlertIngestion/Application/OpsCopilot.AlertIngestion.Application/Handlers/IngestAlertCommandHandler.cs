@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using OpsCopilot.BuildingBlocks.Contracts.AgentRuns;
+using OpsCopilot.AlertIngestion.Application.Abstractions;
 using OpsCopilot.AlertIngestion.Application.Commands;
 using OpsCopilot.AlertIngestion.Application.Services;
 using OpsCopilot.AlertIngestion.Domain.Models;
@@ -12,19 +14,26 @@ namespace OpsCopilot.AlertIngestion.Application.Handlers;
 ///   2. Normalizes via <see cref="AlertNormalizerRouter"/>.
 ///   3. Computes deterministic fingerprint from normalized fields.
 ///   4. Creates a Pending AgentRun ledger entry via <see cref="IAgentRunCreator"/>.
-///   5. Returns the new RunId and fingerprint to the caller.
+///   5. Attempts to dispatch via <see cref="IAlertTriageDispatcher"/> (graceful degradation).
+///   6. Returns the new RunId, fingerprint, and dispatch status to the caller.
 /// </summary>
 public sealed class IngestAlertCommandHandler
 {
-    private readonly IAgentRunCreator       _runCreator;
-    private readonly AlertNormalizerRouter  _router;
+    private readonly IAgentRunCreator        _runCreator;
+    private readonly AlertNormalizerRouter   _router;
+    private readonly IAlertTriageDispatcher  _dispatcher;
+    private readonly ILogger<IngestAlertCommandHandler> _logger;
 
     public IngestAlertCommandHandler(
-        IAgentRunCreator      runCreator,
-        AlertNormalizerRouter router)
+        IAgentRunCreator               runCreator,
+        AlertNormalizerRouter          router,
+        IAlertTriageDispatcher         dispatcher,
+        ILogger<IngestAlertCommandHandler> logger)
     {
-        _runCreator = runCreator;
-        _router     = router;
+        _runCreator  = runCreator;
+        _router      = router;
+        _dispatcher  = dispatcher;
+        _logger      = logger;
     }
 
     public async Task<IngestAlertResult> HandleAsync(
@@ -62,7 +71,20 @@ public sealed class IngestAlertCommandHandler
             context: context,
             ct: ct);
 
-        return new IngestAlertResult(runId, fingerprint);
+        var dispatched = false;
+        try
+        {
+            dispatched = await _dispatcher.DispatchAsync(command.TenantId, runId, fingerprint, ct);
+        }
+        catch (Exception ex)
+        {
+            // Dispatch failure must not fail the ingestion — log and continue.
+            _logger.LogWarning(ex,
+                "Triage dispatch failed for run {RunId} (tenant={TenantId}). Ingestion accepted without dispatch.",
+                runId, command.TenantId);
+        }
+
+        return new IngestAlertResult(runId, fingerprint, dispatched);
     }
 
     private static AlertRunContext BuildRunContext(NormalizedAlert normalized)

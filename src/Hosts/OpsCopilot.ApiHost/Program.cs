@@ -17,6 +17,7 @@ using OpsCopilot.Packs.Presentation.Endpoints;
 using OpsCopilot.Packs.Presentation.Extensions;
 using OpsCopilot.Rag.Presentation.Extensions;
 using OpsCopilot.Reporting.Presentation.Blazor.Components;
+using OpsCopilot.Prompting.Infrastructure.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -105,8 +106,9 @@ builder.Services
     .AddRagModule(builder.Configuration)
     .AddReportingModule(builder.Configuration)
     .AddEvaluationModule()
-    .AddConnectorsModule()
-    .AddPacksModule(builder.Configuration);
+    .AddConnectorsModule(builder.Configuration)
+    .AddPacksModule(builder.Configuration)
+    .AddPromptingModule(builder.Configuration);
 
 builder.Services.AddRazorComponents();
 
@@ -119,6 +121,7 @@ var app = builder.Build();
 await app.UseAgentRunsMigrations();
 await app.UseSafeActionsMigrations();
 await app.UseTenancyMigrations();
+await app.UsePromptingMigrations();
 
 // ── Health probe ──────────────────────────────────────────────────────────────
 app.MapGet("/healthz", () => Results.Ok("healthy"))
@@ -129,6 +132,7 @@ app.MapGet("/healthz", () => Results.Ok("healthy"))
 app.MapAlertIngestionEndpoints();   // POST /ingest/alert
 app.MapAgentRunEndpoints();         // POST /agent/triage
 app.MapSessionEndpoints();          // GET  /session/{sessionId}
+app.MapFeedbackEndpoints();         // POST /agent/runs/{runId}/feedback
 app.MapSafeActionEndpoints();       // /safe-actions/*
 app.MapReportingEndpoints();            // /reports/safe-actions/*
 app.MapPlatformReportingEndpoints();    // /reports/platform/*

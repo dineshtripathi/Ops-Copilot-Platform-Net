@@ -18,6 +18,7 @@ public sealed class AgentRunsDbContext : DbContext
     public DbSet<AgentRun> AgentRuns => Set<AgentRun>();
     public DbSet<ToolCall> ToolCalls => Set<ToolCall>();
     public DbSet<AgentRunPolicyEvent> PolicyEvents => Set<AgentRunPolicyEvent>();
+    public DbSet<AgentRunFeedback> Feedbacks => Set<AgentRunFeedback>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -70,6 +71,18 @@ public sealed class AgentRunsDbContext : DbContext
             e.Property(x => x.Message).HasColumnType("nvarchar(max)").IsRequired();
             e.HasIndex(x => x.RunId);
             e.HasIndex(x => x.OccurredAtUtc);
+        });
+
+        // Slice 123 — operator feedback (INSERT-only, never updated)
+        modelBuilder.Entity<AgentRunFeedback>(e =>
+        {
+            e.ToTable("RunFeedback", "agentRuns");
+            e.HasKey(x => x.FeedbackId);
+            e.Property(x => x.TenantId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.Rating).IsRequired();
+            e.Property(x => x.Comment).HasMaxLength(2000);
+            e.HasIndex(x => x.RunId).IsUnique();  // one feedback per run
+            e.HasIndex(x => new { x.TenantId, x.SubmittedAtUtc });
         });
     }
 }

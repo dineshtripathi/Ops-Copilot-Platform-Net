@@ -1,12 +1,12 @@
-// Top exceptions in the last 30 minutes
-// Shows exception types, error messages, and frequency
-exceptions
-| where timestamp > ago(30m)
-| summarize 
+// Top exceptions in the last 5 days
+// Workspace schema: AppExceptions
+AppExceptions
+| where TimeGenerated > ago(5d)
+| summarize
     Count = count(),
-    FirstSeen = min(timestamp),
-    LastSeen = max(timestamp),
-    SampleMessage = any(outerMessage)
-    by exceptionType, operation_Id
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated),
+    SampleMessage = any(OuterMessage)
+    by exceptionType = tostring(Type)
 | order by Count desc
 | take 20

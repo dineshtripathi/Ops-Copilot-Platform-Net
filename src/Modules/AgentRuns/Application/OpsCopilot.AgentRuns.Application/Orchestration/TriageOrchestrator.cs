@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using OpsCopilot.AgentRuns.Application.Options;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
@@ -46,6 +48,8 @@ public sealed class TriageOrchestrator
     private readonly IPromptVersionService? _promptVersion;
     private readonly IIncidentMemoryService? _memory;
     private readonly IDeploymentDiffToolClient? _deploymentDiff;
+    private readonly IIncidentMemoryIndexer?    _indexer;
+    private readonly IOptions<IdempotencyOptions>? _idempotencyOptions;
 
     private const string ToolName        = "kql_query";
     private const string RunbookToolName = "runbook_search";
@@ -73,7 +77,9 @@ public sealed class TriageOrchestrator
         IPromptVersionService? promptVersion = null,
         ITargetScopeEvaluator? scopeEvaluator = null,
         IIncidentMemoryService? memory = null,
-        IDeploymentDiffToolClient? deploymentDiff = null)
+        IDeploymentDiffToolClient? deploymentDiff = null,
+        IIncidentMemoryIndexer? indexer = null,
+        IOptions<IdempotencyOptions>? idempotencyOptions = null)
     {
         _repo          = repo;
         _kql           = kql;
@@ -91,7 +97,9 @@ public sealed class TriageOrchestrator
         _modelRouting  = modelRouting;
         _promptVersion = promptVersion;
         _memory        = memory;
-        _deploymentDiff = deploymentDiff;
+        _deploymentDiff      = deploymentDiff;
+        _indexer             = indexer;
+        _idempotencyOptions  = idempotencyOptions;
     }
 
     public async Task<TriageResult> RunAsync(
@@ -108,6 +116,24 @@ public sealed class TriageOrchestrator
     {
         _log.LogInformation("Triage run starting for tenant {TenantId}, fingerprint {Fingerprint}",
             tenantId, alertFingerprint);
+
+        // ── Idempotency guard ──────────────────────────────────────────────────
+        if (_idempotencyOptions is not null)
+        {
+            var windowMinutes = _idempotencyOptions.Value.WindowMinutes;
+            if (windowMinutes > 0)
+            {
+                var existingRun = await _repo.FindRecentRunAsync(
+                    tenantId, alertFingerprint, windowMinutes, ct);
+                if (existingRun is not null)
+                {
+                    _log.LogInformation(
+                        "Idempotency: deduplicating run for fingerprint {Fingerprint} — reusing run {RunId} (status {Status})",
+                        alertFingerprint, existingRun.RunId, existingRun.Status);
+                    return BuildDedupResult(existingRun);
+                }
+            }
+        }
 
         // ── Session resolution ──────────────────────────────────────
         var ttl = _sessionPolicy.GetSessionTtl(tenantId);
@@ -145,7 +171,7 @@ public sealed class TriageOrchestrator
                                 r.Status,
                                 r.AlertFingerprint,
                                 ParseCitationCount(r.CitationsJson),
-                                0, // RunbookCitationCount not stored on AgentRun — MVP-safe default
+                                ParseRunbookCitationCount(r.SummaryJson),
                                 r.CreatedAtUtc)).ToList());
                         usedSessionContext = true;
                     }
@@ -223,7 +249,7 @@ public sealed class TriageOrchestrator
         // ── Guardrail 2.5: workspace scope ──────────────────────────────────
         if (_scopeEvaluator is not null)
         {
-            var scopeDecision = _scopeEvaluator.Evaluate(tenantId, "LogAnalyticsWorkspace", workspaceId);
+            var scopeDecision = _scopeEvaluator.Evaluate(tenantId, "log_analytics_workspace", workspaceId);
             await _repo.AppendPolicyEventAsync(
                 AgentRunPolicyEvent.Create(run.RunId, nameof(ITargetScopeEvaluator),
                     scopeDecision.Allowed, scopeDecision.ReasonCode, scopeDecision.Message), ct);
@@ -457,6 +483,7 @@ public sealed class TriageOrchestrator
         int?     outputTokens    = null;
         int?     totalTokens     = null;
         decimal? estimatedCost   = null;
+        string?  llmNarrative    = null;
 
         var finalStatus = response.Ok ? AgentRunStatus.Completed : AgentRunStatus.Degraded;
         var summaryJson = response.Ok
@@ -471,12 +498,35 @@ public sealed class TriageOrchestrator
                                          ?? Task.FromResult(new ModelDescriptor("default")));
                 var versionInfo = await (_promptVersion?.GetCurrentVersionAsync("triage", ct)
                                          ?? Task.FromResult(new PromptVersionInfo("0.0.0", "Analyze the following triage data.")));
+
+                // Build a rich evidence payload (capped to avoid context window overflow).
+                const int MaxSampleRows = 20;
+                var richPayload = JsonSerializer.Serialize(new
+                {
+                    alertFingerprint,
+                    alertTitle,
+                    subscriptionId,
+                    resourceGroup,
+                    timeRangeMinutes,
+                    kqlResults = new
+                    {
+                        rowCount   = response.Rows.Count,
+                        sampleRows = response.Rows.Take(MaxSampleRows)
+                    },
+                    runbooks = runbookCitations
+                        .Select(r => new { r.Title, r.Snippet })
+                        .ToList(),
+                    memoryHits  = memoryCitations.Count,
+                    diffHits    = deploymentDiffCitations.Count
+                }, JsonOpts);
+
                 var messages = new List<ChatMessage>
                 {
                     new(ChatRole.System, versionInfo.SystemPrompt),
-                    new(ChatRole.User,   summaryJson ?? alertFingerprint)
+                    new(ChatRole.User,   richPayload)
                 };
                 var completion  = await _chatClient.GetResponseAsync(messages, cancellationToken: ct);
+                llmNarrative    = completion.Text;
                 var usage       = completion.Usage;
                 modelId         = descriptor.ModelId;
                 promptVersionId = versionInfo.VersionId;
@@ -494,6 +544,29 @@ public sealed class TriageOrchestrator
 
         await _repo.CompleteRunAsync(run.RunId, finalStatus, summaryJson!, toolCitationsJson, ct);
 
+        // ── Fire-and-forget incident memory indexing ────────────────────────
+        if (_indexer is not null && summaryJson is not null && finalStatus == AgentRunStatus.Completed)
+        {
+            var capturedSummary     = summaryJson;
+            var capturedFingerprint = alertFingerprint;
+            var capturedTenantId    = tenantId;
+            var capturedRunId       = run.RunId;
+            var capturedTime        = _timeProvider.GetUtcNow();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _indexer.IndexAsync(
+                        capturedRunId, capturedTenantId, capturedFingerprint,
+                        capturedSummary, capturedTime, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "Incident memory indexing failed for run {RunId}", capturedRunId);
+                }
+            });
+        }
+
         if (modelId is not null)
             await _repo.UpdateRunLedgerAsync(
                 run.RunId, modelId, promptVersionId,
@@ -508,8 +581,25 @@ public sealed class TriageOrchestrator
             session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode,
             ModelId: modelId, PromptVersionId: promptVersionId,
             InputTokens: inputTokens, OutputTokens: outputTokens,
-            TotalTokens: totalTokens, EstimatedCost: estimatedCost);
+            TotalTokens: totalTokens, EstimatedCost: estimatedCost,
+            LlmNarrative: llmNarrative);
     }
+
+    private static TriageResult BuildDedupResult(AgentRun existing)
+        => new(
+            existing.RunId,
+            existing.Status,
+            SummaryJson:             null,
+            Citations:               Array.Empty<KqlCitation>(),
+            RunbookCitations:        Array.Empty<RunbookCitation>(),
+            MemoryCitations:         Array.Empty<MemoryCitation>(),
+            DeploymentDiffCitations: Array.Empty<DeploymentDiffCitation>(),
+            SessionId:               existing.SessionId,
+            IsNewSession:            false,
+            SessionExpiresAtUtc:     null,
+            UsedSessionContext:      false,
+            SessionReasonCode:       "DedupReused",
+            WasDeduplicated:         true);
 
     private static KqlCitation BuildCitation(KqlToolResponse r)
         => new(r.WorkspaceId, r.ExecutedQuery, r.Timespan, r.ExecutedAtUtc);
@@ -529,6 +619,19 @@ public sealed class TriageOrchestrator
         {
             return 0;
         }
+    }
+
+    private static int ParseRunbookCitationCount(string? summaryJson)
+    {
+        if (string.IsNullOrWhiteSpace(summaryJson)) return 0;
+        try
+        {
+            using var doc = JsonDocument.Parse(summaryJson);
+            return doc.RootElement.TryGetProperty("runbookHits", out var prop)
+                ? prop.GetInt32()
+                : 0;
+        }
+        catch { return 0; }
     }
 }
 

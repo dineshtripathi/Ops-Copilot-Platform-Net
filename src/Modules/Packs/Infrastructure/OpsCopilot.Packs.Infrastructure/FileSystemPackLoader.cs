@@ -35,8 +35,14 @@ internal sealed partial class FileSystemPackLoader : IPackLoader
 
     public FileSystemPackLoader(IConfiguration configuration, ILogger<FileSystemPackLoader> logger)
     {
-        _packsRootPath = configuration.GetValue<string>("Packs:RootPath") ?? "packs";
         _logger = logger;
+        var configuredRoot = configuration.GetValue<string>("Packs:RootPath") ?? "packs";
+        _packsRootPath = ResolvePacksRootPath(configuredRoot);
+
+        _logger.LogInformation(
+            "Using packs root directory '{PacksRoot}' (configured '{ConfiguredRoot}')",
+            _packsRootPath,
+            configuredRoot);
     }
 
     public Task<IReadOnlyList<LoadedPack>> LoadAllAsync(CancellationToken cancellationToken = default)
@@ -112,6 +118,46 @@ internal sealed partial class FileSystemPackLoader : IPackLoader
             results.Count(p => !p.Validation.IsValid));
 
         return Task.FromResult<IReadOnlyList<LoadedPack>>(results);
+    }
+
+    private static string ResolvePacksRootPath(string configuredRoot)
+    {
+        if (string.IsNullOrWhiteSpace(configuredRoot))
+            configuredRoot = "packs";
+
+        if (Path.IsPathRooted(configuredRoot))
+            return configuredRoot;
+
+        var currentDirectory = Directory.GetCurrentDirectory();
+        var appBaseDirectory = AppContext.BaseDirectory;
+
+        var directCandidates = new[]
+        {
+            Path.GetFullPath(configuredRoot, currentDirectory),
+            Path.GetFullPath(configuredRoot, appBaseDirectory)
+        };
+
+        foreach (var candidate in directCandidates)
+        {
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        var probed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var start in new[] { currentDirectory, appBaseDirectory })
+        {
+            var directory = new DirectoryInfo(start);
+            while (directory is not null)
+            {
+                var candidate = Path.Combine(directory.FullName, configuredRoot);
+                if (probed.Add(candidate) && Directory.Exists(candidate))
+                    return candidate;
+
+                directory = directory.Parent;
+            }
+        }
+
+        return directCandidates[0];
     }
 
     internal static PackValidationResult Validate(PackManifest manifest, string directoryName, string packDirectory)

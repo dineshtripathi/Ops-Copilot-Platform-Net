@@ -48,6 +48,130 @@ public sealed class AppDashboardComponentTests
             TopTools:   Array.Empty<ToolUsageSummaryRow>(),
             RecentRuns: Array.Empty<RecentRunSummary>());
 
+    private static DashboardOverviewResponse OverviewWithObservability(Guid runId) =>
+        new(
+            Summary:    new AgentRunsSummaryReport(3, 2, 1, 0, 0, 0, null, null, null, 0.5, null, null),
+            Trend:      Array.Empty<AgentRunsTrendPoint>(),
+            TopTools:   Array.Empty<ToolUsageSummaryRow>(),
+            RecentRuns: new[] { new RecentRunSummary(runId, null, "Failed", "fp-obs", new DateTimeOffset(2025, 4, 2, 10, 0, 0, TimeSpan.Zero), null) },
+            ObservabilitySpotlight: new ObservabilityEvidenceSpotlight(
+                RunId: runId,
+                Status: "Failed",
+                CreatedAtUtc: new DateTimeOffset(2025, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                Evidence: new ObservabilityEvidenceSummary(
+                    Source: "app-insights",
+                    CollectorCount: 2,
+                    SuccessfulCollectors: 1,
+                    FailedCollectors: 1,
+                    CollectorSummaries:
+                    [
+                        new ObservabilityEvidenceCollectorSummary(
+                            CollectorId: "top-exceptions",
+                            Title: "Top Exceptions",
+                            RowCount: 1,
+                            Status: "Ready",
+                            Highlights: ["NullReferenceException (42) - Object reference not set"]),
+                        new ObservabilityEvidenceCollectorSummary(
+                            CollectorId: "failed-requests",
+                            Title: "Failed Requests",
+                            RowCount: 0,
+                            Status: "Unavailable",
+                            Highlights: [],
+                            ErrorMessage: "workspace query timeout")
+                    ])));
+
+    private static DashboardOverviewResponse OverviewWithLiveObservability() =>
+        new(
+            Summary:    new AgentRunsSummaryReport(3, 2, 1, 0, 0, 0, null, null, null, 0.5, null, null),
+            Trend:      Array.Empty<AgentRunsTrendPoint>(),
+            TopTools:   Array.Empty<ToolUsageSummaryRow>(),
+            RecentRuns: Array.Empty<RecentRunSummary>(),
+            LiveObservabilityEvidence: new ObservabilityEvidenceSummary(
+                Source: "app-insights",
+                CollectorCount: 1,
+                SuccessfulCollectors: 1,
+                FailedCollectors: 0,
+                CollectorSummaries:
+                [
+                    new ObservabilityEvidenceCollectorSummary(
+                        CollectorId: "top-exceptions",
+                        Title: "Top Exceptions",
+                        RowCount: 1,
+                        Status: "Ready",
+                        Highlights: ["Flurl.Http.FlurlHttpException (303) - api.beaconcrm.org"])
+                ],
+                CoverageStatus: "live-signal-detected",
+                IsActionable: true,
+                Recommendations:
+                [
+                    "Prioritize collector rows with highest failure/exception counts."
+                ]),
+            LiveImpactEvidence: new LiveImpactEvidenceSummary(
+                Source: "app-insights",
+                BlastRadius: new BlastRadiusSummary(1, 2, 4, 1),
+                ActivitySignals: new ActivitySignalSummary(9, 3, 1, 0, 2),
+                CoverageStatus: "live-impact-detected",
+                IsActionable: true,
+                SuccessfulCollectors: 2,
+                FailedCollectors: 0,
+                Recommendations:
+                [
+                    "Prioritize resources in the live impact section for immediate triage."
+                ]),
+            TenantEstate: new TenantEstateSummary(
+                TenantId: "4a72b866-99a4-4388-b881-cef9c8480b1c",
+                AccessibleSubscriptionCount: 4,
+                ActiveSubscriptionCount: 4,
+                Subscriptions:
+                [
+                    new AzureSubscriptionSummary("5734706f-a5ee-405c-998e-b6dc2bfade69", "Azure AI", "Enabled"),
+                    new AzureSubscriptionSummary("a143fdc9-ae6c-4123-abfb-56f36bb9f53d", "Dinesh Azure AI Subscriptions", "Enabled"),
+                    new AzureSubscriptionSummary("bd27a79c-de25-4097-a874-3bb35f2b926a", "Visual Studio Enterprise", "Enabled"),
+                    new AzureSubscriptionSummary("b20a7294-6951-4107-88df-d7d320218670", "Visual Studio Enterprise with MSDN", "Enabled")
+                ]),
+            DataFreshness: new DashboardDataFreshness(
+                LiveEvaluatedAtUtc: new DateTimeOffset(2026, 3, 21, 18, 0, 0, TimeSpan.Zero),
+                LatestHistoricalRunAtUtc: new DateTimeOffset(2026, 2, 21, 17, 36, 59, TimeSpan.Zero),
+                HistoricalDataIsStale: true));
+
+    private static DashboardOverviewResponse OverviewWithLiveImpactDiagnostic() =>
+        new(
+            Summary:    new AgentRunsSummaryReport(3, 2, 1, 0, 0, 0, null, null, null, 0.5, null, null),
+            Trend:      Array.Empty<AgentRunsTrendPoint>(),
+            TopTools:   Array.Empty<ToolUsageSummaryRow>(),
+            RecentRuns: Array.Empty<RecentRunSummary>(),
+            LiveObservabilityEvidence: new ObservabilityEvidenceSummary(
+                Source: "app-insights",
+                CollectorCount: 1,
+                SuccessfulCollectors: 1,
+                FailedCollectors: 0,
+                CollectorSummaries:
+                [
+                    new ObservabilityEvidenceCollectorSummary(
+                        CollectorId: "top-exceptions",
+                        Title: "Top Exceptions",
+                        RowCount: 0,
+                        Status: "Ready",
+                        Highlights: [])
+                ]),
+            LiveImpactEvidence: new LiveImpactEvidenceSummary(
+                Source: "app-insights",
+                BlastRadius: null,
+                ActivitySignals: null,
+                Diagnostic: "Live impact collectors succeeded but returned zero rows for the current workspace/time window.",
+                CoverageStatus: "live-data-no-impact",
+                IsActionable: false,
+                SuccessfulCollectors: 2,
+                FailedCollectors: 0,
+                Recommendations:
+                [
+                    "Widen lookback window or confirm the active incident timestamp/window."
+                ]),
+            DataFreshness: new DashboardDataFreshness(
+                LiveEvaluatedAtUtc: new DateTimeOffset(2026, 3, 21, 18, 0, 0, TimeSpan.Zero),
+                LatestHistoricalRunAtUtc: new DateTimeOffset(2026, 2, 21, 17, 36, 59, TimeSpan.Zero),
+                HistoricalDataIsStale: true));
+
     // ───── AC-73: missing tenantId → 200 + required-panel ───────────────
 
     [Fact]
@@ -149,6 +273,88 @@ public sealed class AppDashboardComponentTests
                 .Content.ReadAsStringAsync();
 
             Assert.Contains($"/app/runs/{runId}?tenantId=t1", body, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task BlazorDashboard_WithObservabilitySpotlight_RendersAppInsightsSection()
+    {
+        var runId = Guid.NewGuid();
+        var (app, client, _) = await CreateBlazorTestHost(mock =>
+            mock.Setup(s => s.GetOverviewAsync(
+                    It.IsAny<DateTime?>(), It.IsAny<DateTime?>(),
+                    "t1",
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(OverviewWithObservability(runId)));
+
+        await using (app)
+        {
+            var body = await (await client.GetAsync("/app/dashboard?tenantId=t1"))
+                .Content.ReadAsStringAsync();
+
+            Assert.Contains("App Insights spotlight", body, StringComparison.Ordinal);
+            Assert.Contains("Top Exceptions", body, StringComparison.Ordinal);
+            Assert.Contains("workspace query timeout", body, StringComparison.Ordinal);
+            Assert.Contains($"/app/runs/{runId}?tenantId=t1", body, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task BlazorDashboard_WithLiveObservability_RendersLiveAppInsightsSection()
+    {
+        var (app, client, _) = await CreateBlazorTestHost(mock =>
+            mock.Setup(s => s.GetOverviewAsync(
+                    It.IsAny<DateTime?>(), It.IsAny<DateTime?>(),
+                    "t1",
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(OverviewWithLiveObservability()));
+
+        await using (app)
+        {
+            var body = await (await client.GetAsync("/app/dashboard?tenantId=t1"))
+                .Content.ReadAsStringAsync();
+
+            Assert.Contains("App Insights live summary", body, StringComparison.Ordinal);
+            Assert.Contains("Flurl.Http.FlurlHttpException", body, StringComparison.Ordinal);
+            Assert.DoesNotContain("run-", body, StringComparison.Ordinal);
+            Assert.Contains("live-signal-detected", body, StringComparison.Ordinal);
+            Assert.Contains("Prioritize collector rows", body, StringComparison.Ordinal);
+            Assert.Contains("Live feed first, historical context second", body, StringComparison.Ordinal);
+            Assert.Contains("Historical DB projections are stale", body, StringComparison.Ordinal);
+            Assert.Contains("Live incident impact feed", body, StringComparison.Ordinal);
+            Assert.Contains("Live Impacted Resources", body, StringComparison.Ordinal);
+            Assert.Contains("Live Policy Events", body, StringComparison.Ordinal);
+            Assert.Contains("live-impact-detected", body, StringComparison.Ordinal);
+            Assert.Contains("Actionable", body, StringComparison.Ordinal);
+            Assert.Contains("Tenant Subscriptions", body, StringComparison.Ordinal);
+            Assert.Contains("Live Impact Scope", body, StringComparison.Ordinal);
+            Assert.Contains("1 / 4", body, StringComparison.Ordinal);
+            Assert.Contains("Azure AI", body, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task BlazorDashboard_WithLiveImpactDiagnostic_RendersEmptyReason()
+    {
+        var (app, client, _) = await CreateBlazorTestHost(mock =>
+            mock.Setup(s => s.GetOverviewAsync(
+                    It.IsAny<DateTime?>(), It.IsAny<DateTime?>(),
+                    "t1",
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(OverviewWithLiveImpactDiagnostic()));
+
+        await using (app)
+        {
+            var body = await (await client.GetAsync("/app/dashboard?tenantId=t1"))
+                .Content.ReadAsStringAsync();
+
+            Assert.Contains("Live incident impact feed", body, StringComparison.Ordinal);
+            Assert.Contains("returned zero rows", body, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("live-data-no-impact", body, StringComparison.Ordinal);
+            Assert.Contains("Widen lookback window", body, StringComparison.Ordinal);
         }
     }
 

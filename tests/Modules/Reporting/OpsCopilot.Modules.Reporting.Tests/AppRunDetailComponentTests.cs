@@ -64,6 +64,33 @@ public sealed class AppRunDetailComponentTests
             HasCitations:         true,
             Briefing:             SampleBriefing());
 
+    private static RunDetailResponse SampleDetailWithObservability(Guid runId) =>
+        SampleDetail(runId) with
+        {
+            ObservabilityEvidence = new ObservabilityEvidenceSummary(
+                Source: "app-insights",
+                CollectorCount: 2,
+                SuccessfulCollectors: 1,
+                FailedCollectors: 1,
+                CollectorSummaries:
+                [
+                    new ObservabilityEvidenceCollectorSummary(
+                        CollectorId: "top-exceptions",
+                        Title: "Top Exceptions",
+                        RowCount: 1,
+                        Status: "Ready",
+                        Highlights: ["NullReferenceException (42) - Object reference not set"]),
+                    new ObservabilityEvidenceCollectorSummary(
+                        CollectorId: "failed-requests",
+                        Title: "Failed Requests",
+                        RowCount: 0,
+                        Status: "Unavailable",
+                        Highlights: [],
+                        ErrorMessage: "workspace query timeout")
+                ]
+            )
+        };
+
     private static RunBriefing SampleBriefing() =>
         new(StatusSeverity:         "ok",
             DurationSeconds:        30.0,
@@ -155,7 +182,7 @@ public sealed class AppRunDetailComponentTests
                 .Content.ReadAsStringAsync();
 
             Assert.Contains("oc-tool-call-summary", body, StringComparison.Ordinal);
-            Assert.Contains("Tool Call Summary",     body, StringComparison.Ordinal);
+            Assert.Contains("Tool call summary",     body, StringComparison.Ordinal);
         }
     }
 
@@ -175,10 +202,30 @@ public sealed class AppRunDetailComponentTests
                 .Content.ReadAsStringAsync();
 
             Assert.Contains("oc-evidence-summary", body, StringComparison.Ordinal);
-            Assert.Contains("Evidence Summary",    body, StringComparison.Ordinal);
+            Assert.Contains("Evidence summary",    body, StringComparison.Ordinal);
             Assert.Contains("Has Citations",       body, StringComparison.Ordinal);
             Assert.Contains("Yes",                 body, StringComparison.Ordinal);
             Assert.Contains("Action Count",        body, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task BlazorRunDetail_WithObservabilityEvidence_RendersAppInsightsSection()
+    {
+        var runId = Guid.NewGuid();
+        var (app, client, _) = await CreateBlazorTestHost(mock =>
+            mock.Setup(s => s.GetRunDetailAsync(runId, "t1", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(SampleDetailWithObservability(runId)));
+
+        await using (app)
+        {
+            var body = await (await client.GetAsync($"/app/runs/{runId}?tenantId=t1"))
+                .Content.ReadAsStringAsync();
+
+            Assert.Contains("App Insights evidence", body, StringComparison.Ordinal);
+            Assert.Contains("Top Exceptions", body, StringComparison.Ordinal);
+            Assert.Contains("NullReferenceException", body, StringComparison.Ordinal);
+            Assert.Contains("workspace query timeout", body, StringComparison.Ordinal);
         }
     }
 

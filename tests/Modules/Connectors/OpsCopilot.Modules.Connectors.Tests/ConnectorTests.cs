@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using OpsCopilot.Connectors.Abstractions;
@@ -19,9 +20,17 @@ public class ConnectorTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddConnectorsModule();
+        services.AddConnectorsModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build());
         using var sp = services.BuildServiceProvider();
         return sp.GetRequiredService<IConnectorRegistry>();
+    }
+
+    private static ServiceProvider BuildServices()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddConnectorsModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build());
+        return services.BuildServiceProvider();
     }
 
     // ── 1. Get observability connector by name (AC-2) ───────────
@@ -202,7 +211,7 @@ public class ConnectorTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddConnectorsModule();
+        services.AddConnectorsModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build());
         using var sp = services.BuildServiceProvider();
 
         var registry = sp.GetRequiredService<IConnectorRegistry>();
@@ -238,5 +247,15 @@ public class ConnectorTests
         Assert.True(connector.CanQuery("LOG-QUERY"));
         Assert.True(connector.CanQuery("Log-Query"));
         Assert.True(connector.CanQuery("log-query"));
+    }
+
+    [Fact]
+    public async Task DI_AddConnectorsModule_ResolvesMcpObservabilityExecutor()
+    {
+        await using var sp = BuildServices();
+
+        var executor = sp.GetRequiredService<IObservabilityQueryExecutor>();
+
+        Assert.Equal("McpObservabilityQueryExecutor", executor.GetType().Name);
     }
 }

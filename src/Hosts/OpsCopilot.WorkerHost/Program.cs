@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using OpsCopilot.Packs.Infrastructure.Extensions;
+using OpsCopilot.Connectors.Infrastructure.Extensions;
+using OpsCopilot.Packs.Presentation.Extensions;
 using OpsCopilot.WorkerHost.Workers;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -10,7 +11,8 @@ using OpsCopilot.WorkerHost.Workers;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddPacksInfrastructure(builder.Configuration);
+builder.Services.AddConnectorsModule(builder.Configuration);
+builder.Services.AddPacksModule(builder.Configuration);
 builder.Services.AddHostedService<ProposalDeadLetterReplayWorker>();
 
 var host = builder.Build();

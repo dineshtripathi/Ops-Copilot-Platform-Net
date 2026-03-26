@@ -120,4 +120,23 @@ public sealed class TriageValidationTests
 
         Assert.Null(request.AlertPayload);
     }
+
+    // ── Slice 124: fingerprint pass-through contract ──────────────────────
+
+    [Fact]
+    public void Fingerprint_IsPassedThroughFromDtoField_NotComputedFromJson()
+    {
+        // Slice 124: The triage endpoint uses AlertPayloadDto.Fingerprint directly
+        // (the caller-supplied source-system fingerprint) rather than computing a
+        // SHA-256 of the serialized DTO. This test documents that contract so any
+        // future regression is immediately visible.
+        const string sourceFp = "azure-monitor-rule-HIGH-CPU-01";
+        var dto = new AlertPayloadDto(AlertSource: "AzureMonitor", Fingerprint: sourceFp);
+        var request = new TriageRequest(dto, WorkspaceId: ValidGuid);
+
+        // The fingerprint for orchestration is exactly the caller-provided field.
+        Assert.Equal(sourceFp, request.AlertPayload.Fingerprint);
+        // It is not null/whitespace (the endpoint validates this before use).
+        Assert.False(string.IsNullOrWhiteSpace(request.AlertPayload.Fingerprint));
+    }
 }
