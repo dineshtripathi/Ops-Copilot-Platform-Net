@@ -9,6 +9,7 @@ namespace OpsCopilot.AgentRuns.Application.Orchestration;
 /// Slice 147: Thin MAF IAgent adapter that routes incoming message activities to
 /// ITriageOrchestrator. No orchestration logic lives here — 100% delegated.
 /// PDD §13: MAF is the orchestration foundation; do not replace with ad-hoc loops.
+/// Slice 148: tenantId, workspaceId, and alertFingerprint extracted from ChannelData.
 /// </summary>
 public sealed class TriageAgentActivityHandler : ITriageAgentHandler
 {
@@ -40,10 +41,18 @@ public sealed class TriageAgentActivityHandler : ITriageAgentHandler
             "MAF: routing message activity {ActivityId} to ITriageOrchestrator",
             activityId);
 
+        if (!MafActivityEnvelope.TryParse(turnContext.Activity, activityId, out var envelope))
+        {
+            await turnContext.SendActivityAsync(
+                "Unable to process request: 'tenantId' is required in the activity ChannelData.",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
         var result = await _orchestrator.RunAsync(
-            tenantId:         "default",   // TODO Slice 148: extract from JWT claims
-            alertFingerprint: activityId,
-            workspaceId:      "default",
+            tenantId:         envelope!.TenantId,
+            alertFingerprint: envelope.AlertFingerprint,
+            workspaceId:      envelope.WorkspaceId,
             ct:               cancellationToken);
 
         var reply = result.LlmNarrative

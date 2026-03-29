@@ -12,7 +12,8 @@ using OpsCopilot.AgentRuns.Domain.Models;
 namespace OpsCopilot.Modules.AgentRuns.Tests;
 
 /// <summary>
-/// Slice 147: Unit tests for TriageAgentActivityHandler (MAF IAgent adapter).
+/// Slice 147 / 148: Unit tests for TriageAgentActivityHandler (MAF IAgent adapter).
+/// Slice 148 adds ChannelData envelope extraction — tests verify tenantId/workspaceId/fingerprint routing.
 /// </summary>
 public sealed class TriageAgentActivityHandlerTests
 {
@@ -45,11 +46,16 @@ public sealed class TriageAgentActivityHandlerTests
             SessionReasonCode:      "none",
             LlmNarrative:           narrative);
 
-    private static (Mock<ITurnContext> ctx, Mock<IActivity> activity) MakeContext(string activityType, string activityId = "act-001")
+    private static (Mock<ITurnContext> ctx, Mock<IActivity> activity) MakeContext(
+        string activityType,
+        string activityId = "act-001",
+        object? channelData = null)
     {
         var activity = new Mock<IActivity>(MockBehavior.Loose);
         activity.SetupGet(a => a.Type).Returns(activityType);
         activity.SetupGet(a => a.Id).Returns(activityId);
+        if (channelData is not null)
+            activity.SetupGet(a => a.ChannelData).Returns(channelData);
 
         var ctx = new Mock<ITurnContext>(MockBehavior.Loose);
         ctx.SetupGet(c => c.Activity).Returns(activity.Object);
@@ -57,13 +63,23 @@ public sealed class TriageAgentActivityHandlerTests
         return (ctx, activity);
     }
 
+    // Returns an anonymous object matching the expected ChannelData JSON shape.
+    private static object Envelope(
+        string tenantId     = "tenant-abc",
+        string workspaceId  = "ws-001",
+        string? fingerprint = null) =>
+        fingerprint is null
+            ? new { tenantId, workspaceId } as object
+            : new { tenantId, workspaceId, alertFingerprint = fingerprint };
+
     // ── tests ─────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task OnTurnAsync_MessageActivity_DelegatesToOrchestrator_SendsNarrative()
     {
-        // Arrange
-        var (ctx, _) = MakeContext(ActivityTypes.Message, "act-001");
+        // Arrange — Slice 148: supply valid ChannelData so envelope parsing succeeds
+        var (ctx, _) = MakeContext(ActivityTypes.Message, "act-001",
+            Envelope(tenantId: "tenant-abc", workspaceId: "ws-001"));
 
         string? capturedReply = null;
         ctx.Setup(c => c.SendActivityAsync(
@@ -73,9 +89,10 @@ public sealed class TriageAgentActivityHandlerTests
                 (text, _, _, _) => capturedReply = text)
             .ReturnsAsync(new ResourceResponse());
 
+        // Slice 148: tenantId and workspaceId come from ChannelData; fingerprint falls back to activityId
         _orchestrator
             .Setup(o => o.RunAsync(
-                It.IsAny<string>(), "act-001", "default",
+                "tenant-abc", "act-001", "ws-001",
                 It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<string?>(),
                 It.IsAny<string?>(), It.IsAny<Guid?>(), It.IsAny<RunContext?>(),
                 It.IsAny<AgentRun?>(), It.IsAny<CancellationToken>()))
@@ -92,8 +109,9 @@ public sealed class TriageAgentActivityHandlerTests
     [Fact]
     public async Task OnTurnAsync_MessageActivity_NoNarrative_SendsStatusFallback()
     {
-        // Arrange
-        var (ctx, _) = MakeContext(ActivityTypes.Message, "act-002");
+        // Arrange — Slice 148: supply valid ChannelData
+        var (ctx, _) = MakeContext(ActivityTypes.Message, "act-002",
+            Envelope(tenantId: "tenant-abc", workspaceId: "ws-001"));
 
         string? capturedReply = null;
         ctx.Setup(c => c.SendActivityAsync(
@@ -105,7 +123,7 @@ public sealed class TriageAgentActivityHandlerTests
 
         _orchestrator
             .Setup(o => o.RunAsync(
-                It.IsAny<string>(), "act-002", "default",
+                "tenant-abc", "act-002", "ws-001",
                 It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<string?>(),
                 It.IsAny<string?>(), It.IsAny<Guid?>(), It.IsAny<RunContext?>(),
                 It.IsAny<AgentRun?>(), It.IsAny<CancellationToken>()))
@@ -141,8 +159,9 @@ public sealed class TriageAgentActivityHandlerTests
     [Fact]
     public async Task OnTurnAsync_OrchestratorThrows_ExceptionPropagates()
     {
-        // Arrange
-        var (ctx, _) = MakeContext(ActivityTypes.Message, "act-003");
+        // Arrange — Slice 148: supply valid ChannelData so envelope parsing succeeds
+        var (ctx, _) = MakeContext(ActivityTypes.Message, "act-003",
+            Envelope(tenantId: "tenant-abc", workspaceId: "ws-001"));
 
         _orchestrator
             .Setup(o => o.RunAsync(
@@ -160,11 +179,13 @@ public sealed class TriageAgentActivityHandlerTests
     [Fact]
     public async Task OnTurnAsync_NullActivityId_GeneratesFingerprintAndDoesNotThrow()
     {
-        // Arrange
+        // Arrange — Slice 148: ChannelData with tenantId but no alertFingerprint,
+        // so the handler falls back to the generated GUID fingerprint.
         var activity = new Mock<IActivity>(MockBehavior.Loose);
         activity.SetupGet(a => a.Type).Returns(ActivityTypes.Message);
         string? nullId = null;
         activity.SetupGet(a => a.Id).Returns(nullId!); // explicitly null to exercise fallback fingerprint generation
+        activity.SetupGet(a => a.ChannelData).Returns(Envelope(tenantId: "tenant-abc", workspaceId: "ws-001"));
 
         var ctx = new Mock<ITurnContext>(MockBehavior.Loose);
         ctx.SetupGet(c => c.Activity).Returns(activity.Object);
@@ -192,5 +213,82 @@ public sealed class TriageAgentActivityHandlerTests
             It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<string?>(),
             It.IsAny<string?>(), It.IsAny<Guid?>(), It.IsAny<RunContext?>(),
             It.IsAny<AgentRun?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ── Slice 148: envelope extraction tests ─────────────────────────────────
+
+    [Fact]
+    public async Task OnTurnAsync_NullChannelData_RepliesWithErrorAndSkipsOrchestrator()
+    {
+        // Arrange — no ChannelData set; activity.ChannelData returns null (MockBehavior.Loose default)
+        var (ctx, _) = MakeContext(ActivityTypes.Message, "act-e1");
+
+        string? capturedReply = null;
+        ctx.Setup(c => c.SendActivityAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, CancellationToken>(
+                (text, _, _, _) => capturedReply = text)
+            .ReturnsAsync(new ResourceResponse());
+
+        // Act
+        await _sut.OnTurnAsync(ctx.Object, CancellationToken.None);
+
+        // Assert — error reply sent, orchestrator never called
+        _orchestrator.VerifyNoOtherCalls();
+        Assert.NotNull(capturedReply);
+        Assert.Contains("tenantId", capturedReply, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task OnTurnAsync_MissingTenantIdInChannelData_RepliesWithErrorAndSkipsOrchestrator()
+    {
+        // Arrange — ChannelData without tenantId
+        var (ctx, _) = MakeContext(ActivityTypes.Message, "act-e2",
+            new { workspaceId = "ws-001" });
+
+        string? capturedReply = null;
+        ctx.Setup(c => c.SendActivityAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, CancellationToken>(
+                (text, _, _, _) => capturedReply = text)
+            .ReturnsAsync(new ResourceResponse());
+
+        // Act
+        await _sut.OnTurnAsync(ctx.Object, CancellationToken.None);
+
+        // Assert — error reply sent, orchestrator never called
+        _orchestrator.VerifyNoOtherCalls();
+        Assert.NotNull(capturedReply);
+        Assert.Contains("tenantId", capturedReply, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task OnTurnAsync_ChannelDataWithExplicitFingerprint_UsesEnvelopeFingerprint()
+    {
+        // Arrange — ChannelData supplies all three fields; fingerprint must override activityId
+        const string explicitFingerprint = "sha256-explicit-fp";
+        var (ctx, _) = MakeContext(ActivityTypes.Message, "act-004",
+            Envelope(tenantId: "tenant-xyz", workspaceId: "ws-xyz", fingerprint: explicitFingerprint));
+
+        ctx.Setup(c => c.SendActivityAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ResourceResponse());
+
+        _orchestrator
+            .Setup(o => o.RunAsync(
+                "tenant-xyz", explicitFingerprint, "ws-xyz",
+                It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<Guid?>(), It.IsAny<RunContext?>(),
+                It.IsAny<AgentRun?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeResult("OK"));
+
+        // Act
+        await _sut.OnTurnAsync(ctx.Object, CancellationToken.None);
+
+        // Assert — orchestrator received the envelope fingerprint, not the activity id
+        _orchestrator.VerifyAll();
     }
 }
