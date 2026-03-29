@@ -10,6 +10,7 @@ using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
+using OpsCopilot.BuildingBlocks.Contracts.Privacy;
 using OpsCopilot.BuildingBlocks.Contracts.Rag;
 
 namespace OpsCopilot.AgentRuns.Application.Orchestration;
@@ -50,6 +51,7 @@ public sealed class TriageOrchestrator : ITriageOrchestrator
     private readonly IDeploymentDiffToolClient? _deploymentDiff;
     private readonly IIncidentMemoryIndexer?    _indexer;
     private readonly IOptions<IdempotencyOptions>? _idempotencyOptions;
+    private readonly IPiiRedactor? _piiRedactor;
 
     private const string ToolName        = "kql_query";
     private const string RunbookToolName = "runbook_search";
@@ -79,7 +81,8 @@ public sealed class TriageOrchestrator : ITriageOrchestrator
         IIncidentMemoryService? memory = null,
         IDeploymentDiffToolClient? deploymentDiff = null,
         IIncidentMemoryIndexer? indexer = null,
-        IOptions<IdempotencyOptions>? idempotencyOptions = null)
+        IOptions<IdempotencyOptions>? idempotencyOptions = null,
+        IPiiRedactor? piiRedactor = null)
     {
         _repo          = repo;
         _kql           = kql;
@@ -100,6 +103,7 @@ public sealed class TriageOrchestrator : ITriageOrchestrator
         _deploymentDiff      = deploymentDiff;
         _indexer             = indexer;
         _idempotencyOptions  = idempotencyOptions;
+        _piiRedactor         = piiRedactor;
     }
 
     public async Task<TriageResult> RunAsync(
@@ -533,6 +537,8 @@ public sealed class TriageOrchestrator : ITriageOrchestrator
                 };
                 var completion  = await _chatClient.GetResponseAsync(messages, cancellationToken: ct);
                 llmNarrative    = completion.Text;
+                if (_piiRedactor is not null && llmNarrative is not null)
+                    llmNarrative = _piiRedactor.Redact(llmNarrative);
                 var usage       = completion.Usage;
                 modelId         = descriptor.ModelId;
                 promptVersionId = versionInfo.VersionId;

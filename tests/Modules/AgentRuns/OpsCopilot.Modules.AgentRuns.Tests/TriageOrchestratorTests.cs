@@ -12,6 +12,7 @@ using OpsCopilot.AgentRuns.Domain.Enums;
 using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
+using OpsCopilot.BuildingBlocks.Contracts.Privacy;
 using System.Net.Http;
 using Xunit;
 
@@ -2088,6 +2089,129 @@ public sealed class TriageOrchestratorTests
         repoMock.Verify(
             r => r.MarkRunningAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    // ── Dev Slice 146 — PII redaction pipeline integration ─────────────────────
+
+    [Fact]
+    public async Task RunAsync_WithPiiRedactor_LlmNarrativeIsRedacted()
+    {
+        // Arrange
+        const string RawNarrative      = "Contact admin@contoso.com or call (555) 867-5309 for help.";
+        const string RedactedNarrative = "Contact [EMAIL] or call [PHONE] for help.";
+
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock.Setup(r => r.UpdateRunLedgerAsync(
+            agentRun.RunId, It.IsAny<string>(), It.IsAny<string?>(),
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var chatResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, RawNarrative))
+        {
+            Usage = new UsageDetails { InputTokenCount = 10, OutputTokenCount = 20, TotalTokenCount = 30 }
+        };
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(chatResponse);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock
+            .Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock
+            .Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze the situation."));
+
+        var piiRedactorMock = new Mock<IPiiRedactor>(MockBehavior.Strict);
+        piiRedactorMock.Setup(r => r.Redact(RawNarrative)).Returns(RedactedNarrative);
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System,
+            new PermissiveRunbookAclFilter(),
+            chatClientMock.Object, modelRoutingMock.Object, promptVersionMock.Object,
+            piiRedactor: piiRedactorMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal(RedactedNarrative, result.LlmNarrative);
+        piiRedactorMock.Verify(r => r.Redact(RawNarrative), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunAsync_NoPiiRedactor_LlmNarrativePassesThroughUnchanged()
+    {
+        // Arrange — no IPiiRedactor injected; raw narrative must not be modified
+        const string RawNarrative = "Contact admin@contoso.com for info.";
+
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock.Setup(r => r.UpdateRunLedgerAsync(
+            agentRun.RunId, It.IsAny<string>(), It.IsAny<string?>(),
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var chatResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, RawNarrative))
+        {
+            Usage = new UsageDetails { InputTokenCount = 5, OutputTokenCount = 10, TotalTokenCount = 15 }
+        };
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(chatResponse);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock
+            .Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock
+            .Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze the situation."));
+
+        // No piiRedactor — omit parameter (defaults to null)
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System,
+            new PermissiveRunbookAclFilter(),
+            chatClientMock.Object, modelRoutingMock.Object, promptVersionMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — narrative must be the raw, unredacted text
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal(RawNarrative, result.LlmNarrative);
     }
 }
 
