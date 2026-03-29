@@ -1,6 +1,8 @@
 ﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Agents.Hosting.AspNetCore;
+using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Presentation.Endpoints;
 using OpsCopilot.AgentRuns.Presentation.Extensions;
 using OpsCopilot.AlertIngestion.Presentation.Endpoints;
@@ -134,6 +136,9 @@ builder.Services.AddOpsCopilotHealthChecks(builder.Configuration);
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();
 
+// Slice 147: MAF bootstrap — registers CloudAdapter + IAgent → TriageAgentActivityHandler
+builder.AddAgent<TriageAgentActivityHandler>();
+
 var app = builder.Build();
 
 // ── Database bootstrap ────────────────────────────────────────────────────────
@@ -163,6 +168,9 @@ app.MapPackRunbookEndpoints();          // /runbooks/{runbookName}
 app.UseStaticFiles();
 app.UseAntiforgery();
 app.MapRazorComponents<App>();          // /app/dashboard (Blazor SSR operator UI)
+
+// Slice 147: MAF activity endpoint — POST /api/agent/messages
+app.MapAgentEndpoints(requireAuth: false, path: "/api/agent/messages");
 
 app.Run();
 

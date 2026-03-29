@@ -19,8 +19,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.2" />
-    <PackageReference Include="Azure.Identity" Version="1.13.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.2" /> <!-- Slice 147: bumped to satisfy Microsoft.Agents.Builder 1.5.83-beta transitive requirement -->
+    <PackageReference Include="Azure.Identity" Version="1.17.1" /> <!-- Slice 147: bumped to satisfy Microsoft.Agents.Authentication 1.5.83-beta transitive requirement -->
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.4.1" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.1" />
     <!-- MCP stdio client — calls McpHost child process via StdioClientTransport -->

@@ -11,6 +11,9 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.4" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.4" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.4" />
+    <!-- Slice 147: Microsoft Agent Framework — IAgent interface + ActivityTypes -->
+    <PackageReference Include="Microsoft.Agents.Builder" Version="1.5.83-beta" />
+    <PackageReference Include="Microsoft.Agents.Core" Version="1.5.83-beta" />
   </ItemGroup>
 
   <ItemGroup>

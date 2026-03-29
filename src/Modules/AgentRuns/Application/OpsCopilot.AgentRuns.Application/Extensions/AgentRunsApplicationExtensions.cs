@@ -16,6 +16,8 @@ public static class AgentRunsApplicationExtensions
         services.AddScoped<TriageOrchestrator>();
         services.AddScoped<ITriageOrchestrator>(sp => sp.GetRequiredService<TriageOrchestrator>());
         services.AddScoped<ChatOrchestrator>();
+        // Slice 147: MAF IAgent adapter — Transient matches AddAgent<T> lifecycle
+        services.AddTransient<ITriageAgentHandler, TriageAgentActivityHandler>();
         return services;
     }
 }

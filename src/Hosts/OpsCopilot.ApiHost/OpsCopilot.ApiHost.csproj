@@ -23,6 +23,11 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- Slice 147: Microsoft Agent Framework hosting (CloudAdapter, AddAgent<>, MapAgentEndpoints) -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.5.83-beta" />
+  </ItemGroup>
+
   <!-- Shared configuration helpers (Key Vault, User Secrets bootstrap) -->
   <ItemGroup>
     <ProjectReference Include="..\..\BuildingBlocks\Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure.csproj" />
