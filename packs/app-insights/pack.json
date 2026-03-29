@@ -64,12 +64,14 @@
 
   "runbooks": [
     {
-      "id":   "exception-diagnosis",
-      "file": "runbooks/exception-diagnosis.md"
+      "id":         "exception-diagnosis",
+      "file":       "runbooks/exception-diagnosis.md",
+      "collectors": ["top-exceptions", "failed-requests"]
     },
     {
-      "id":   "dependency-failure-diagnosis",
-      "file": "runbooks/dependency-failure-diagnosis.md"
+      "id":         "dependency-failure-diagnosis",
+      "file":       "runbooks/dependency-failure-diagnosis.md",
+      "collectors": ["failed-dependencies", "timeout-patterns"]
     }
   ]
 }

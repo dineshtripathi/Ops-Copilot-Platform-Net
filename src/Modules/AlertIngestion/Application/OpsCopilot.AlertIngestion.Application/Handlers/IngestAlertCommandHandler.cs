@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpsCopilot.BuildingBlocks.Contracts.AgentRuns;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.AlertIngestion.Application.Abstractions;
 using OpsCopilot.AlertIngestion.Application.Commands;
 using OpsCopilot.AlertIngestion.Application.Services;
@@ -23,17 +24,20 @@ public sealed class IngestAlertCommandHandler
     private readonly AlertNormalizerRouter   _router;
     private readonly IAlertTriageDispatcher  _dispatcher;
     private readonly ILogger<IngestAlertCommandHandler> _logger;
+    private readonly ISessionPolicy          _sessionPolicy;
 
     public IngestAlertCommandHandler(
         IAgentRunCreator               runCreator,
         AlertNormalizerRouter          router,
         IAlertTriageDispatcher         dispatcher,
-        ILogger<IngestAlertCommandHandler> logger)
+        ILogger<IngestAlertCommandHandler> logger,
+        ISessionPolicy                 sessionPolicy)
     {
-        _runCreator  = runCreator;
-        _router      = router;
-        _dispatcher  = dispatcher;
-        _logger      = logger;
+        _runCreator    = runCreator;
+        _router        = router;
+        _dispatcher    = dispatcher;
+        _logger        = logger;
+        _sessionPolicy = sessionPolicy;
     }
 
     public async Task<IngestAlertResult> HandleAsync(
@@ -63,11 +67,18 @@ public sealed class IngestAlertCommandHandler
 
         var context = BuildRunContext(normalized);
 
+        // Slice 131: Resume existing session when this fingerprint was seen recently.
+        var ttl          = _sessionPolicy.GetSessionTtl(command.TenantId);
+        var windowMinutes = (int)ttl.TotalMinutes;
+        var sessionId    = windowMinutes > 0
+            ? await _runCreator.FindRecentSessionIdAsync(command.TenantId, fingerprint, windowMinutes, ct)
+            : null;
+
         // Create ledger entry
         var runId = await _runCreator.CreateRunAsync(
             command.TenantId,
             fingerprint,
-            sessionId: null,
+            sessionId: sessionId,
             context: context,
             ct: ct);
 

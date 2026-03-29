@@ -1,8 +1,12 @@
 ﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpsCopilot.AgentRuns.Presentation.Endpoints;
 using OpsCopilot.AgentRuns.Presentation.Extensions;
 using OpsCopilot.AlertIngestion.Presentation.Endpoints;
 using OpsCopilot.AlertIngestion.Presentation.Extensions;
+using OpsCopilot.AlertIngestion.Application.Abstractions;
+using OpsCopilot.ApiHost.Dispatch;
 using OpsCopilot.BuildingBlocks.Infrastructure.Configuration;
 using OpsCopilot.Governance.Presentation.Extensions;
 using OpsCopilot.SafeActions.Presentation.Endpoints;
@@ -18,6 +22,7 @@ using OpsCopilot.Packs.Presentation.Extensions;
 using OpsCopilot.Rag.Presentation.Extensions;
 using OpsCopilot.Reporting.Presentation.Blazor.Components;
 using OpsCopilot.Prompting.Infrastructure.Extensions;
+using OpsCopilot.ApiHost.Infrastructure;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -103,6 +108,7 @@ builder.Services
     .AddTenancyModule(builder.Configuration)
     .AddGovernanceModule(builder.Configuration, startupLogger)
     .AddSafeActionsModule(builder.Configuration)
+    .AddVectorStoreInfrastructure(builder.Configuration)
     .AddRagModule(builder.Configuration)
     .AddReportingModule(builder.Configuration)
     .AddEvaluationModule()
@@ -110,7 +116,20 @@ builder.Services
     .AddPacksModule(builder.Configuration)
     .AddPromptingModule(builder.Configuration);
 
+// Slice 127: Override NullAlertTriageDispatcher with the real orchestrator-backed dispatcher.
+// AddAlertIngestionModule registers NullAlertTriageDispatcher; Replace swaps it here at the
+// composition root without modifying the module's own DI extensions.
+builder.Services.Replace(ServiceDescriptor.Singleton(typeof(IAlertTriageDispatcher), typeof(TriageOrchestratorDispatcher)));
+
+// Slice 130: Register stuck-run watchdog to catch runs left in Running after server restart.
+builder.Services.Configure<StuckRunWatchdogOptions>(
+    builder.Configuration.GetSection("AgentRun:StuckRunWatchdog"));
+builder.Services.AddHostedService<StuckRunWatchdog>();
+
 builder.Services.AddRazorComponents();
+
+// ── Health checks (Slice 140) ─────────────────────────────────────────────────
+builder.Services.AddOpsCopilotHealthChecks(builder.Configuration);
 
 // ── Observability ─────────────────────────────────────────────────────────────
 builder.Logging.AddConsole();
@@ -123,10 +142,8 @@ await app.UseSafeActionsMigrations();
 await app.UseTenancyMigrations();
 await app.UsePromptingMigrations();
 
-// ── Health probe ──────────────────────────────────────────────────────────────
-app.MapGet("/healthz", () => Results.Ok("healthy"))
-   .WithName("Health")
-   .ExcludeFromDescription();
+// ── Health probes (Slice 140) — /healthz/live, /healthz/ready, /healthz ─────────
+app.MapOpsCopilotHealthChecks();
 
 // ── Module endpoints ──────────────────────────────────────────────────────────
 app.MapAlertIngestionEndpoints();   // POST /ingest/alert
@@ -141,6 +158,7 @@ app.MapDashboardEndpoints();            // /reports/dashboard/*
 app.MapEvaluationEndpoints();           // /evaluation/*
 app.MapTenancyEndpoints();              // /tenants/*
 app.MapPlatformPacksEndpoints();        // /reports/platform/packs
+app.MapPackRunbookEndpoints();          // /runbooks/{runbookName}
 
 app.UseStaticFiles();
 app.UseAntiforgery();

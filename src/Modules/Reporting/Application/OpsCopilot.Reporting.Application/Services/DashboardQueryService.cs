@@ -43,7 +43,7 @@ public sealed class DashboardQueryService : IDashboardQueryService
         var summary    = await _agentRuns.GetSummaryAsync(fromUtc, toUtc, tenantId, ct);
         var trend      = await _agentRuns.GetTrendAsync(fromUtc, toUtc, tenantId, ct);
         var tools      = await _agentRuns.GetToolUsageAsync(fromUtc, toUtc, tenantId, ct);
-        var recentRuns = await _agentRuns.GetRecentRunsAsync(tenantId, limit ?? 10, status, sort, ct);
+        var recentRuns = await _agentRuns.GetRecentRunsAsync(tenantId, limit ?? 10, status, sort, fromUtc, toUtc, ct);
         var exceptionTrend = await _agentRuns.GetExceptionTrendAsync(fromUtc, toUtc, tenantId, ct);
         var hotResources = await _agentRuns.GetHotResourcesAsync(fromUtc, toUtc, tenantId, maxCount: 8, ct);
         var blastRadius = await _agentRuns.GetBlastRadiusAsync(fromUtc, toUtc, tenantId, ct);
@@ -57,7 +57,7 @@ public sealed class DashboardQueryService : IDashboardQueryService
         // splits the result into both summaries, avoiding a redundant second pack execution.
         var tenantEstateTask      = _tenantEstate.GetTenantEstateSummaryAsync(tenantId, ct);
         var resourceInventoryTask = _resourceInventory.GetInventoryAsync(tenantId, ct);
-        var liveCombinedTask      = _observability.GetLiveCombinedAsync(tenantId, ct);
+        var liveCombinedTask      = _observability.GetLiveCombinedAsync(tenantId, fromUtc, toUtc, ct);
 
         await Task.WhenAll(tenantEstateTask, resourceInventoryTask, liveCombinedTask);
 

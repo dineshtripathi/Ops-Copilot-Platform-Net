@@ -495,6 +495,7 @@ public sealed class TriageEvidenceIntegrationTests
 
         builder.Configuration.AddInMemoryCollection(configDict);
         builder.Services.AddSingleton(orchestrator);
+        builder.Services.AddSingleton<ITriageOrchestrator>(orchestrator);
         builder.Services.AddSingleton<IPackTriageEnricher>(enricher.Object);
         builder.Services.AddSingleton<IPackEvidenceExecutor>(executor.Object);
 
@@ -593,6 +594,7 @@ public sealed class TriageEvidenceIntegrationTests
         builder.Logging.ClearProviders();
         builder.Configuration.AddInMemoryCollection(configDict);
         builder.Services.AddSingleton(orchestrator);
+        builder.Services.AddSingleton<ITriageOrchestrator>(orchestrator);
         builder.Services.AddSingleton<IPackTriageEnricher>(enricher.Object);
         builder.Services.AddSingleton<IPackEvidenceExecutor>(executor.Object);
 

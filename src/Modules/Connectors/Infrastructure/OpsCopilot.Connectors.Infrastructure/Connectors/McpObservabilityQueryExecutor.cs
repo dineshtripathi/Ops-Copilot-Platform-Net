@@ -5,13 +5,15 @@ using OpsCopilot.Connectors.Abstractions;
 using SdkMcpClient = ModelContextProtocol.Client.McpClient;
 using StdioTransport = ModelContextProtocol.Client.StdioClientTransport;
 using StdioTransportOptions = ModelContextProtocol.Client.StdioClientTransportOptions;
+using HttpTransport = ModelContextProtocol.Client.HttpClientTransport;
+using HttpTransportOptions = ModelContextProtocol.Client.HttpClientTransportOptions;
 
 namespace OpsCopilot.Connectors.Infrastructure.Connectors;
 
 // KQL-audit: safe — query text not logged
 internal sealed class McpObservabilityQueryExecutor : IObservabilityQueryExecutor, IMcpToolConnector, IAsyncDisposable
 {
-    private const int DefaultTimespanMinutes = 60;
+    private const int DefaultTimespanMinutes = 43_200; // 30 days — matches ago(30d) KQL fallback
     private const int MaxRows = 200;
     private const int MaxPayloadChars = 20_000;
 
@@ -57,7 +59,7 @@ internal sealed class McpObservabilityQueryExecutor : IObservabilityQueryExecuto
         }
 
         var minutes = timespan.HasValue
-            ? Math.Clamp((int)timespan.Value.TotalMinutes, 1, 1440)
+            ? Math.Clamp((int)timespan.Value.TotalMinutes, 1, 43_200)
             : DefaultTimespanMinutes;
         var timespanIso8601 = TimeSpan.FromMinutes(minutes).ToString("c") switch
         {
@@ -185,17 +187,29 @@ internal sealed class McpObservabilityQueryExecutor : IObservabilityQueryExecuto
             if (_mcpClient is not null)
                 return _mcpClient;
 
-            var workDir = _options.WorkingDirectory ?? DiscoverSolutionRoot();
-            var transport = new StdioTransport(new StdioTransportOptions
+            if (!string.IsNullOrWhiteSpace(_options.ServerUrl))
             {
-                Name = "OpsCopilotMcpHost-Observability",
-                Command = _options.Executable,
-                Arguments = _options.Arguments.ToList(),
-                WorkingDirectory = workDir,
-                EnvironmentVariables = BuildChildEnvironment()
-            });
-
-            _mcpClient = await SdkMcpClient.CreateAsync(transport, cancellationToken: ct);
+                _logger.LogInformation(
+                    "Connecting to McpHost via HTTP | url={Url}", _options.ServerUrl);
+                var httpTransport = new HttpTransport(new HttpTransportOptions
+                {
+                    Endpoint = new Uri(_options.ServerUrl),
+                });
+                _mcpClient = await SdkMcpClient.CreateAsync(httpTransport, cancellationToken: ct);
+            }
+            else
+            {
+                var workDir = _options.WorkingDirectory ?? DiscoverSolutionRoot();
+                var transport = new StdioTransport(new StdioTransportOptions
+                {
+                    Name = "OpsCopilotMcpHost-Observability",
+                    Command = _options.Executable,
+                    Arguments = _options.Arguments.ToList(),
+                    WorkingDirectory = workDir,
+                    EnvironmentVariables = BuildChildEnvironment()
+                });
+                _mcpClient = await SdkMcpClient.CreateAsync(transport, cancellationToken: ct);
+            }
             return _mcpClient;
         }
         finally

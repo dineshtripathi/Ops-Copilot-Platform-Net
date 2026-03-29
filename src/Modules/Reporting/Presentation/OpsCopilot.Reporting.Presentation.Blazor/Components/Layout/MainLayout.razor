@@ -29,15 +29,22 @@
                 <li>
                     <a class="oc-nav-link @(_path.StartsWith("/app/dashboard") ? "oc-nav-link--active" : "")"
                        href="/app/dashboard@_ts">
-                        <span class="oc-nav-icon" aria-hidden="true">[]</span>
+                        <span class="oc-nav-icon" aria-hidden="true">DB</span>
                         Dashboard
                     </a>
                 </li>
                 <li>
                     <a class="oc-nav-link @(_path.StartsWith("/app/runs") || _path.StartsWith("/app/sessions") ? "oc-nav-link--active" : "")"
                        href="/app/dashboard@_ts">
-                        <span class="oc-nav-icon" aria-hidden="true">+</span>
+                        <span class="oc-nav-icon" aria-hidden="true">CI</span>
                         Current Incident
+                    </a>
+                </li>
+                <li>
+                    <a class="oc-nav-link @(_path.StartsWith("/app/chat") ? "oc-nav-link--active" : "")"
+                       href="/app/chat@_ts">
+                        <span class="oc-nav-icon" aria-hidden="true">AI</span>
+                        Ask Copilot
                     </a>
                 </li>
             </ul>

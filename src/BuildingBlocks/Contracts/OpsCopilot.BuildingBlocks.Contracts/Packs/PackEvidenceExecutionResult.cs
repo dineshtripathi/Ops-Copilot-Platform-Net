@@ -13,7 +13,21 @@ namespace OpsCopilot.BuildingBlocks.Contracts.Packs;
 /// Optional caller-supplied correlation identifier propagated through structured
 /// logs and telemetry counters to enable end-to-end request tracing.
 /// </param>
-public sealed record PackEvidenceExecutionRequest(string DeploymentMode, string? TenantId = null, string? CorrelationId = null);
+/// <param name="FromUtc">
+/// Optional start of the query time window (UTC). When provided, the executor substitutes
+/// the <c>{FROM_UTC}</c> token in KQL files with a <c>datetime()</c> literal so queries
+/// honour the operator-selected date range. Falls back to <c>ago(30d)</c> when absent.
+/// </param>
+/// <param name="ToUtc">
+/// Optional end of the query time window (UTC). Substituted as <c>{TO_UTC}</c> in KQL.
+/// Falls back to <c>now()</c> when absent.
+/// </param>
+public sealed record PackEvidenceExecutionRequest(
+    string DeploymentMode,
+    string? TenantId = null,
+    string? CorrelationId = null,
+    DateTime? FromUtc = null,
+    DateTime? ToUtc = null);
 
 /// <summary>
 /// A single evidence item returned from executing a pack evidence collector.

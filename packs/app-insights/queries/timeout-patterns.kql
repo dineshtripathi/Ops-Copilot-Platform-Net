@@ -1,7 +1,9 @@
 // Timeout patterns: requests exceeding 30 seconds
 // Workspace schema: AppRequests.DurationMs
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
 AppRequests
-| where TimeGenerated > ago(2d) and todouble(DurationMs) > 30000
+| where TimeGenerated between (_startTime .. _endTime) and todouble(DurationMs) > 30000
 | summarize
     Count = count(),
     AvgDuration = avg(todouble(DurationMs)),

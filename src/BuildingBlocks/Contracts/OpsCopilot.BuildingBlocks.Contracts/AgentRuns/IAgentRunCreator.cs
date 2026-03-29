@@ -18,4 +18,16 @@ public interface IAgentRunCreator
         Guid? sessionId = null,
         AlertRunContext? context = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Slice 131: Returns the SessionId of the most recent run for the given
+    /// (tenantId, fingerprint) pair within <paramref name="windowMinutes"/>,
+    /// or <c>null</c> when no qualifying run exists.
+    /// Used by alert ingestion to continue an existing session for repeated alerts.
+    /// </summary>
+    Task<Guid?> FindRecentSessionIdAsync(
+        string tenantId,
+        string alertFingerprint,
+        int windowMinutes,
+        CancellationToken ct = default);
 }

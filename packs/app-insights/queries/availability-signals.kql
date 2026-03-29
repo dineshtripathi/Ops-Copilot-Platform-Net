@@ -1,7 +1,9 @@
 // Availability signals from Application Insights
 // Workspace schema: AppRequests
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
 AppRequests
-| where TimeGenerated > ago(2d)
+| where TimeGenerated between (_startTime .. _endTime)
 | summarize
     TotalRequests = count(),
     SuccessfulRequests = sum(iff(Success == true, 1, 0)),

@@ -13,7 +13,9 @@ public sealed record ObservabilityEvidenceSummary(
     string? Diagnostic = null,
     string CoverageStatus = "unknown",
     bool IsActionable = false,
-    IReadOnlyList<string>? Recommendations = null);
+    IReadOnlyList<string>? Recommendations = null,
+    string? FailurePattern = null,
+    string? OwnerPath = null);
 
 /// <summary>
 /// Safe summary of a single observability evidence collector result.
@@ -25,4 +27,5 @@ public sealed record ObservabilityEvidenceCollectorSummary(
     int RowCount,
     string Status,
     IReadOnlyList<string> Highlights,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    string? RunbookRef = null);

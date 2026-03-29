@@ -472,12 +472,19 @@ internal sealed class AgentRunsReportingQueryService : IAgentRunsReportingQueryS
     };
 
     public async Task<IReadOnlyList<RecentRunSummary>> GetRecentRunsAsync(
-        string tenantId, int maxCount, string? status, string? sort, CancellationToken ct)
+        string tenantId, int maxCount, string? status, string? sort,
+        DateTime? fromUtc, DateTime? toUtc, CancellationToken ct)
     {
         var query = _db.AgentRunRecords.Where(r => r.TenantId == tenantId);
 
         if (!string.IsNullOrWhiteSpace(status))
             query = query.Where(r => r.Status == status);
+
+        if (fromUtc.HasValue)
+            query = query.Where(r => r.CreatedAtUtc >= fromUtc.Value);
+
+        if (toUtc.HasValue)
+            query = query.Where(r => r.CreatedAtUtc <= toUtc.Value);
 
         // newest/oldest: push ordering into DB query before Take for correct pagination
         IQueryable<AgentRunReadModel> ordered = sort == "oldest"

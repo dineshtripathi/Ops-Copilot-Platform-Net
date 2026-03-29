@@ -1892,5 +1892,202 @@ public sealed class TriageOrchestratorTests
         Assert.False(result.WasDeduplicated);
         Assert.Equal(agentRun.RunId, result.RunId);
     }
+
+    // ── Dev Slice 127 — ResumeRunAsync (dispatcher entry point) ──────────────
+
+    [Fact]
+    public async Task ResumeRunAsync_UsesExistingRunId_SkipsCreateRun()
+    {
+        // Arrange — repo has NO CreateRunAsync setup (Strict mock validates it is never called).
+        // Only tool-call persistence and completion are expected.
+        var existingRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        // CreateRunAsync intentionally omitted — must NOT be called
+        repoMock
+            .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(
+                existingRun.RunId, AgentRunStatus.Completed,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        // Slice 128: MarkRunningAsync is called on every dispatcher-resume path
+        repoMock
+            .Setup(r => r.MarkRunningAsync(existingRun.RunId, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter());
+
+        // Act
+        var result = await sut.ResumeRunAsync(existingRun, WorkspaceId);
+
+        // Assert — the pre-created run's ID is preserved end-to-end
+        Assert.Equal(existingRun.RunId, result.RunId);
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.False(result.WasDeduplicated);
+
+        // Verify CreateRunAsync was never called (Strict mock would throw if called)
+        repoMock.Verify(r => r.CompleteRunAsync(
+            existingRun.RunId, AgentRunStatus.Completed,
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ResumeRunAsync_SkipsIdempotencyGuard_EvenWhenIdempotencyIsConfigured()
+    {
+        // Arrange — idempotency is configured but FindRecentRunAsync must NOT be called
+        // because existingRun != null short-circuits the guard.
+        var existingRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        // FindRecentRunAsync intentionally omitted — must NOT be called
+        // CreateRunAsync intentionally omitted — must NOT be called
+        repoMock
+            .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(
+                existingRun.RunId, AgentRunStatus.Completed,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        // Slice 128: MarkRunningAsync is called on every dispatcher-resume path
+        repoMock
+            .Setup(r => r.MarkRunningAsync(existingRun.RunId, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        // Configure idempotency — if the guard ran, it would call FindRecentRunAsync
+        // (not set up on Strict mock → would throw). Absence of exception confirms guard bypassed.
+        var opts = Options.Create(new IdempotencyOptions { WindowMinutes = 60 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            idempotencyOptions: opts);
+
+        // Act — must not throw even though FindRecentRunAsync is not set up
+        var result = await sut.ResumeRunAsync(existingRun, WorkspaceId);
+
+        // Assert
+        Assert.Equal(existingRun.RunId, result.RunId);
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.False(result.WasDeduplicated);
+    }
+
+    // ── Dev Slice 128 — Pending → Running transition ─────────────────────────
+
+    [Fact]
+    public async Task ResumeRunAsync_MarksRunRunning_BeforePipelineStarts()
+    {
+        // Arrange — verifies MarkRunningAsync is called exactly once on the dispatcher-resume path.
+        var existingRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        repoMock
+            .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(
+                existingRun.RunId, AgentRunStatus.Completed,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.MarkRunningAsync(existingRun.RunId, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
+            .Verifiable();
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter());
+
+        // Act
+        await sut.ResumeRunAsync(existingRun, WorkspaceId);
+
+        // Assert — transition was applied exactly once before the pipeline ran
+        repoMock.Verify(
+            r => r.MarkRunningAsync(existingRun.RunId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotCallMarkRunningAsync_WhenNoExistingRun()
+    {
+        // Arrange — normal RunAsync (dispatcher not involved) must NOT call MarkRunningAsync.
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Loose);
+        repoMock
+            .Setup(r => r.FindRecentRunAsync(TenantId, AlertFingerprint, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AgentRun?)null);
+        repoMock
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(agentRun);
+        repoMock
+            .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(
+                agentRun.RunId, AgentRunStatus.Completed,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter());
+
+        // Act
+        await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — MarkRunningAsync must never be called in the non-dispatcher path
+        repoMock.Verify(
+            r => r.MarkRunningAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 }
 

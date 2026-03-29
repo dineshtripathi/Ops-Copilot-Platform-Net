@@ -1,7 +1,9 @@
 // Error trends: count and rate of errors over time
 // Workspace schema: AppRequests
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
 AppRequests
-| where TimeGenerated > ago(2d)
+| where TimeGenerated between (_startTime .. _endTime)
 | extend IsError = iff(Success == false, 1, 0)
 | summarize
     TotalRequests = count(),

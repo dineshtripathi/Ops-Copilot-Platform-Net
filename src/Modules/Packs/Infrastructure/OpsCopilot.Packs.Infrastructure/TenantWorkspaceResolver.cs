@@ -30,6 +30,11 @@ internal sealed class TenantWorkspaceResolver : ITenantWorkspaceResolver
     private readonly ILogger<TenantWorkspaceResolver> _logger;
     private readonly IObservabilityResourceDiscovery? _resourceDiscovery;
 
+    // Populated on first discovery call; reused for all subsequent resolutions.
+    // Volatile ensures the reference write is visible across threads.
+    // Benign race: two concurrent cold-start calls build equivalent caches; last writer wins.
+    private volatile WorkspaceDiscoveryCache? _cache;
+
     public TenantWorkspaceResolver(
         IConfiguration configuration,
         ILogger<TenantWorkspaceResolver> logger,
@@ -105,29 +110,20 @@ internal sealed class TenantWorkspaceResolver : ITenantWorkspaceResolver
 
         try
         {
-            var pairs = await _resourceDiscovery.DiscoverAsync(ct);
+            var cache = await GetCacheAsync(ct);
 
             if (!baseResult.Success)
             {
-                // No workspace in config — attempt full auto-select from discovery.
-                return TryAutoSelectWorkspace(pairs, tenantId) ?? baseResult;
+                // No workspace in config — attempt full auto-select from the in-memory index.
+                return TryAutoSelectWorkspace(cache, tenantId) ?? baseResult;
             }
 
-            // Workspace configured — find the linked App Insights component.
-            var matches = pairs
-                .Where(p => string.Equals(p.WorkspaceCustomerId, baseResult.WorkspaceId,
-                    StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            // Workspace configured — O(1) lookup for linked App Insights component.
+            if (cache.ByWorkspace.TryGetValue(baseResult.WorkspaceId!, out var matched)
+                && !string.IsNullOrWhiteSpace(matched.AppInsightsResourcePath))
+                return baseResult with { AppInsightsResourcePath = matched.AppInsightsResourcePath };
 
-            if (matches.Count == 0)
-                return baseResult;
-
-            if (matches.Count > 1)
-                _logger.LogWarning(
-                    "[WorkspaceResolver] Multiple AI components linked to workspace {WorkspaceId}; using first match",
-                    baseResult.WorkspaceId);
-
-            return baseResult with { AppInsightsResourcePath = matches[0].AppInsightsResourcePath };
+            return baseResult;
         }
         catch (Exception ex)
         {
@@ -139,21 +135,40 @@ internal sealed class TenantWorkspaceResolver : ITenantWorkspaceResolver
     }
 
     private WorkspaceResolutionResult? TryAutoSelectWorkspace(
-        IReadOnlyList<ObservabilityResourcePair> pairs,
+        WorkspaceDiscoveryCache cache,
         string tenantId)
     {
-        if (pairs.Count == 0)
-            return null;
+        // ── Narrow by subscription when tenant has one explicitly configured ─────
+        // Dict<subscriptionId, [deduped workspaces]> makes this an O(1) lookup.
+        var subscriptionId = _configuration[$"Tenants:{tenantId}:SubscriptionId"];
 
-        if (pairs.Count > 1)
+        IReadOnlyList<ObservabilityResourcePair> candidates;
+        if (!string.IsNullOrWhiteSpace(subscriptionId))
+        {
+            if (!cache.BySubscription.TryGetValue(subscriptionId, out var subWorkspaces))
+            {
+                _logger.LogWarning(
+                    "[WorkspaceResolver] No discovered workspace matches subscription {SubscriptionId} for tenant {TenantId}",
+                    subscriptionId, tenantId);
+                return null;
+            }
+            candidates = subWorkspaces;
+        }
+        else
+        {
+            // No subscription hint — use globally deduped workspace list.
+            candidates = cache.AllWorkspaces;
+        }
+
+        if (candidates.Count > 1)
         {
             _logger.LogWarning(
-                "[WorkspaceResolver] Multiple LAW/AI pairs discovered for tenant {TenantId} with no workspace configured; cannot auto-select",
-                tenantId);
+                "[WorkspaceResolver] {Count} workspaces discovered for tenant {TenantId}; cannot auto-select — configure Tenants:{TenantId}:SubscriptionId to disambiguate",
+                candidates.Count, tenantId, tenantId);
             return null;
         }
 
-        var pair = pairs[0];
+        var pair = candidates[0];
         var allowlist = _configuration
             .GetSection("SafeActions:AllowedLogAnalyticsWorkspaceIds")
             .Get<string[]>();
@@ -172,5 +187,47 @@ internal sealed class TenantWorkspaceResolver : ITenantWorkspaceResolver
             pair.WorkspaceCustomerId, tenantId);
 
         return new WorkspaceResolutionResult(true, pair.WorkspaceCustomerId, null, pair.AppInsightsResourcePath);
+    }
+
+    private async ValueTask<WorkspaceDiscoveryCache> GetCacheAsync(CancellationToken ct)
+    {
+        var cached = _cache;
+        if (cached is not null)
+            return cached;
+
+        var pairs = await _resourceDiscovery!.DiscoverAsync(ct);
+
+        // Index 1: subscriptionId → deduped workspaces in that subscription.
+        var bySubscription = pairs
+            .GroupBy(p => p.SubscriptionId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<ObservabilityResourcePair>)g
+                    .GroupBy(p => p.WorkspaceCustomerId, StringComparer.OrdinalIgnoreCase)
+                    .Select(wg => wg.First())
+                    .ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        // Index 2: workspaceCustomerId → single pair (O(1) AI-path lookup).
+        var byWorkspace = pairs
+            .GroupBy(p => p.WorkspaceCustomerId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => g.First(),
+                StringComparer.OrdinalIgnoreCase);
+
+        cached = new WorkspaceDiscoveryCache(bySubscription, byWorkspace);
+        _cache = cached; // volatile write — benign race on cold start
+        return cached;
+    }
+
+    /// <summary>In-memory indices built once from ARG discovery results.</summary>
+    private sealed record WorkspaceDiscoveryCache(
+        IReadOnlyDictionary<string, IReadOnlyList<ObservabilityResourcePair>> BySubscription,
+        IReadOnlyDictionary<string, ObservabilityResourcePair>                ByWorkspace)
+    {
+        /// <summary>All distinct workspaces across all subscriptions (globally deduped by customer ID).</summary>
+        public IReadOnlyList<ObservabilityResourcePair> AllWorkspaces { get; } =
+            ByWorkspace.Values.ToList();
     }
 }

@@ -181,7 +181,7 @@ else
                 <div class="oc-card"><span class="oc-card-label">Unavailable</span><span class="oc-card-value">@spotlight.Evidence.FailedCollectors</span></div>
             </section>
             <div class="oc-observability-grid">
-                @foreach (var collector in spotlight.Evidence.CollectorSummaries.Take(3))
+                @foreach (var collector in spotlight.Evidence.CollectorSummaries)
                 {
                     <article class="oc-observability-card">
                         <div class="oc-observability-card-header">
@@ -198,7 +198,7 @@ else
                         else if (collector.Highlights.Count > 0)
                         {
                             <ul class="oc-observability-highlights">
-                                @foreach (var highlight in collector.Highlights.Take(2))
+                                @foreach (var highlight in collector.Highlights)
                                 {
                                     <li>@highlight</li>
                                 }
@@ -207,6 +207,10 @@ else
                         else
                         {
                             <p class="oc-observability-empty">No summarised highlights were returned.</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(collector.RunbookRef))
+                        {
+                            <a href="@collector.RunbookRef" class="oc-runbook-link" target="_blank" rel="noopener">See runbook →</a>
                         }
                     </article>
                 }

@@ -7,6 +7,8 @@ using OpsCopilot.AgentRuns.Application.Abstractions;
 using SdkMcpClient = ModelContextProtocol.Client.McpClient;
 using StdioTransport = ModelContextProtocol.Client.StdioClientTransport;
 using StdioTransportOptions = ModelContextProtocol.Client.StdioClientTransportOptions;
+using HttpTransport = ModelContextProtocol.Client.HttpClientTransport;
+using HttpTransportOptions = ModelContextProtocol.Client.HttpClientTransportOptions;
 
 namespace OpsCopilot.AgentRuns.Infrastructure.McpClient;
 

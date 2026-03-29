@@ -46,4 +46,9 @@
     <ProjectReference Include="..\..\Modules\Prompting\Infrastructure\OpsCopilot.Prompting.Infrastructure\OpsCopilot.Prompting.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpsCopilot.ApiHost.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
 </Project>

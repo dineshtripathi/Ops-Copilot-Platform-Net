@@ -10,10 +10,15 @@ using ModelContextProtocol.Server;
 using OpsCopilot.Rag.Presentation.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OpsCopilot.McpHost — MCP tool server (stdio transport)
+// OpsCopilot.McpHost — MCP tool server (HTTP or stdio transport)
 //
-// Protocol : Model Context Protocol (MCP) over stdin/stdout.
-// Transport: stdio  — stdout is the MCP wire; stderr is for application logs.
+// Transports:
+//   HTTP (SSE) — primary; enabled when NOT spawned as a child process.
+//                Listens on http://+:8081/mcp (matches Container Apps targetPort).
+//   stdio       — fallback; enabled when stdin is redirected (child-process mode).
+//                 Allows local dev clients to spawn McpHost directly without a
+//                 running HTTP instance.
+//
 // Tools    : kql_query — executes KQL against Azure Log Analytics.
 //            runbook_search — searches the operational runbook knowledge base.
 //
@@ -21,12 +26,19 @@ using OpsCopilot.Rag.Presentation.Extensions;
 //   ExplicitChain          — deterministic credential chain; default in Development.
 //   DefaultAzureCredential — full DAC with configurable exclusions; default in Production.
 //
-// How to run locally:
+// How to run locally (HTTP mode):
 //   az login --tenant <your-tenant-id>
 //   dotnet run --project src/Hosts/OpsCopilot.McpHost
+//   # MCP endpoint:  http://localhost:8081/mcp
 //
 // See docs/local-dev-auth.md for full troubleshooting.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── Transport mode detection ──────────────────────────────────────────────────
+// When clients spawn McpHost as a child process they redirect stdin; that is
+// the reliable signal that we are in stdio-pipe mode.  All other invocations
+// (Azure Container Apps, manual dotnet run) use HTTP transport on port 8081.
+bool isStdioPipeMode = Console.IsInputRedirected;
 
 // ── Win32 stdin handle non-inheritance guard ──────────────────────────────────
 // Azure.Identity's AzureCliCredential (and AzurePowerShellCredential) spawn child
@@ -47,7 +59,12 @@ if (OperatingSystem.IsWindows())
         Win32Stdin.SetHandleInformation(hIn, Win32Stdin.HandleFlagInherit, 0);
 }
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
+
+// ── HTTP port — listen on 8081 to match Container Apps targetPort ─────────────
+// In stdio-pipe mode use an ephemeral loopback port (OS-assigned) so that
+// spawning multiple child processes never causes a port conflict.
+builder.WebHost.UseUrls(isStdioPipeMode ? "http://127.0.0.1:0" : "http://+:8081");
 
 // ── Logging → all to stderr so stdout remains clean for MCP wire ──────────────
 builder.Logging.AddConsole(o =>
@@ -223,14 +240,23 @@ builder.Services.AddRagModule(builder.Configuration);
 }
 
 // ── MCP server ────────────────────────────────────────────────────────────────
-// - StdioServerTransport: reads JSON-RPC from stdin, writes to stdout
+// - HTTP transport (MapMcp below): SSE endpoint at /mcp — used in Azure and
+//   by any client that sets McpKql:ServerUrl to the McpHost HTTP address.
+// - Stdio transport (conditional): also registered when stdin is redirected
+//   (child-process mode) so local dev clients can spawn McpHost directly.
 // - WithToolsFromAssembly: discovers all [McpServerToolType] classes in this exe
-builder.Services
+var mcpBuilder = builder.Services
     .AddMcpServer()
-    .WithStdioServerTransport()
     .WithToolsFromAssembly();
 
-startupLogger.LogInformation("[Startup] MCP server configured — stdio transport, tools from assembly");
+if (isStdioPipeMode)
+    mcpBuilder.WithStdioServerTransport();
+else
+    mcpBuilder.WithHttpTransport();
+
+startupLogger.LogInformation(
+    "[Startup] MCP server configured — {Transport} transport, tools from assembly",
+    isStdioPipeMode ? "stdio" : "HTTP (SSE at /mcp)");
 
 // ── Development-only auth probe ─────────────────────────────────────────────
 // Attempt to acquire real tokens before the MCP wire starts. This surfaces
@@ -280,7 +306,15 @@ if (isDevelopment)
     }
 }
 
-await builder.Build().RunAsync();
+var app = builder.Build();
+
+// Register the MCP SSE endpoint in HTTP mode only.
+// In stdio-pipe mode the server communicates over stdin/stdout; MapMcp requires
+// HTTP transport services and must not be called in stdio mode.
+if (!isStdioPipeMode)
+    app.MapMcp("/mcp");
+
+await app.RunAsync();
 
 static bool ReadBool(string? raw, bool defaultValue)
     => bool.TryParse(raw, out var parsed) ? parsed : defaultValue;

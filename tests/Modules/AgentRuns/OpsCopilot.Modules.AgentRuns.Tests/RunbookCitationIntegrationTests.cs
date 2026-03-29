@@ -347,6 +347,7 @@ public sealed class RunbookCitationIntegrationTests
             ["WORKSPACE_ID"] = WorkspaceId
         });
         builder.Services.AddSingleton(orchestrator);
+        builder.Services.AddSingleton<ITriageOrchestrator>(orchestrator);
         builder.Services.AddSingleton<IPackTriageEnricher>(enricher.Object);
         builder.Services.AddSingleton<IPackEvidenceExecutor>(executor.Object);
 

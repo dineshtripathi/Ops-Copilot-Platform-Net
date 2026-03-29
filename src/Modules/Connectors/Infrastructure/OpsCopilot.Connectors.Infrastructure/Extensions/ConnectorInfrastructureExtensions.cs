@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OpsCopilot.Connectors.Abstractions;
 using OpsCopilot.Connectors.Application.Extensions;
 using OpsCopilot.Connectors.Infrastructure.Connectors;
+using OpsCopilot.Connectors.Infrastructure.Services;
 
 namespace OpsCopilot.Connectors.Infrastructure.Extensions;
 
@@ -18,6 +19,9 @@ public static class ConnectorInfrastructureExtensions
     {
         // Application layer — registry
         services.AddConnectorsApplication();
+
+        // Credential provider — reads connector secrets from IConfiguration / Azure Key Vault.
+        services.AddSingleton<IConnectorCredentialProvider, KeyVaultConnectorCredentialProvider>();
 
         // Infrastructure — concrete connectors (config-driven, explicit, no reflection)
         services.AddSingleton<IObservabilityConnector, AzureMonitorObservabilityConnector>();
@@ -48,6 +52,8 @@ public static class ConnectorInfrastructureExtensions
         var timeoutStr = configuration?["McpKql:TimeoutSeconds"]
             ?? configuration?["MCP_KQL_TIMEOUT_SECONDS"];
         var timeout = int.TryParse(timeoutStr, out var parsedTimeout) ? parsedTimeout : 90;
+        var serverUrl = configuration?["McpKql:ServerUrl"]
+            ?? configuration?["MCP_KQL_SERVER_URL"];
 
         if (!string.IsNullOrWhiteSpace(cmdStr))
         {
@@ -58,6 +64,7 @@ public static class ConnectorInfrastructureExtensions
                 Arguments = tokens[1..],
                 WorkingDirectory = string.IsNullOrWhiteSpace(workDir) ? null : workDir,
                 TimeoutSeconds = timeout,
+                ServerUrl = string.IsNullOrWhiteSpace(serverUrl) ? null : serverUrl,
             };
         }
 
@@ -65,6 +72,7 @@ public static class ConnectorInfrastructureExtensions
         {
             WorkingDirectory = string.IsNullOrWhiteSpace(workDir) ? null : workDir,
             TimeoutSeconds = timeout,
+            ServerUrl = string.IsNullOrWhiteSpace(serverUrl) ? null : serverUrl,
         };
     }
 }

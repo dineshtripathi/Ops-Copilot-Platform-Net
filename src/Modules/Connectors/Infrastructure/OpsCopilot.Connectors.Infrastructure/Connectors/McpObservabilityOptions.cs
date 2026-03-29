@@ -10,4 +10,11 @@ internal sealed class McpObservabilityOptions
     public string? WorkingDirectory { get; init; }
 
     public int TimeoutSeconds { get; init; } = 90;
+
+    /// <summary>
+    /// When non-null, the HTTP (SSE) endpoint URL of the McpHost
+    /// (e.g. "https://&lt;fqdn&gt;/mcp").  Takes priority over stdio child-process
+    /// spawning.  Set via McpKql:ServerUrl or MCP_KQL_SERVER_URL.
+    /// </summary>
+    public string? ServerUrl { get; init; }
 }

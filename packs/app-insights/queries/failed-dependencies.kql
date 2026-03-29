@@ -1,7 +1,9 @@
-// Failed external dependencies in the last 30 minutes
+// Failed external dependencies in the selected time window
 // Workspace schema: AppDependencies
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
 AppDependencies
-| where TimeGenerated > ago(2d) and Success == false
+| where TimeGenerated between (_startTime .. _endTime) and Success == false
 | summarize
     Count = count(),
     FirstSeen = min(TimeGenerated),

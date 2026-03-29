@@ -199,6 +199,10 @@ public static class AgentRunsInfrastructureExtensions
                       ?? configuration["MCP_KQL_TIMEOUT_SECONDS"];
         var timeout = int.TryParse(timeoutStr, out var t) ? t : 30;
 
+        // ── ServerUrl ───────────────────────────────────────────────────────
+        var serverUrl = configuration["McpKql:ServerUrl"]
+                     ?? configuration["MCP_KQL_SERVER_URL"];
+
         if (!string.IsNullOrWhiteSpace(cmdStr))
         {
             // Parse flat command string: "dotnet /app/McpHost.dll" →
@@ -210,6 +214,7 @@ public static class AgentRunsInfrastructureExtensions
                 Arguments        = tokens[1..],
                 WorkingDirectory = string.IsNullOrWhiteSpace(workDir) ? null : workDir,
                 TimeoutSeconds   = timeout,
+                ServerUrl        = string.IsNullOrWhiteSpace(serverUrl) ? null : serverUrl,
             };
         }
 
@@ -218,6 +223,7 @@ public static class AgentRunsInfrastructureExtensions
         {
             WorkingDirectory = string.IsNullOrWhiteSpace(workDir) ? null : workDir,
             TimeoutSeconds   = timeout,
+            ServerUrl        = string.IsNullOrWhiteSpace(serverUrl) ? null : serverUrl,
         };
     }
 }

@@ -14,6 +14,7 @@ public static class AgentRunsApplicationExtensions
         services.AddSingleton<IIncidentMemoryService, NullIncidentMemoryService>();
         services.AddSingleton<IIncidentMemoryIndexer, NullIncidentMemoryIndexer>();
         services.AddScoped<TriageOrchestrator>();
+        services.AddScoped<ITriageOrchestrator>(sp => sp.GetRequiredService<TriageOrchestrator>());
         services.AddScoped<ChatOrchestrator>();
         return services;
     }

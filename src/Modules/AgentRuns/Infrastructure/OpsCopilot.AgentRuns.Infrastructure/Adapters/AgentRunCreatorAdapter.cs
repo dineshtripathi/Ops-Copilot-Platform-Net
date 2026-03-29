@@ -47,4 +47,14 @@ internal sealed class AgentRunCreatorAdapter : IAgentRunCreator
         var run = await _repository.CreateRunAsync(tenantId, alertFingerprint, sessionId, runContext, ct);
         return run.RunId;
     }
+
+    public async Task<Guid?> FindRecentSessionIdAsync(
+        string tenantId,
+        string alertFingerprint,
+        int windowMinutes,
+        CancellationToken ct = default)
+    {
+        var run = await _repository.FindRecentRunAsync(tenantId, alertFingerprint, windowMinutes, ct);
+        return run?.SessionId;
+    }
 }

@@ -176,6 +176,19 @@ else
                 </div>
                 <small>@observability.SuccessfulCollectors ready · @observability.FailedCollectors unavailable</small>
             </div>
+            @if (!string.IsNullOrWhiteSpace(observability.FailurePattern) || !string.IsNullOrWhiteSpace(observability.OwnerPath))
+            {
+                <section class="oc-summary-cards" aria-label="Failure pattern analysis">
+                    @if (!string.IsNullOrWhiteSpace(observability.FailurePattern))
+                    {
+                        <div class="oc-card"><span class="oc-card-label">Failure Pattern</span><span class="oc-card-value">@observability.FailurePattern</span></div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(observability.OwnerPath))
+                    {
+                        <div class="oc-card"><span class="oc-card-label">Owner Path</span><span class="oc-card-value">@observability.OwnerPath</span></div>
+                    }
+                </section>
+            }
             <div class="oc-observability-grid">
                 @foreach (var collector in observability.CollectorSummaries)
                 {
@@ -203,6 +216,10 @@ else
                         else
                         {
                             <p class="oc-observability-empty">No summarised highlights were returned.</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(collector.RunbookRef))
+                        {
+                            <a href="@collector.RunbookRef" class="oc-runbook-link" target="_blank" rel="noopener">See runbook →</a>
                         }
                     </article>
                 }

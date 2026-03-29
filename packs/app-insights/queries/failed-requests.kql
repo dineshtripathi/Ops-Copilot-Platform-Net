@@ -1,7 +1,9 @@
-// Failed HTTP requests in the last 30 minutes
+// Failed HTTP requests in the selected time window
 // Workspace schema: AppRequests
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
 AppRequests
-| where TimeGenerated > ago(2d) and Success == false
+| where TimeGenerated between (_startTime .. _endTime) and Success == false
 | extend requestName = tostring(Name)
 | summarize
     Count = count(),

@@ -1676,3 +1676,294 @@ tbody tr:hover {
         width: 100%;
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Chat page styles
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ─── Form utilities ─────────────────────────────────────────────────── */
+.oc-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    margin-bottom: 1rem;
+}
+
+.oc-form-label {
+    font-size: 0.73rem;
+    font-weight: 700;
+    color: #5d6d84;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.oc-textarea {
+    width: 100%;
+    padding: 0.85rem 1rem;
+    border: 1px solid rgba(15, 62, 101, 0.15);
+    border-radius: 14px;
+    font-family: inherit;
+    font-size: 0.92rem;
+    line-height: 1.55;
+    color: #11243a;
+    background: rgba(249, 251, 253, 0.96);
+    resize: vertical;
+    min-height: 96px;
+    transition: border-color .15s, box-shadow .15s;
+    box-sizing: border-box;
+}
+
+.oc-textarea:focus {
+    outline: none;
+    border-color: var(--oc-accent);
+    box-shadow: 0 0 0 3px rgba(11, 127, 171, 0.12);
+}
+
+.oc-textarea::placeholder {
+    color: #9aafcc;
+    font-style: italic;
+}
+
+/* ─── Buttons ────────────────────────────────────────────────────────── */
+.oc-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 1.4rem;
+    border: none;
+    border-radius: 14px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .18s, transform .12s, box-shadow .18s;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.oc-btn--primary {
+    background: linear-gradient(135deg, #118db4, #0f678b);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(16, 111, 149, 0.22);
+}
+
+.oc-btn--primary:hover {
+    background: linear-gradient(135deg, #1098c4, #0d5a7d);
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(16, 111, 149, 0.30);
+}
+
+.oc-btn--primary:active {
+    transform: translateY(0);
+    box-shadow: 0 6px 14px rgba(16, 111, 149, 0.18);
+}
+
+/* ─── Section title ──────────────────────────────────────────────────── */
+.oc-section-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #11243a;
+    margin: 0 0 0.85rem;
+    padding: 0;
+    border: none;
+    letter-spacing: -0.01em;
+}
+
+/* ─── Chat compose area ──────────────────────────────────────────────── */
+.oc-chat-compose {
+    background: var(--oc-panel);
+    border: 1px solid var(--oc-panel-border);
+    border-radius: var(--oc-radius-lg);
+    box-shadow: var(--oc-shadow-md);
+    padding: 1.4rem 1.5rem 1.25rem;
+    margin-bottom: 1.2rem;
+    animation: oc-rise .36s ease-out;
+}
+
+.oc-chat-compose-header {
+    margin-bottom: 1rem;
+    border-bottom: 1px solid rgba(18, 39, 68, 0.07);
+    padding-bottom: 0.65rem;
+}
+
+.oc-chat-compose-header h2 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #11243a;
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+.oc-chat-compose-header p {
+    margin: 0.2rem 0 0;
+    color: #65778c;
+    font-size: 0.82rem;
+}
+
+.oc-chat-form-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.oc-chat-form-hint {
+    font-size: 0.76rem;
+    color: #8097b0;
+    font-style: italic;
+}
+
+/* ─── Chat answer panel ──────────────────────────────────────────────── */
+.oc-chat-answer-panel {
+    background: var(--oc-panel);
+    border: 1px solid var(--oc-panel-border);
+    border-left: 4px solid var(--oc-accent);
+    border-radius: var(--oc-radius-lg);
+    box-shadow: var(--oc-shadow-md);
+    padding: 1.4rem 1.5rem;
+    margin-bottom: 1.2rem;
+    animation: oc-rise .36s ease-out;
+}
+
+.oc-chat-answer-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.9rem;
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid rgba(18, 39, 68, 0.07);
+}
+
+.oc-chat-answer-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #10b5d6, #0d6e92);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+}
+
+.oc-chat-answer-header strong {
+    font-size: 0.9rem;
+    color: #11243a;
+    font-weight: 700;
+}
+
+.oc-chat-answer {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.7;
+    color: #1e3248;
+    font-size: 0.93rem;
+    margin: 0;
+}
+
+/* ─── Citation sections ──────────────────────────────────────────────── */
+.oc-citation-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+}
+
+.oc-citation-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.oc-citation-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.oc-citation-date {
+    margin-left: auto;
+    font-size: 0.74rem;
+    color: #7087aa;
+    white-space: nowrap;
+}
+
+.oc-citation-snippet {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #3a4d63;
+    line-height: 1.55;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.oc-citation-meta {
+    font-size: 0.74rem;
+    color: #8097b0;
+    font-style: italic;
+}
+
+.oc-citation-title {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #11243a;
+    display: block;
+}
+
+/* ─── Hero aside (chat page right column) ───────────────────────────── */
+.oc-hero-aside {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(174, 225, 247, 0.16);
+    border-radius: 20px;
+    padding: 1.1rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    align-self: center;
+}
+
+.oc-hero-aside-title {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #8fdcf6;
+    margin-bottom: 0.2rem;
+}
+
+.oc-hero-examples {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.oc-hero-example {
+    font-size: 0.8rem;
+    color: rgba(220, 238, 252, 0.82);
+    padding: 0.45rem 0.65rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    border: 1px solid rgba(174, 225, 247, 0.10);
+    line-height: 1.4;
+    cursor: default;
+}
+
+.oc-hero-example::before {
+    content: "→ ";
+    color: #7ecfff;
+    font-weight: 700;
+}

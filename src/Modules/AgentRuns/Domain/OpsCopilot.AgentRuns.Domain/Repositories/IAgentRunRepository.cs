@@ -94,4 +94,27 @@ public interface IAgentRunRepository
     /// for the supplied runId, regardless of tenant.
     /// </summary>
     Task<bool> FeedbackExistsAsync(Guid runId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Slice 127: Loads a single AgentRun by primary key.
+    /// Returns <c>null</c> when the run does not exist or does not belong to <paramref name="tenantId"/>.
+    /// </summary>
+    Task<AgentRun?> GetByRunIdAsync(Guid runId, string tenantId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Slice 128: Transitions a run from <see cref="AgentRunStatus.Pending"/> to
+    /// <see cref="AgentRunStatus.Running"/> to signal the triage pipeline has started.
+    /// No-op when the run is already in a non-Pending state (idempotent).
+    /// </summary>
+    Task MarkRunningAsync(Guid runId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Slice 130: Returns all runs currently in <see cref="AgentRunStatus.Running"/> whose
+    /// <c>CreatedAtUtc</c> is older than <paramref name="createdBefore"/>.
+    /// Used by the stuck-run watchdog to find runs that were never driven to a terminal state
+    /// (e.g. because the server process restarted mid-triage).
+    /// </summary>
+    Task<IReadOnlyList<AgentRun>> GetStuckRunsAsync(
+        DateTimeOffset createdBefore,
+        CancellationToken ct = default);
 }

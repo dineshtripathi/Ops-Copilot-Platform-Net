@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
 using OpsCopilot.Reporting.Application.Abstractions;
@@ -8,6 +10,7 @@ namespace OpsCopilot.Reporting.Infrastructure;
 
 internal sealed class ObservabilityEvidenceProvider(
     IPackEvidenceExecutor packEvidenceExecutor,
+    IConfiguration configuration,
     ILogger<ObservabilityEvidenceProvider> logger) : IObservabilityEvidenceProvider
 {
     private const string AppInsightsPackName = "app-insights";
@@ -23,6 +26,15 @@ internal sealed class ObservabilityEvidenceProvider(
         "http-status-distribution",
         "availability-signals"
     ];
+
+    private static readonly IReadOnlyDictionary<string, string> CollectorRunbookMap =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["top-exceptions"]      = "/runbooks/exception-diagnosis.md",
+            ["failed-requests"]     = "/runbooks/exception-diagnosis.md",
+            ["failed-dependencies"] = "/runbooks/dependency-failure-diagnosis.md",
+            ["timeout-patterns"]    = "/runbooks/dependency-failure-diagnosis.md",
+        };
 
     private static readonly JsonDocumentOptions JsonOpts = new() { AllowTrailingCommas = true };
 
@@ -61,17 +73,36 @@ internal sealed class ObservabilityEvidenceProvider(
 
     public async Task<(ObservabilityEvidenceSummary? Observability, LiveImpactEvidenceSummary? Impact)> GetLiveCombinedAsync(
         string tenantId,
+        DateTime? fromUtc,
+        DateTime? toUtc,
         CancellationToken ct)
     {
         var runId = Guid.NewGuid();
         try
         {
             var result = await packEvidenceExecutor.ExecuteAsync(
-                new PackEvidenceExecutionRequest("B", tenantId, runId.ToString("N")),
+                new PackEvidenceExecutionRequest("B", tenantId, runId.ToString("N"), fromUtc, toUtc),
                 ct);
 
             var observability = MapObservabilitySummaryFromItems(result.EvidenceItems);
             var impact        = MapLiveImpact(result.EvidenceItems);
+
+            if (impact is { CoverageStatus: "live-data-no-impact" })
+            {
+                var workspaceId =
+                    configuration[$"Tenants:{tenantId}:Observability:LogAnalyticsWorkspaceId"]
+                    ?? configuration["Observability:LogAnalyticsWorkspaceId"]
+                    ?? configuration["WORKSPACE_ID"]
+                    ?? "(not configured)";
+
+                impact = impact with
+                {
+                    Diagnostic = $"Live impact collectors returned zero rows. " +
+                                 $"Queried workspace: {workspaceId}. " +
+                                 $"Verify AzureActivity logs are connected to this workspace or widen the incident time window."
+                };
+            }
+
             return (observability, impact);
         }
         catch (Exception ex)
@@ -132,7 +163,9 @@ internal sealed class ObservabilityEvidenceProvider(
             Diagnostic: diagnostic,
             CoverageStatus: coverageStatus,
             IsActionable: isActionable,
-            Recommendations: BuildObservabilityRecommendations(coverageStatus));
+            Recommendations: BuildObservabilityRecommendations(coverageStatus),
+            FailurePattern: DeriveFailurePattern(collectors),
+            OwnerPath: DeriveOwnerPath(collectors));
     }
 
     private async Task<ObservabilityEvidenceSummary?> ExecuteSummaryAsync(
@@ -198,7 +231,9 @@ internal sealed class ObservabilityEvidenceProvider(
                 Diagnostic: diagnostic,
                 CoverageStatus: coverageStatus,
                 IsActionable: isActionable,
-                Recommendations: recommendations);
+                Recommendations: recommendations,
+                FailurePattern: DeriveFailurePattern(collectors),
+                OwnerPath: DeriveOwnerPath(collectors));
         }
         catch (Exception ex)
         {
@@ -450,7 +485,8 @@ internal sealed class ObservabilityEvidenceProvider(
             RowCount: item.RowCount,
             Status: status,
             Highlights: highlights,
-            ErrorMessage: item.ErrorMessage);
+            ErrorMessage: item.ErrorMessage,
+            RunbookRef: CollectorRunbookMap.GetValueOrDefault(item.CollectorId));
     }
 
     private static string MapTitle(string collectorId) => collectorId switch
@@ -509,9 +545,10 @@ internal sealed class ObservabilityEvidenceProvider(
 
         if (TryGetString(row, "resultCode", out var resultCode))
         {
-            var url = GetFirstString(row, "url", "target");
+            var displayCode = resultCode == "0" ? "No response" : resultCode;
+            var url = GetFirstString(row, "url", "target", "name");
             var count = GetScalar(row, "Count");
-            return Truncate($"{resultCode}{FormatCount(count)}{FormatDetail(url)}");
+            return Truncate($"{displayCode}{FormatCount(count)}{FormatDetail(url)}");
         }
 
         if (TryGetString(row, "target", out var target))
@@ -592,6 +629,88 @@ internal sealed class ObservabilityEvidenceProvider(
         if (string.IsNullOrWhiteSpace(value))
             return string.Empty;
 
-        return value.Length <= 140 ? value : value[..137] + "...";
+        return value.Length <= 200 ? value : value[..197] + "...";
+    }
+
+    private static string? DeriveFailurePattern(IReadOnlyList<ObservabilityEvidenceCollectorSummary> collectors)
+    {
+        var highlights = collectors
+            .SelectMany(c => c.Highlights)
+            .ToList();
+
+        var patterns = new List<string>();
+
+        if (highlights.Any(h => h.Contains("403", StringComparison.OrdinalIgnoreCase)
+                                || h.Contains("401", StringComparison.OrdinalIgnoreCase)
+                                || h.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase)
+                                || h.Contains("Forbidden", StringComparison.OrdinalIgnoreCase)))
+            patterns.Add("Auth rejection");
+
+        if (highlights.Any(h => h.Contains("Timeout", StringComparison.OrdinalIgnoreCase)
+                                || h.Contains("408", StringComparison.OrdinalIgnoreCase)
+                                || h.Contains("RequestTimeout", StringComparison.OrdinalIgnoreCase)))
+            patterns.Add("Timeout");
+
+        if (highlights.Any(h => h.Contains("500", StringComparison.OrdinalIgnoreCase)
+                                || h.Contains("502", StringComparison.OrdinalIgnoreCase)
+                                || h.Contains("503", StringComparison.OrdinalIgnoreCase)
+                                || h.Contains("InternalServerError", StringComparison.OrdinalIgnoreCase)))
+            patterns.Add("Server error");
+
+        if (highlights.Any(h => h.Contains("404", StringComparison.OrdinalIgnoreCase)
+                                || h.Contains("NotFound", StringComparison.OrdinalIgnoreCase)))
+            patterns.Add("Not found");
+
+        return patterns.Count > 0 ? string.Join(", ", patterns) : null;
+    }
+
+    private static string? DeriveOwnerPath(IReadOnlyList<ObservabilityEvidenceCollectorSummary> collectors)
+    {
+        var depCollector = collectors.FirstOrDefault(c =>
+            string.Equals(c.CollectorId, "failed-dependencies", StringComparison.OrdinalIgnoreCase));
+
+        if (depCollector is null || depCollector.Highlights.Count == 0)
+            return null;
+
+        var ownerGroups = depCollector.Highlights
+            .Select(ExtractDependencyTarget)
+            .Where(t => t is not null)
+            .Select(t => ClassifyOwner(t!))
+            .GroupBy(o => o)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .ToList();
+
+        return ownerGroups.Count > 0 ? string.Join(" → ", ownerGroups) : null;
+    }
+
+    private static string? ExtractDependencyTarget(string highlight)
+    {
+        var urlMatch = Regex.Match(highlight, @"https?://([^/\s(]+)");
+        if (urlMatch.Success)
+            return urlMatch.Groups[1].Value;
+
+        var typeMatch = Regex.Match(highlight, @"[\w]+:\s+([^\s(]+)");
+        return typeMatch.Success ? typeMatch.Groups[1].Value : null;
+    }
+
+    private static string ClassifyOwner(string target)
+    {
+        if (target.Contains(".azure.com", StringComparison.OrdinalIgnoreCase)
+            || target.Contains(".database.windows.net", StringComparison.OrdinalIgnoreCase)
+            || target.Contains(".servicebus.windows.net", StringComparison.OrdinalIgnoreCase)
+            || target.Contains(".blob.core.windows.net", StringComparison.OrdinalIgnoreCase))
+            return "Azure infrastructure";
+
+        if (target.Contains(".sentry.io", StringComparison.OrdinalIgnoreCase)
+            || target.Contains(".datadoghq.com", StringComparison.OrdinalIgnoreCase)
+            || target.Contains(".newrelic.com", StringComparison.OrdinalIgnoreCase))
+            return "Monitoring vendor";
+
+        if (target.StartsWith("localhost", StringComparison.OrdinalIgnoreCase)
+            || Regex.IsMatch(target, @"^10\.|\.internal$|\.svc\.cluster\.local"))
+            return "Internal service";
+
+        return "External vendor";
     }
 }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
@@ -16,7 +17,7 @@ public sealed class ObservabilityEvidenceProviderTests
                 It.Is<PackEvidenceExecutionRequest>(r => r.DeploymentMode == "B" && r.TenantId == "tenant-1"),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PackEvidenceExecutionResult([], []));
-        var sut = new ObservabilityEvidenceProvider(executor.Object, NullLogger<ObservabilityEvidenceProvider>.Instance);
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
 
         var result = await sut.GetSummaryAsync(Guid.NewGuid(), "tenant-1", null, CancellationToken.None);
 
@@ -56,7 +57,7 @@ public sealed class ObservabilityEvidenceProviderTests
                 ],
                 []));
 
-        var sut = new ObservabilityEvidenceProvider(executor.Object, NullLogger<ObservabilityEvidenceProvider>.Instance);
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
 
         var result = await sut.GetSummaryAsync(Guid.NewGuid(), "tenant-1", "ws-1", CancellationToken.None);
 
@@ -90,7 +91,7 @@ public sealed class ObservabilityEvidenceProviderTests
                 ],
                 []));
 
-        var sut = new ObservabilityEvidenceProvider(executor.Object, NullLogger<ObservabilityEvidenceProvider>.Instance);
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
 
         var result = await sut.GetLiveSummaryAsync("tenant-1", CancellationToken.None);
 
@@ -113,7 +114,7 @@ public sealed class ObservabilityEvidenceProviderTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PackEvidenceExecutionResult([], []));
 
-        var sut = new ObservabilityEvidenceProvider(executor.Object, NullLogger<ObservabilityEvidenceProvider>.Instance);
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
 
         var result = await sut.GetLiveSummaryAsync("tenant-1", CancellationToken.None);
 
@@ -155,7 +156,7 @@ public sealed class ObservabilityEvidenceProviderTests
                 ],
                 []));
 
-        var sut = new ObservabilityEvidenceProvider(executor.Object, NullLogger<ObservabilityEvidenceProvider>.Instance);
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
 
         var result = await sut.GetLiveImpactSummaryAsync("tenant-1", CancellationToken.None);
 
@@ -200,7 +201,7 @@ public sealed class ObservabilityEvidenceProviderTests
                 ],
                 []));
 
-        var sut = new ObservabilityEvidenceProvider(executor.Object, NullLogger<ObservabilityEvidenceProvider>.Instance);
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
 
         var result = await sut.GetLiveImpactSummaryAsync("tenant-1", CancellationToken.None);
 
@@ -212,5 +213,186 @@ public sealed class ObservabilityEvidenceProviderTests
         Assert.Equal("live-data-no-impact", result.CoverageStatus);
         Assert.NotNull(result.Recommendations);
         Assert.NotEmpty(result.Recommendations!);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenExceptionMessageExceeds200Chars_TruncatesAt200()
+    {
+        var longMessage = new string('A', 210);
+        var executor = new Mock<IPackEvidenceExecutor>(MockBehavior.Strict);
+        executor.Setup(x => x.ExecuteAsync(
+                It.Is<PackEvidenceExecutionRequest>(r => r.TenantId == "tenant-1"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PackEvidenceExecutionResult(
+                [
+                    new PackEvidenceItem(
+                        PackName: "app-insights",
+                        CollectorId: "top-exceptions",
+                        ConnectorName: "azure-monitor",
+                        QueryFile: "queries/top-exceptions.kql",
+                        QueryContent: null,
+                        ResultJson: $"[{{\"exceptionType\":\"RuntimeException\",\"Count\":1,\"SampleMessage\":\"{longMessage}\"}}]",
+                        RowCount: 1,
+                        ErrorMessage: null)
+                ],
+                []));
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
+
+        var result = await sut.GetSummaryAsync(Guid.NewGuid(), "tenant-1", "ws-1", CancellationToken.None);
+
+        Assert.NotNull(result);
+        var collector = Assert.Single(result!.CollectorSummaries, c => c.CollectorId == "top-exceptions");
+        var highlight = Assert.Single(collector.Highlights);
+        Assert.EndsWith("...", highlight, StringComparison.Ordinal);
+        Assert.True(highlight.Length <= 250, $"Highlight too long: {highlight.Length}");
+        Assert.False(highlight.Contains(longMessage, StringComparison.Ordinal), "Should not contain full un-truncated message");
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenResultCodeIsZero_ShowsNoResponse()
+    {
+        var executor = new Mock<IPackEvidenceExecutor>(MockBehavior.Strict);
+        executor.Setup(x => x.ExecuteAsync(
+                It.Is<PackEvidenceExecutionRequest>(r => r.TenantId == "tenant-1"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PackEvidenceExecutionResult(
+                [
+                    new PackEvidenceItem(
+                        PackName: "app-insights",
+                        CollectorId: "failed-requests",
+                        ConnectorName: "azure-monitor",
+                        QueryFile: "queries/failed-requests.kql",
+                        QueryContent: null,
+                        ResultJson: "[{\"resultCode\":\"0\",\"Count\":5,\"url\":\"https://api.example.com/health\"}]",
+                        RowCount: 1,
+                        ErrorMessage: null)
+                ],
+                []));
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
+
+        var result = await sut.GetSummaryAsync(Guid.NewGuid(), "tenant-1", "ws-1", CancellationToken.None);
+
+        Assert.NotNull(result);
+        var collector = Assert.Single(result!.CollectorSummaries, c => c.CollectorId == "failed-requests");
+        var highlight = Assert.Single(collector.Highlights);
+        Assert.Contains("No response", highlight, StringComparison.Ordinal);
+        Assert.DoesNotContain("0 (", highlight, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenRequestsWith403_DerivesAuthRejectionPattern()
+    {
+        var executor = new Mock<IPackEvidenceExecutor>(MockBehavior.Strict);
+        executor.Setup(x => x.ExecuteAsync(
+                It.Is<PackEvidenceExecutionRequest>(r => r.TenantId == "tenant-1"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PackEvidenceExecutionResult(
+                [
+                    new PackEvidenceItem(
+                        PackName: "app-insights",
+                        CollectorId: "failed-requests",
+                        ConnectorName: "azure-monitor",
+                        QueryFile: "queries/failed-requests.kql",
+                        QueryContent: null,
+                        ResultJson: "[{\"resultCode\":\"403\",\"Count\":12,\"url\":\"https://api.example.com/admin\"}]",
+                        RowCount: 1,
+                        ErrorMessage: null)
+                ],
+                []));
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
+
+        var result = await sut.GetSummaryAsync(Guid.NewGuid(), "tenant-1", "ws-1", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.NotNull(result!.FailurePattern);
+        Assert.Contains("Auth rejection", result.FailurePattern, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenFailedDependencyTargetsExternalHost_DerivesExternalVendorOwnerPath()
+    {
+        var executor = new Mock<IPackEvidenceExecutor>(MockBehavior.Strict);
+        executor.Setup(x => x.ExecuteAsync(
+                It.Is<PackEvidenceExecutionRequest>(r => r.TenantId == "tenant-1"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PackEvidenceExecutionResult(
+                [
+                    new PackEvidenceItem(
+                        PackName: "app-insights",
+                        CollectorId: "failed-dependencies",
+                        ConnectorName: "azure-monitor",
+                        QueryFile: "queries/failed-dependencies.kql",
+                        QueryContent: null,
+                        ResultJson: "[{\"target\":\"HTTP: api.beaconcrm.org\",\"Count\":50,\"resultCode\":\"500\"}]",
+                        RowCount: 1,
+                        ErrorMessage: null)
+                ],
+                []));
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
+
+        var result = await sut.GetSummaryAsync(Guid.NewGuid(), "tenant-1", "ws-1", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.NotNull(result!.OwnerPath);
+        Assert.Contains("External vendor", result.OwnerPath, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenTopExceptionsCollector_HasRunbookRef()
+    {
+        var executor = new Mock<IPackEvidenceExecutor>(MockBehavior.Strict);
+        executor.Setup(x => x.ExecuteAsync(
+                It.Is<PackEvidenceExecutionRequest>(r => r.TenantId == "tenant-1"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PackEvidenceExecutionResult(
+                [
+                    new PackEvidenceItem(
+                        PackName: "app-insights",
+                        CollectorId: "top-exceptions",
+                        ConnectorName: "azure-monitor",
+                        QueryFile: "queries/top-exceptions.kql",
+                        QueryContent: null,
+                        ResultJson: "[{\"exceptionType\":\"NullReferenceException\",\"Count\":5}]",
+                        RowCount: 1,
+                        ErrorMessage: null)
+                ],
+                []));
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
+
+        var result = await sut.GetSummaryAsync(Guid.NewGuid(), "tenant-1", "ws-1", CancellationToken.None);
+
+        Assert.NotNull(result);
+        var collector = Assert.Single(result!.CollectorSummaries, c => c.CollectorId == "top-exceptions");
+        Assert.NotNull(collector.RunbookRef);
+        Assert.Contains("exception-diagnosis", collector.RunbookRef, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenAvailabilitySignalsCollector_HasNullRunbookRef()
+    {
+        var executor = new Mock<IPackEvidenceExecutor>(MockBehavior.Strict);
+        executor.Setup(x => x.ExecuteAsync(
+                It.Is<PackEvidenceExecutionRequest>(r => r.TenantId == "tenant-1"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PackEvidenceExecutionResult(
+                [
+                    new PackEvidenceItem(
+                        PackName: "app-insights",
+                        CollectorId: "availability-signals",
+                        ConnectorName: "azure-monitor",
+                        QueryFile: "queries/availability-signals.kql",
+                        QueryContent: null,
+                        ResultJson: "[{\"availabilityPercentage\":99.9,\"testName\":\"PingTest\"}]",
+                        RowCount: 1,
+                        ErrorMessage: null)
+                ],
+                []));
+        var sut = new ObservabilityEvidenceProvider(executor.Object, new ConfigurationBuilder().Build(), NullLogger<ObservabilityEvidenceProvider>.Instance);
+
+        var result = await sut.GetSummaryAsync(Guid.NewGuid(), "tenant-1", "ws-1", CancellationToken.None);
+
+        Assert.NotNull(result);
+        var collector = Assert.Single(result!.CollectorSummaries, c => c.CollectorId == "availability-signals");
+        Assert.Null(collector.RunbookRef);
     }
 }

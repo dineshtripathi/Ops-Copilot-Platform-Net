@@ -152,7 +152,7 @@ public sealed class PackEvidenceExecutorTests
         fileReader.Setup(f => f.ReadFileAsync("/packs/azure-vm", "queries/cpu.kql", It.IsAny<CancellationToken>()))
                   .ReturnsAsync("Perf | where CounterName == 'cpu'");
 
-        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "Perf | where CounterName == 'cpu'", null, It.IsAny<CancellationToken>()))
+        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "Perf | where CounterName == 'cpu'", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new QueryExecutionResult(true, "[{\"cpu\":80}]", 1, null));
 
         var result = await executor.ExecuteAsync(
@@ -304,7 +304,7 @@ public sealed class PackEvidenceExecutorTests
                .ReturnsAsync(new[] { pack });
         fileReader.Setup(f => f.ReadFileAsync("/packs/azure-vm", "queries/cpu.kql", It.IsAny<CancellationToken>()))
                   .ReturnsAsync("Perf | where CounterName == 'cpu'");
-        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "Perf | where CounterName == 'cpu'", null, It.IsAny<CancellationToken>()))
+        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "Perf | where CounterName == 'cpu'", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new QueryExecutionResult(false, null, 0, "Workspace not found", ErrorCode: "azure_not_found"));
 
         var result = await executor.ExecuteAsync(
@@ -335,7 +335,7 @@ public sealed class PackEvidenceExecutorTests
         fileReader.Setup(f => f.ReadFileAsync("/packs/azure-vm", "queries/cpu.kql", It.IsAny<CancellationToken>()))
                   .ReturnsAsync("bad query");
 
-        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "bad query", null, It.IsAny<CancellationToken>()))
+        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "bad query", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new QueryExecutionResult(false, null, 0, "Syntax error"));
 
         var result = await executor.ExecuteAsync(
@@ -367,7 +367,7 @@ public sealed class PackEvidenceExecutorTests
         fileReader.Setup(f => f.ReadFileAsync("/packs/azure-vm", "queries/cpu.kql", It.IsAny<CancellationToken>()))
                   .ReturnsAsync("Perf query");
 
-        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "Perf query", null, It.IsAny<CancellationToken>()))
+        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "Perf query", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new QueryExecutionResult(true, largeJson, 10, null));
 
         var result = await executor.ExecuteAsync(
@@ -398,9 +398,9 @@ public sealed class PackEvidenceExecutorTests
         fileReader.Setup(f => f.ReadFileAsync("/packs/k8s-pack", "q2.kql", It.IsAny<CancellationToken>()))
                   .ReturnsAsync("K8s query");
 
-        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "VM query", null, It.IsAny<CancellationToken>()))
+        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "VM query", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new QueryExecutionResult(true, "[{\"vm\":1}]", 1, null));
-        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "K8s query", null, It.IsAny<CancellationToken>()))
+        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "K8s query", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new QueryExecutionResult(true, "[{\"pod\":1}]", 1, null));
 
         var result = await executor.ExecuteAsync(
@@ -435,7 +435,7 @@ public sealed class PackEvidenceExecutorTests
         fileReader.Setup(f => f.ReadFileAsync("/packs/azure-vm", "ok.kql", It.IsAny<CancellationToken>()))
                   .ReturnsAsync("OK query");
 
-        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "OK query", null, It.IsAny<CancellationToken>()))
+        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, "OK query", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new QueryExecutionResult(true, "[{\"ok\":1}]", 1, null));
 
         var result = await executor.ExecuteAsync(
@@ -476,7 +476,7 @@ public sealed class PackEvidenceExecutorTests
         fileReader.Setup(f => f.ReadFileAsync("/packs/azure-vm", "q-c.kql", It.IsAny<CancellationToken>()))
                   .ReturnsAsync("query C");
 
-        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+        queryExecutor.Setup(q => q.ExecuteQueryAsync(TestWorkspaceId, It.IsAny<string>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new QueryExecutionResult(true, "[]", 0, null));
 
         var result = await executor.ExecuteAsync(
@@ -612,7 +612,7 @@ public sealed class PackEvidenceExecutorTests
         fileReader.Setup(f => f.ReadFileAsync("/packs/azure-vm", "queries/cpu.kql", It.IsAny<CancellationToken>()))
                   .ReturnsAsync("Perf | where CounterName == 'cpu'");
         queryExecutor.Setup(q => q.ExecuteQueryAsync(
-                TestWorkspaceId, "Perf | where CounterName == 'cpu'", null, It.IsAny<CancellationToken>()))
+                TestWorkspaceId, "Perf | where CounterName == 'cpu'", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new QueryExecutionResult(true, "[{\"cpu\":80}]", 1, null));
 
         await executor.ExecuteAsync(
@@ -690,7 +690,7 @@ public sealed class PackEvidenceExecutorTests
                 "/packs/azure-vm", "queries/cpu.kql", It.IsAny<CancellationToken>()))
             .ReturnsAsync("bad query");
         queryExecutor.Setup(q => q.ExecuteQueryAsync(
-                TestWorkspaceId, "bad query", null, It.IsAny<CancellationToken>()))
+                TestWorkspaceId, "bad query", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new QueryExecutionResult(false, null, 0, "Syntax error"));
 
         await executor.ExecuteAsync(
@@ -721,7 +721,7 @@ public sealed class PackEvidenceExecutorTests
                 "/packs/azure-vm", "queries/cpu.kql", It.IsAny<CancellationToken>()))
             .ReturnsAsync("Perf query");
         queryExecutor.Setup(q => q.ExecuteQueryAsync(
-                TestWorkspaceId, "Perf query", null, It.IsAny<CancellationToken>()))
+                TestWorkspaceId, "Perf query", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new QueryExecutionResult(true, largeJson, 10, null));
 
         await executor.ExecuteAsync(
@@ -780,7 +780,7 @@ public sealed class PackEvidenceExecutorTests
                 "/packs/azure-vm", "queries/cpu.kql", It.IsAny<CancellationToken>()))
             .ReturnsAsync("Perf | where CounterName == 'cpu'");
         queryExecutor.Setup(q => q.ExecuteQueryAsync(
-                TestWorkspaceId, "Perf | where CounterName == 'cpu'", null, It.IsAny<CancellationToken>()))
+                TestWorkspaceId, "Perf | where CounterName == 'cpu'", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new OperationCanceledException());
 
         await executor.ExecuteAsync(
@@ -808,7 +808,7 @@ public sealed class PackEvidenceExecutorTests
                 "/packs/azure-vm", "queries/cpu.kql", It.IsAny<CancellationToken>()))
             .ReturnsAsync("Perf query");
         queryExecutor.Setup(q => q.ExecuteQueryAsync(
-                TestWorkspaceId, "Perf query", null, It.IsAny<CancellationToken>()))
+                TestWorkspaceId, "Perf query", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new QueryExecutionResult(true, "[{\"cpu\":80}]", 1, null));
 
         await executor.ExecuteAsync(

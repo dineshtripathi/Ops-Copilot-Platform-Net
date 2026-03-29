@@ -41,4 +41,11 @@ public sealed class McpKqlServerOptions
 
     /// <summary>Per-call timeout in seconds.  Default: 30.</summary>
     public int TimeoutSeconds { get; init; } = 30;
+
+    /// <summary>
+    /// When non-null, the HTTP (SSE) endpoint URL of the McpHost
+    /// (e.g. "https://&lt;fqdn&gt;/mcp").  Takes priority over stdio child-process
+    /// spawning.  Set via McpKql:ServerUrl or MCP_KQL_SERVER_URL.
+    /// </summary>
+    public string? ServerUrl { get; init; } = null;
 }

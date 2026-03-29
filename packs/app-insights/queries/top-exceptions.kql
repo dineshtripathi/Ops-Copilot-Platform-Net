@@ -1,7 +1,9 @@
-// Top exceptions in the last 5 days
+// Top exceptions over the selected time window
 // Workspace schema: AppExceptions
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
 AppExceptions
-| where TimeGenerated > ago(5d)
+| where TimeGenerated between (_startTime .. _endTime)
 | summarize
     Count = count(),
     FirstSeen = min(TimeGenerated),

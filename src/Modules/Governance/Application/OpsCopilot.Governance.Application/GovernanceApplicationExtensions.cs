@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
+using OpsCopilot.BuildingBlocks.Contracts.Privacy;
 using OpsCopilot.Governance.Application.Configuration;
 using OpsCopilot.Governance.Application.Policies;
 using OpsCopilot.Governance.Application.Services;
@@ -26,6 +27,12 @@ public static class GovernanceApplicationExtensions
 
         // DegradedModePolicy has no config dependency — stays singleton
         services.AddSingleton<IDegradedModePolicy, DefaultDegradedModePolicy>();
+
+        // Token usage accumulator: singleton so session totals survive across scoped requests
+        services.AddSingleton<ITokenUsageAccumulator, InMemoryTokenUsageAccumulator>();
+
+        // PII redactor: singleton — stateless compiled-regex implementation
+        services.AddSingleton<IPiiRedactor, RegexPiiRedactor>();
 
         return services;
     }

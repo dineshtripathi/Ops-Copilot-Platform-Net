@@ -1,4 +1,6 @@
 // Live blast radius from recent activity events (fallback across workspace schemas)
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
 let ActivitySignals = union isfuzzy=true
 (
     AzureActivity
@@ -23,7 +25,7 @@ let ActivitySignals = union isfuzzy=true
         caller = tostring(column_ifexists("Caller", column_ifexists("caller_s", "")))
 );
 ActivitySignals
-| where TimeGenerated > ago(2d)
+| where TimeGenerated between (_startTime .. _endTime)
 | where status !in~ ("Succeeded") or subStatus has_cs "deny" or subStatus has_cs "denied"
 | summarize
     impactedSubscriptions = dcountif(subscriptionId, isnotempty(subscriptionId)),

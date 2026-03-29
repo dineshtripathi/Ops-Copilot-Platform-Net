@@ -28,7 +28,7 @@ namespace OpsCopilot.AgentRuns.Application.Orchestration;
 /// recorded in the ToolCall + CitationsJson. No fabricated data ever enters the ledger.
 /// Denied paths NEVER call MCP — the run short-circuits to Failed immediately.
 /// </summary>
-public sealed class TriageOrchestrator
+public sealed class TriageOrchestrator : ITriageOrchestrator
 {
     private readonly IAgentRunRepository _repo;
     private readonly IKqlToolClient      _kql;
@@ -112,25 +112,26 @@ public sealed class TriageOrchestrator
         string? resourceGroup  = null,
         Guid? sessionId = null,
         RunContext? context = null,
+        AgentRun?   existingRun = null,
         CancellationToken ct = default)
     {
         _log.LogInformation("Triage run starting for tenant {TenantId}, fingerprint {Fingerprint}",
             tenantId, alertFingerprint);
 
-        // ── Idempotency guard ──────────────────────────────────────────────────
-        if (_idempotencyOptions is not null)
+        // ── Idempotency guard (skip when resuming a dispatcher-initiated run) ─────────
+        if (existingRun is null && _idempotencyOptions is not null)
         {
             var windowMinutes = _idempotencyOptions.Value.WindowMinutes;
             if (windowMinutes > 0)
             {
-                var existingRun = await _repo.FindRecentRunAsync(
+                var dedupRun = await _repo.FindRecentRunAsync(
                     tenantId, alertFingerprint, windowMinutes, ct);
-                if (existingRun is not null)
+                if (dedupRun is not null)
                 {
                     _log.LogInformation(
                         "Idempotency: deduplicating run for fingerprint {Fingerprint} — reusing run {RunId} (status {Status})",
-                        alertFingerprint, existingRun.RunId, existingRun.Status);
-                    return BuildDedupResult(existingRun);
+                        alertFingerprint, dedupRun.RunId, dedupRun.Status);
+                    return BuildDedupResult(dedupRun);
                 }
             }
         }
@@ -143,7 +144,7 @@ public sealed class TriageOrchestrator
         string sessionReasonCode;
         string sessionMessage;
 
-        if (sessionId is not null)
+        if (sessionId is not null && existingRun is null)
         {
             var existing = await _sessionStore.GetIncludingExpiredAsync(sessionId.Value, ct);
             if (existing is not null)
@@ -207,7 +208,12 @@ public sealed class TriageOrchestrator
             sessionMessage = $"Created new session {session.SessionId}";
         }
 
-        var run = await _repo.CreateRunAsync(tenantId, alertFingerprint, session.SessionId, context, ct);
+        var run = existingRun
+            ?? await _repo.CreateRunAsync(tenantId, alertFingerprint, session.SessionId, context, ct);
+
+        // Slice 128: Transition Pending → Running so the status ledger reflects in-progress state.
+        if (existingRun is not null)
+            await _repo.MarkRunningAsync(run.RunId, ct);
 
         // ── Session lifecycle audit event ────────────────────────────
         await _repo.AppendPolicyEventAsync(
@@ -584,6 +590,28 @@ public sealed class TriageOrchestrator
             TotalTokens: totalTokens, EstimatedCost: estimatedCost,
             LlmNarrative: llmNarrative);
     }
+
+    /// <summary>
+    /// Slice 127: Applies the full triage pipeline to an existing Pending <see cref="AgentRun"/>
+    /// created by alert ingestion. Skips idempotency guard and run creation so the
+    /// caller's <paramref name="existingRun.RunId"/> is preserved end-to-end.
+    /// </summary>
+    public Task<TriageResult> ResumeRunAsync(
+        AgentRun  existingRun,
+        string    workspaceId,
+        int       timeRangeMinutes = 120,
+        string?   alertTitle = null,
+        CancellationToken ct = default)
+        => RunAsync(
+            existingRun.TenantId,
+            existingRun.AlertFingerprint ?? string.Empty,
+            workspaceId,
+            timeRangeMinutes,
+            alertTitle,
+            subscriptionId: existingRun.AzureSubscriptionId,
+            resourceGroup:  existingRun.AzureResourceGroup,
+            existingRun:    existingRun,
+            ct:             ct);
 
     private static TriageResult BuildDedupResult(AgentRun existing)
         => new(

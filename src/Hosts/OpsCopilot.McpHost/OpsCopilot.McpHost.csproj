@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -6,17 +6,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <!--
-      McpHost is a stdio-transport MCP server.
-      stdout is owned by the MCP protocol; all application output must go to stderr.
-      This is NOT a web host — no Kestrel, no HTTP endpoints.
+      McpHost is an MCP tool server supporting two transports:
+        HTTP (SSE) — primary transport for Azure Container Apps deployment (port 8081).
+        stdio       — fallback transport when spawned as a child process (local dev only).
+      Application logs always go to stderr; HTTP access logs go to stdout via Kestrel.
     -->
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Official C# MCP SDK — stdio server + attribute-based tool registration -->
+    <!-- Official C# MCP SDK — attribute-based tool registration -->
     <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
-    <!-- Generic host for DI / logging / lifetime management -->
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.2" />
+    <!-- ASP.NET Core MCP integration — MapMcp() SSE endpoint -->
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.1.0" />
     <!-- KQL execution against Azure Log Analytics -->
     <PackageReference Include="Azure.Monitor.Query" Version="1.4.0" />
     <!-- DefaultAzureCredential: MI (Container Apps) / az login (local dev) -->

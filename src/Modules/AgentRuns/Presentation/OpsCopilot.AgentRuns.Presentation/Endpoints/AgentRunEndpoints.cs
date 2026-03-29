@@ -3,12 +3,14 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
 using OpsCopilot.AgentRuns.Domain.Models;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
 
 namespace OpsCopilot.AgentRuns.Presentation.Endpoints;
@@ -24,6 +26,40 @@ public static class AgentRunEndpoints
     /// Format: /subscriptions/{sub}/resourceGroups/{rg}/providers/...
     /// Returns (null, null) if the path is absent or malformed.
     /// </summary>
+    /// <summary>
+    /// Splits <paramref name="text"/> into sentence-level chunks for progressive SSE delivery.
+    /// Splits on ". ", "! ", and "? " boundaries; collapses excessively short fragments.
+    /// </summary>
+    private static IEnumerable<string> SplitIntoChunks(string text)
+    {
+        var delimiters = new[] { ". ", "! ", "? " };
+        var remaining  = text.Trim();
+
+        while (remaining.Length > 0)
+        {
+            int splitAt = -1;
+            foreach (var d in delimiters)
+            {
+                int idx = remaining.IndexOf(d, StringComparison.Ordinal);
+                if (idx >= 0 && (splitAt < 0 || idx < splitAt))
+                    splitAt = idx + d.Length - 1; // include the punctuation, exclude trailing space
+            }
+
+            if (splitAt < 0)
+            {
+                yield return remaining;
+                yield break;
+            }
+
+            // Include the punctuation mark, exclude the trailing space used as delimiter
+            var sentence = remaining[..(splitAt + 1)].TrimEnd();
+            if (sentence.Length > 0)
+                yield return sentence;
+
+            remaining = remaining[(splitAt + 1)..].TrimStart();
+        }
+    }
+
     private static (string? SubscriptionId, string? ResourceGroup) ParseArmResourceId(string? resourceId)
     {
         if (string.IsNullOrEmpty(resourceId)) return (null, null);
@@ -55,7 +91,7 @@ public static class AgentRunEndpoints
         app.MapPost("/agent/triage", async (
             HttpContext           httpContext,
             TriageRequest         request,
-            TriageOrchestrator    orchestrator,
+            ITriageOrchestrator   orchestrator,
             IConfiguration        config,
             IPackTriageEnricher   packTriageEnricher,
             IPackEvidenceExecutor    packEvidenceExecutor,
@@ -131,6 +167,23 @@ public static class AgentRunEndpoints
                 AzureSubscriptionId: parsedSubId,
                 AzureResourceGroup:  parsedRg);
 
+            // ── Token budget pre-flight check ────────────────────────────────
+            if (request.SessionId.HasValue)
+            {
+                var accumulator = httpContext.RequestServices.GetRequiredService<ITokenUsageAccumulator>();
+                var budgetPolicy = httpContext.RequestServices.GetRequiredService<ITokenBudgetPolicy>();
+                var cap = budgetPolicy.CheckRunBudget(tenantId, Guid.Empty).MaxTokens;
+                if (cap.HasValue)
+                {
+                    var usedTokens = accumulator.GetTotalTokens(tenantId, request.SessionId.Value.ToString());
+                    if (usedTokens >= cap.Value)
+                        return Results.Problem(
+                            detail:     $"Token budget exhausted for this session. Used: {usedTokens}, Max: {cap.Value}",
+                            statusCode: StatusCodes.Status429TooManyRequests,
+                            title:      "Token Budget Exceeded");
+                }
+            }
+
             // ── Orchestrate ─────────────────────────────────────────────────
             TriageResult result;
             try
@@ -153,6 +206,13 @@ public static class AgentRunEndpoints
                     detail:     ex.Message,
                     statusCode: StatusCodes.Status403Forbidden,
                     title:      "Session tenant mismatch");
+            }
+
+            // ── Record token usage for session budget tracking ───────────────
+            if (result.TotalTokens.HasValue && request.SessionId.HasValue)
+            {
+                var accumulator = httpContext.RequestServices.GetRequiredService<ITokenUsageAccumulator>();
+                accumulator.AddTokens(tenantId, request.SessionId.Value.ToString(), result.TotalTokens.Value);
             }
 
             var citations = result.Citations
@@ -331,7 +391,7 @@ public static class AgentRunEndpoints
         app.MapPost("/agent/triage/stream", async (
             HttpContext              httpContext,
             TriageRequest            request,
-            TriageOrchestrator       orchestrator,
+            ITriageOrchestrator      orchestrator,
             IPackTriageEnricher      packTriageEnricher,
             IPackEvidenceExecutor    packEvidenceExecutor,
             IPackSafeActionProposer  packSafeActionProposer,
@@ -393,13 +453,35 @@ public static class AgentRunEndpoints
                 AzureSubscriptionId: streamSubId,
                 AzureResourceGroup:  streamRg);
 
+            // ── Token budget pre-flight check ────────────────────────────────
+            if (request.SessionId.HasValue)
+            {
+                var streamAccumulator = httpContext.RequestServices.GetRequiredService<ITokenUsageAccumulator>();
+                var streamBudgetPolicy = httpContext.RequestServices.GetRequiredService<ITokenBudgetPolicy>();
+                var streamCap = streamBudgetPolicy.CheckRunBudget(tenantId, Guid.Empty).MaxTokens;
+                if (streamCap.HasValue)
+                {
+                    var streamUsed = streamAccumulator.GetTotalTokens(tenantId, request.SessionId.Value.ToString());
+                    if (streamUsed >= streamCap.Value)
+                        return Results.Problem(
+                            detail:     $"Token budget exhausted for this session. Used: {streamUsed}, Max: {streamCap.Value}",
+                            statusCode: StatusCodes.Status429TooManyRequests,
+                            title:      "Token Budget Exceeded");
+                }
+            }
+
             // ── Begin SSE response ───────────────────────────────────────────
             httpContext.Response.StatusCode  = StatusCodes.Status200OK;
             httpContext.Response.ContentType = "text/event-stream";
             httpContext.Response.Headers["Cache-Control"]     = "no-cache";
             httpContext.Response.Headers["X-Accel-Buffering"] = "no";
 
-            await httpContext.Response.WriteAsync("data: {\"event\":\"started\"}\n\n", ct);
+            var agUiRunId = Guid.NewGuid().ToString();
+
+            // AG-UI event 1: RunStarted
+            await httpContext.Response.WriteAsync(
+                "data: " + JsonSerializer.Serialize(
+                    new RunStartedEvent("RunStarted", agUiRunId), SseJsonOpts) + "\n\n", ct);
             await httpContext.Response.Body.FlushAsync(ct);
 
             // ── Orchestrate ──────────────────────────────────────────────────
@@ -417,12 +499,18 @@ public static class AgentRunEndpoints
             }
             catch (SessionTenantMismatchException ex)
             {
-                var errMsg = JsonSerializer.Serialize(ex.Message, SseJsonOpts);
                 await httpContext.Response.WriteAsync(
-                    $"data: {{\"event\":\"error\",\"message\":{errMsg}}}\n\n", ct);
-                await httpContext.Response.WriteAsync("data: [DONE]\n\n", ct);
+                    "data: " + JsonSerializer.Serialize(
+                        new RunErrorEvent("RunError", agUiRunId, ex.Message), SseJsonOpts) + "\n\n", ct);
                 await httpContext.Response.Body.FlushAsync(ct);
                 return Results.Empty;
+            }
+
+            // ── Record token usage for session budget tracking ───────────────
+            if (streamResult.TotalTokens.HasValue && request.SessionId.HasValue)
+            {
+                var streamAccumulator = httpContext.RequestServices.GetRequiredService<ITokenUsageAccumulator>();
+                streamAccumulator.AddTokens(tenantId, request.SessionId.Value.ToString(), streamResult.TotalTokens.Value);
             }
 
             // ── Build full response (same shape as PostTriage) ───────────────
@@ -518,10 +606,41 @@ public static class AgentRunEndpoints
                 LlmNarrative:                streamResult.LlmNarrative,
                 WasDeduplicated:             streamResult.WasDeduplicated);
 
-            var responseJson = JsonSerializer.Serialize(streamResponse, SseJsonOpts);
+            // AG-UI events 2–4: TextMessageStart / TextMessageContent / TextMessageEnd
+            // Emitted only when the orchestrator produced a non-empty LLM narrative.
+            if (!string.IsNullOrWhiteSpace(streamResponse.LlmNarrative))
+            {
+                var agUiMsgId = Guid.NewGuid().ToString();
+
+                await httpContext.Response.WriteAsync(
+                    "data: " + JsonSerializer.Serialize(
+                        new TextMessageStartEvent("TextMessageStart", agUiMsgId, "assistant"),
+                        SseJsonOpts) + "\n\n", ct);
+                await httpContext.Response.Body.FlushAsync(ct);
+
+                // Split narrative into sentence-level chunks for progressive rendering.
+                var chunks = SplitIntoChunks(streamResponse.LlmNarrative);
+                foreach (var chunk in chunks)
+                {
+                    await httpContext.Response.WriteAsync(
+                        "data: " + JsonSerializer.Serialize(
+                            new TextMessageContentEvent("TextMessageContent", agUiMsgId, chunk),
+                            SseJsonOpts) + "\n\n", ct);
+                }
+                await httpContext.Response.Body.FlushAsync(ct);
+
+                await httpContext.Response.WriteAsync(
+                    "data: " + JsonSerializer.Serialize(
+                        new TextMessageEndEvent("TextMessageEnd", agUiMsgId),
+                        SseJsonOpts) + "\n\n", ct);
+                await httpContext.Response.Body.FlushAsync(ct);
+            }
+
+            // AG-UI event 5: RunFinished (carries full triage response)
             await httpContext.Response.WriteAsync(
-                $"data: {{\"event\":\"completed\",\"response\":{responseJson}}}\n\n", ct);
-            await httpContext.Response.WriteAsync("data: [DONE]\n\n", ct);
+                "data: " + JsonSerializer.Serialize(
+                    new RunFinishedEvent("RunFinished", agUiRunId, streamResponse),
+                    SseJsonOpts) + "\n\n", ct);
             await httpContext.Response.Body.FlushAsync(ct);
 
             return Results.Empty;

@@ -23,6 +23,7 @@ public static class PacksInfrastructureExtensions
         services.AddSingleton<IPackLoader, FileSystemPackLoader>();
         services.AddSingleton<IPackCatalog, PackCatalog>();
         services.AddSingleton<IPackFileReader, PackFileReader>();
+        services.AddSingleton<IPackRunbookReader, PackRunbookReader>();
         services.AddSingleton<IPackTriageEnricher, PackTriageEnricher>();
         services.AddSingleton<ITenantWorkspaceResolver, TenantWorkspaceResolver>();
         services.AddSingleton<IPackEvidenceExecutor, PackEvidenceExecutor>();

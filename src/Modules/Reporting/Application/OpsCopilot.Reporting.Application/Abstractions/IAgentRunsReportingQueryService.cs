@@ -18,7 +18,8 @@ public interface IAgentRunsReportingQueryService
         DateTime? fromUtc, DateTime? toUtc, string? tenantId, CancellationToken ct);
 
     Task<IReadOnlyList<RecentRunSummary>> GetRecentRunsAsync(
-        string tenantId, int maxCount, string? status, string? sort, CancellationToken ct);
+        string tenantId, int maxCount, string? status, string? sort,
+        DateTime? fromUtc, DateTime? toUtc, CancellationToken ct);
 
     Task<IReadOnlyList<ExceptionTrendPoint>> GetExceptionTrendAsync(
         DateTime? fromUtc, DateTime? toUtc, string? tenantId, CancellationToken ct);

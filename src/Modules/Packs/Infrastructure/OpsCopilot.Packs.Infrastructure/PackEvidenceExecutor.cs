@@ -140,7 +140,7 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         {
             await ExecutePackCollectorsAsync(
                 pack, request.DeploymentMode, workspaceId, appInsightsResourcePath, maxRows, maxChars,
-                tenantId, correlationId, evidenceItems, errors, ct);
+                tenantId, correlationId, request.FromUtc, request.ToUtc, evidenceItems, errors, ct);
         }
 
         _logger.LogDebug(
@@ -203,6 +203,8 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         int maxChars,
         string tenantId,
         string? correlationId,
+        DateTime? fromUtc,
+        DateTime? toUtc,
         List<PackEvidenceItem> evidenceItems,
         List<string> errors,
         CancellationToken ct)
@@ -214,7 +216,7 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         {
             await ExecuteSingleCollectorAsync(
                 pack, ec, workspaceId, appInsightsResourcePath, maxRows, maxChars,
-                tenantId, correlationId, evidenceItems, errors, ct);
+                tenantId, correlationId, fromUtc, toUtc, evidenceItems, errors, ct);
         }
     }
 
@@ -227,6 +229,8 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         int maxChars,
         string tenantId,
         string? correlationId,
+        DateTime? fromUtc,
+        DateTime? toUtc,
         List<PackEvidenceItem> evidenceItems,
         List<string> errors,
         CancellationToken ct)
@@ -266,13 +270,23 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
                 return;
             }
 
+            // Substitute user-selected date range tokens; falls back to ago(30d)/now() when absent.
+            queryContent = SubstituteDateTokens(queryContent, fromUtc, toUtc);
+
             // Apply App Insights resource filter if discovery identified the linked AI component.
             // Only applied to App Insights table queries; workspace-level tables are unaffected.
             if (appInsightsResourcePath is not null && IsAppInsightsQuery(queryContent))
                 queryContent = InjectResourceIdFilter(queryContent, appInsightsResourcePath);
 
+            // Compute API-level timespan to match the KQL date range.
+            // Without this the Azure Monitor REST API defaults to PT60M and intersects
+            // with the KQL filter, hiding events older than 60 minutes.
+            var queryTimespan = (fromUtc.HasValue && toUtc.HasValue)
+                ? (TimeSpan?)(toUtc.Value - fromUtc.Value)
+                : TimeSpan.FromDays(30); // matches ago(30d) KQL fallback
+
             // Execute the query — queryContent is passed as parameter, never logged
-            var result = await _queryExecutor.ExecuteQueryAsync(workspaceId, queryContent, null, ct);
+            var result = await _queryExecutor.ExecuteQueryAsync(workspaceId, queryContent, queryTimespan, ct);
 
             // Truncate result if needed
             var resultJson   = result.ResultJson;
@@ -347,6 +361,19 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
     /// Returns <c>true</c> when <paramref name="packMode"/> is at or below
     /// <paramref name="deploymentMode"/> in the A &lt; B &lt; C hierarchy.
     /// </summary>
+    private static string SubstituteDateTokens(string queryContent, DateTime? fromUtc, DateTime? toUtc)
+    {
+        var from = fromUtc.HasValue
+            ? $"datetime({fromUtc.Value.ToUniversalTime():O})"
+            : "ago(30d)";
+        var to = toUtc.HasValue
+            ? $"datetime({toUtc.Value.ToUniversalTime():O})"
+            : "now()";
+        return queryContent
+            .Replace("{FROM_UTC}", from, StringComparison.Ordinal)
+            .Replace("{TO_UTC}", to, StringComparison.Ordinal);
+    }
+
     private static bool IsModeAtOrBelow(string packMode, string deploymentMode) =>
         !string.IsNullOrEmpty(packMode) &&
         !string.IsNullOrEmpty(deploymentMode) &&

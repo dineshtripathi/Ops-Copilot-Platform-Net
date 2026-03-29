@@ -12,13 +12,13 @@ namespace OpsCopilot.McpHost.Tools;
 /// <summary>
 /// Exposes the "discover_observability_resources" MCP tool.
 ///
-/// Discovers correlations between Azure Log Analytics workspaces and their linked
-/// Application Insights components across all accessible Azure subscriptions via
-/// Azure Resource Graph.
+/// Discovers all Log Analytics workspaces across all accessible Azure subscriptions
+/// via Azure Resource Graph, optionally enriched with their linked Application Insights
+/// component when one exists.
 ///
-/// Returns pairs of (workspaceCustomerId, appInsightsName, appInsightsResourcePath)
-/// suitable for constructing <c>| where _ResourceId has "..."</c> KQL filters
-/// that scope App Insights queries to a specific component in a shared workspace.
+/// Returns pairs of (subscriptionId, workspaceCustomerId, appInsightsName, appInsightsResourcePath)
+/// suitable for multi-subscription workspace auto-discovery and for constructing
+/// <c>| where _ResourceId has "..."</c> KQL filters in App Insights queries.
 ///
 /// On success  → ok=true,  pairs populated, error=null.
 /// On failure  → ok=false, pairs=[], error contains message.
@@ -31,11 +31,11 @@ public sealed class DiscoverObservabilityResourcesTool
 
     [McpServerTool(Name = "discover_observability_resources")]
     [Description(
-        "Discovers correlations between Azure Log Analytics workspaces and linked Application Insights " +
-        "components across accessible Azure subscriptions via Resource Graph. " +
-        "Returns pairs of (workspaceCustomerId, appInsightsName, appInsightsResourcePath) for building " +
-        "_ResourceId KQL filters that scope App Insights queries to a specific component in a shared " +
-        "Log Analytics workspace. Pass subscriptionIds as a comma-separated list or leave empty to " +
+        "Discovers all Azure Log Analytics workspaces across accessible Azure subscriptions via " +
+        "Resource Graph, enriched with any linked Application Insights component when present. " +
+        "Returns pairs of (subscriptionId, workspaceCustomerId, appInsightsName, appInsightsResourcePath). " +
+        "Workspaces without a linked App Insights component are returned with empty appInsightsName/appInsightsResourcePath. " +
+        "Pass subscriptionIds as a comma-separated list or leave empty to " +
         "query all accessible subscriptions. On success returns ok=true.")]
     public static async Task<string> ExecuteAsync(
         ArmClient      armClient,
@@ -56,23 +56,26 @@ public sealed class DiscoverObservabilityResourcesTool
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        // Join App Insights components to their linked Log Analytics workspaces.
-        // workspaceCustomerId is the GUID used as the workspace "id" in KQL/Azure Monitor.
+        // LAW-first join: all workspaces are returned regardless of whether an App Insights
+        // component is linked. workspaceCustomerId is the GUID used as workspaceId in KQL.
+        // appInsightsName/appInsightsResourcePath are populated only when a linked component exists.
         const string kql = """
             Resources
-            | where type =~ 'microsoft.insights/components'
-            | extend wsId = tolower(tostring(properties.WorkspaceResourceId))
+            | where type =~ 'microsoft.operationalinsights/workspaces'
+            | extend customerId = tostring(properties.customerId), wsId = tolower(id)
             | join kind=leftouter (
                 Resources
-                | where type =~ 'microsoft.operationalinsights/workspaces'
-                | extend customerId = tostring(properties.customerId)
-                | project wsId = tolower(id), customerId
-              ) on $left.wsId == $right.wsId
+                | where type =~ 'microsoft.insights/components'
+                | extend wsId = tolower(tostring(properties.WorkspaceResourceId))
+                | project wsId,
+                          aiName = tolower(name),
+                          aiPath = strcat('/providers/microsoft.insights/components/', tolower(name))
+              ) on wsId
             | project subscriptionId, resourceGroup,
-                      appInsightsName = tolower(name),
-                      workspaceCustomerId = customerId,
-                      appInsightsResourcePath = strcat('/providers/microsoft.insights/components/', tolower(name))
-            | order by subscriptionId asc, appInsightsName asc
+                      workspaceCustomerId     = customerId,
+                      appInsightsName         = coalesce(aiName, ''),
+                      appInsightsResourcePath = coalesce(aiPath, '')
+            | order by subscriptionId asc, workspaceCustomerId asc
             """;
 
         logger.LogInformation(
@@ -106,8 +109,8 @@ public sealed class DiscoverObservabilityResourcesTool
                 {
                     subscriptionId          = row("subscriptionId"),
                     resourceGroup           = row("resourceGroup"),
-                    appInsightsName         = row("appInsightsName"),
                     workspaceCustomerId     = row("workspaceCustomerId"),
+                    appInsightsName         = row("appInsightsName"),
                     appInsightsResourcePath = row("appInsightsResourcePath"),
                 });
 

@@ -100,15 +100,20 @@ internal sealed class McpObservabilityResourceDiscovery : IObservabilityResource
         foreach (var item in pairsEl.EnumerateArray())
         {
             var customerId = TryString(item, "workspaceCustomerId");
-            var name       = TryString(item, "appInsightsName");
-            var path       = TryString(item, "appInsightsResourcePath");
 
-            if (!string.IsNullOrWhiteSpace(customerId) &&
-                !string.IsNullOrWhiteSpace(name) &&
-                !string.IsNullOrWhiteSpace(path))
+            // Only the workspace customer ID is required; App Insights fields are optional
+            // (workspaces with no linked AI component are returned with empty strings).
+            if (string.IsNullOrWhiteSpace(customerId))
+                continue;
+
+            var subId = TryString(item, "subscriptionId") ?? string.Empty;
+            var name  = TryString(item, "appInsightsName") ?? string.Empty;
+            var path  = TryString(item, "appInsightsResourcePath") ?? string.Empty;
+
+            results.Add(new ObservabilityResourcePair(customerId, name, path)
             {
-                results.Add(new ObservabilityResourcePair(customerId, name, path));
-            }
+                SubscriptionId = subId,
+            });
         }
 
         return results;

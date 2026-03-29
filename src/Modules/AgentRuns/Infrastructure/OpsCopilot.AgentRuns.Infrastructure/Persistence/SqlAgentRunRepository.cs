@@ -136,4 +136,23 @@ public sealed class SqlAgentRunRepository : IAgentRunRepository
     /// <inheritdoc />
     public Task<bool> FeedbackExistsAsync(Guid runId, CancellationToken ct = default)
         => _db.Feedbacks.AnyAsync(f => f.RunId == runId, ct);
+
+    /// <inheritdoc />
+    public async Task<AgentRun?> GetByRunIdAsync(Guid runId, string tenantId, CancellationToken ct = default)
+        => await _db.AgentRuns.FirstOrDefaultAsync(
+            r => r.RunId == runId && r.TenantId == tenantId, ct);
+
+    /// <inheritdoc />
+    public async Task MarkRunningAsync(Guid runId, CancellationToken ct = default)
+        => await _db.AgentRuns
+            .Where(r => r.RunId == runId && r.Status == AgentRunStatus.Pending)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, AgentRunStatus.Running), ct);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<AgentRun>> GetStuckRunsAsync(
+        DateTimeOffset createdBefore,
+        CancellationToken ct = default)
+        => await _db.AgentRuns
+            .Where(r => r.Status == AgentRunStatus.Running && r.CreatedAtUtc < createdBefore)
+            .ToListAsync(ct);
 }
