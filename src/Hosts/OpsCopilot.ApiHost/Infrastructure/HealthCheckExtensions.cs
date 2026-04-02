@@ -53,25 +53,26 @@ internal static class HealthCheckExtensions
     internal static WebApplication MapOpsCopilotHealthChecks(this WebApplication app)
     {
         // Liveness: is the process up?
+        // Slice 149: .AllowAnonymous() exempts health probes from the global auth fallback policy.
         app.MapHealthChecks("/healthz/live", new HealthCheckOptions
         {
             Predicate       = c => c.Tags.Contains("live"),
             ResponseWriter  = WriteHealthResponse
-        }).ExcludeFromDescription();
+        }).ExcludeFromDescription().AllowAnonymous();
 
         // Readiness: are dependencies responsive?
         app.MapHealthChecks("/healthz/ready", new HealthCheckOptions
         {
             Predicate       = c => c.Tags.Contains("ready") || c.Tags.Contains("live"),
             ResponseWriter  = WriteHealthResponse
-        }).ExcludeFromDescription();
+        }).ExcludeFromDescription().AllowAnonymous();
 
         // Backwards-compat alias → liveness only
         app.MapHealthChecks("/healthz", new HealthCheckOptions
         {
             Predicate       = c => c.Tags.Contains("live"),
             ResponseWriter  = WriteHealthResponse
-        }).ExcludeFromDescription();
+        }).ExcludeFromDescription().AllowAnonymous();
 
         return app;
     }

@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <!-- Official C# MCP SDK — attribute-based tool registration -->
+    <PackageReference Include="Azure.ResourceManager.CostManagement" Version="1.0.2" />
     <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
     <!-- ASP.NET Core MCP integration — MapMcp() SSE endpoint -->
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.1.0" />

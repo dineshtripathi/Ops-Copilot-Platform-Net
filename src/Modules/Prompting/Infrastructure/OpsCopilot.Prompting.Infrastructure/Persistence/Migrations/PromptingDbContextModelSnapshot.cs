@@ -54,6 +54,31 @@ namespace OpsCopilot.Prompting.Infrastructure.Persistence.Migrations
 
                     b.ToTable("PromptTemplates", "prompting");
                 });
+
+            modelBuilder.Entity("OpsCopilot.Prompting.Infrastructure.Persistence.CanaryExperimentRow", b =>
+                {
+                    b.Property<string>("PromptKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CandidateContent")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("CandidateVersion")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("TrafficPercent")
+                        .HasColumnType("int");
+
+                    b.HasKey("PromptKey");
+
+                    b.ToTable("CanaryExperiments", "prompting");
+                });
 #pragma warning restore 612, 618
         }
     }

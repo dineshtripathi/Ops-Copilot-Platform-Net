@@ -373,7 +373,7 @@ public sealed class McpStdioKqlToolClient : IKqlToolClient, IAsyncDisposable
     /// 5. Azure identity: AZURE_CONFIG_DIR, AZURE_TENANT_ID, MSI_ENDPOINT,
     ///    MSI_SECRET, IDENTITY_ENDPOINT, IDENTITY_HEADER  (MI / Workload ID)
     /// 6. Hosting env: ASPNETCORE_ENVIRONMENT, DOTNET_ENVIRONMENT
-    /// 7. App-specific: WORKSPACE_ID plus any AzureAuth__* variables
+    /// 7. App-specific: WORKSPACE_ID plus any AzureAuth__* and McpAuth__* variables
     /// </summary>
     internal static Dictionary<string, string?> BuildChildEnvironment()
     {
@@ -409,15 +409,16 @@ public sealed class McpStdioKqlToolClient : IKqlToolClient, IAsyncDisposable
                 env[name] = value;
         }
 
-        // ── 2. AzureAuth__* variables (config-binding via env vars) ──────
-        //    The McpHost reads AzureAuth:Mode, AzureAuth:TenantId etc.
-        //    which map to env vars like AzureAuth__Mode.
+        // ── 2. AzureAuth__* and McpAuth__* variables (config-binding via env vars)
+        //    The McpHost reads AzureAuth:Mode, AzureAuth:TenantId, McpAuth:ApiKey etc.
+        //    which map to env vars like AzureAuth__Mode, McpAuth__ApiKey.
         foreach (var entry in Environment.GetEnvironmentVariables())
         {
             if (entry is System.Collections.DictionaryEntry de
                 && de.Key is string key
                 && de.Value is string val
-                && key.StartsWith("AzureAuth__", StringComparison.OrdinalIgnoreCase)
+                && (key.StartsWith("AzureAuth__", StringComparison.OrdinalIgnoreCase)
+                    || key.StartsWith("McpAuth__", StringComparison.OrdinalIgnoreCase))
                 && !env.ContainsKey(key))
             {
                 env[key] = val;

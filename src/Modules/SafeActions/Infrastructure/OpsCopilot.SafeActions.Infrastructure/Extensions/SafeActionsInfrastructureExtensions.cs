@@ -57,11 +57,32 @@ public static class SafeActionsInfrastructureExtensions
         // Azure Monitor query executor: read-only KQL queries (Slice 11)
         services.AddSingleton<AzureMonitorQueryActionExecutor>();
 
+        // ARM VM restart executor: issues POST .../restart via ARM REST API (Slice 187)
+        // SafeActions:EnableArmWrite=true required — disabled by default.
+        services.AddHttpClient(nameof(HttpArmVmWriter));
+        services.AddSingleton<IAzureVmWriter, HttpArmVmWriter>();
+        services.AddSingleton<ArmRestartActionExecutor>();
+
+        // ARM VMSS scale executor: GET capacity + PATCH new count (Slice 188)
+        // SafeActions:EnableArmWrite=true required — disabled by default.
+        services.AddHttpClient(nameof(HttpArmScaleWriter));
+        services.AddSingleton<IAzureScaleWriter, HttpArmScaleWriter>();
+        services.AddSingleton<ArmScaleActionExecutor>();
+
+        // App Configuration feature flag executor: GET current + PUT enabled flag (Slice 189)
+        // SafeActions:EnableAppConfigWrite=true required — disabled by default.
+        services.AddHttpClient(nameof(HttpAppConfigFeatureFlagWriter));
+        services.AddSingleton<IAppConfigFeatureFlagWriter, HttpAppConfigFeatureFlagWriter>();
+        services.AddSingleton<AppConfigFeatureFlagExecutor>();
+
         // Routing executor: composite — reads feature flags, delegates
         // to the appropriate downstream executor.
-        // SafeActions:EnableAzureReadExecutions=true          → azure_resource_get  → real Azure GET
-        // SafeActions:EnableAzureMonitorReadExecutions=true    → azure_monitor_query → real KQL query
-        // SafeActions:EnableRealHttpProbe=true                 → http_probe          → real probe
+        // SafeActions:EnableAzureReadExecutions=true          → azure_resource_get        → real Azure GET
+        // SafeActions:EnableAzureMonitorReadExecutions=true    → azure_monitor_query       → real KQL query
+        // SafeActions:EnableArmWrite=true                      → arm_restart               → real ARM POST restart
+        // SafeActions:EnableArmWrite=true                      → arm_scale                 → real ARM PATCH scale
+        // SafeActions:EnableAppConfigWrite=true                → app_config_feature_flag   → real App Config write
+        // SafeActions:EnableRealHttpProbe=true                 → http_probe                → real probe
         // Everything else (or flags=false)                     → dry-run
         services.AddSingleton<IActionExecutor, RoutingActionExecutor>();
 

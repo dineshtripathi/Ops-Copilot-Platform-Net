@@ -31,4 +31,4 @@ After copying, replace placeholder values (marked `<!-- TODO -->` or
 
 ## License
 
-TBD — license has not yet been decided. See root `README.md` for details.
+MIT — see [LICENSE](../LICENSE)

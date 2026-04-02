@@ -31,4 +31,4 @@ Ready-to-use snippets and configuration samples for common OpsCopilot tasks.
 
 ---
 
-> **License:** TBD — license has not yet been decided for this project.
+> **License:** MIT — see [LICENSE](../LICENSE)

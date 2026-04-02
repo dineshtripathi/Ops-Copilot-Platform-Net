@@ -87,6 +87,73 @@ public sealed class ChatOrchestrator
         return new ChatResult(answer, memCitations, runbookCitations);
     }
 
+    /// <summary>
+    /// Streams the LLM response to the operator's <paramref name="query"/> as an
+    /// <see cref="IAsyncEnumerable{T}"/> of text deltas.
+    /// Callers receive memory and runbook context setup up-front, then token-by-token deltas.
+    /// Falls back to a single synthetic delta when the LLM is not configured.
+    /// Never throws — errors emit a final degraded delta string.
+    /// </summary>
+    public async IAsyncEnumerable<string> ChatStreamingAsync(
+        string            tenantId,
+        string            query,
+        [System.Runtime.CompilerServices.EnumeratorCancellation]
+        CancellationToken cancellationToken = default)
+    {
+        var memCitations    = await _memory.RecallAsync(query, tenantId, cancellationToken);
+        var runbookResponse = await _runbook.ExecuteAsync(
+            new RunbookSearchToolRequest(query, MaxResults: 5), cancellationToken);
+
+        var callerContext    = RunbookCallerContext.TenantOnly(tenantId);
+        var filtered         = _aclFilter.Filter(runbookResponse.Hits, callerContext);
+        var runbookCitations = filtered
+            .Select(h => new RunbookCitation(h.RunbookId, h.Title, h.Snippet, h.Score))
+            .ToList();
+
+        var versionInfo = await (_promptVersion?.GetCurrentVersionAsync("chat", cancellationToken)
+            ?? Task.FromResult(new PromptVersionInfo("v1-default",
+                "You are an incident-response assistant for OpsCopilot. Answer the operator's question concisely using the context below if relevant.")));
+
+        var systemPrompt = BuildSystemPrompt(versionInfo.SystemPrompt, memCitations, runbookCitations);
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User,   query),
+        };
+
+        if (_chatClient is null)
+        {
+            yield return "Chat is not available — LLM provider is not configured. Contact your platform administrator.";
+            yield break;
+        }
+
+        IAsyncEnumerable<ChatResponseUpdate> stream;
+        string? earlyError = null;
+        try
+        {
+            stream = _chatClient.GetStreamingResponseAsync(messages, cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "LLM streaming chat call failed for tenant {TenantId}", tenantId);
+            earlyError = "Unable to generate a response at this time. Please try again later.";
+            stream     = AsyncEnumerable.Empty<ChatResponseUpdate>();
+        }
+
+        if (earlyError is not null)
+        {
+            yield return earlyError;
+            yield break;
+        }
+
+        await foreach (var update in stream.WithCancellation(cancellationToken))
+        {
+            var delta = update.Text;
+            if (!string.IsNullOrEmpty(delta))
+                yield return delta;
+        }
+    }
+
     private static string BuildSystemPrompt(
         string                         basePrompt,
         IReadOnlyList<MemoryCitation>  memoryCitations,

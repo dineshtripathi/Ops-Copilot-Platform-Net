@@ -21,6 +21,12 @@ public class RoutingActionExecutorTests
     private const string ValidResourceId =
         "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.Compute/virtualMachines/vm-1";
 
+    private const string ValidVmssId =
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test" +
+        "/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-1";
+
+    private const string ValidAppConfigEndpoint = "https://ops-test.azconfig.io";
+
     // ── Helpers ──────────────────────────────────────────────────────
 
     /// <summary>Creates a RoutingActionExecutor with real downstream executors.</summary>
@@ -30,7 +36,12 @@ public class RoutingActionExecutorTests
         bool enableAzureRead = false,
         IAzureResourceReader? azureReader = null,
         bool enableAzureMonitorRead = false,
-        IAzureMonitorLogsReader? azureMonitorReader = null)
+        IAzureMonitorLogsReader? azureMonitorReader = null,
+        bool enableArmWrite = false,
+        IAzureVmWriter? armWriter = null,
+        IAzureScaleWriter? scaleWriter = null,
+        bool enableAppConfigWrite = false,
+        IAppConfigFeatureFlagWriter? appConfigWriter = null)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -42,6 +53,11 @@ public class RoutingActionExecutorTests
                 ["SafeActions:AzureReadTimeoutMs"] = "5000",
                 ["SafeActions:EnableAzureMonitorReadExecutions"] = enableAzureMonitorRead.ToString(),
                 ["SafeActions:AzureMonitorQueryTimeoutMs"] = "5000",
+                ["SafeActions:EnableArmWrite"] = enableArmWrite.ToString(),
+                ["SafeActions:ArmWriteTimeoutMs"] = "5000",
+                ["SafeActions:MaxArmScaleCapacity"] = "100",
+                ["SafeActions:EnableAppConfigWrite"] = enableAppConfigWrite.ToString(),
+                ["SafeActions:AppConfigWriteTimeoutMs"] = "5000",
             })
             .Build();
 
@@ -63,11 +79,29 @@ public class RoutingActionExecutorTests
             config,
             NullLogger<AzureMonitorQueryActionExecutor>.Instance);
 
+        var armRestart = new ArmRestartActionExecutor(
+            armWriter ?? Mock.Of<IAzureVmWriter>(),
+            config,
+            NullLogger<ArmRestartActionExecutor>.Instance);
+
+        var armScale = new ArmScaleActionExecutor(
+            scaleWriter ?? Mock.Of<IAzureScaleWriter>(),
+            config,
+            NullLogger<ArmScaleActionExecutor>.Instance);
+
+        var appConfigFf = new AppConfigFeatureFlagExecutor(
+            appConfigWriter ?? Mock.Of<IAppConfigFeatureFlagWriter>(),
+            config,
+            NullLogger<AppConfigFeatureFlagExecutor>.Instance);
+
         return new RoutingActionExecutor(
             dryRun,
             httpProbe,
             azureGet,
             azureMonitorQuery,
+            armRestart,
+            armScale,
+            appConfigFf,
             config,
             NullLogger<RoutingActionExecutor>.Instance);
     }
@@ -426,6 +460,204 @@ public class RoutingActionExecutorTests
         var json = JsonDocument.Parse(result.ResponseJson);
         Assert.Equal("dry-run-rollback",
             json.RootElement.GetProperty("mode").GetString());
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Execute / Rollback: arm_restart routing (Slice 187)
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task ExecuteAsync_Routes_ArmRestart_To_Real_When_Enabled()
+    {
+        var writer = new Mock<IAzureVmWriter>(MockBehavior.Strict);
+        writer.Setup(w => w.RestartAsync(ValidResourceId, It.IsAny<CancellationToken>()))
+              .Returns(Task.CompletedTask);
+
+        var sut = CreateSut(enableRealHttpProbe: false, enableArmWrite: true, armWriter: writer.Object);
+        var result = await sut.ExecuteAsync("arm_restart",
+            $"{{\"resourceId\":\"{ValidResourceId}\"}}");
+
+        Assert.True(result.Success);
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("arm_restart", doc.RootElement.GetProperty("mode").GetString());
+        writer.VerifyAll();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Routes_ArmRestart_To_DryRun_When_Disabled()
+    {
+        var sut = CreateSut(enableRealHttpProbe: false, enableArmWrite: false);
+        var result = await sut.ExecuteAsync("arm_restart",
+            $"{{\"resourceId\":\"{ValidResourceId}\"}}");
+
+        // Feature gate off → falls through to dry-run
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("dry-run", doc.RootElement.GetProperty("mode").GetString());
+    }
+
+    [Fact]
+    public async Task RollbackAsync_Routes_ArmRestart_To_Real_When_Enabled()
+    {
+        var writer = new Mock<IAzureVmWriter>(MockBehavior.Strict);
+        // Rollback always returns ROLLBACK_NOT_SUPPORTED without calling the writer
+        var sut = CreateSut(enableRealHttpProbe: false, enableArmWrite: true, armWriter: writer.Object);
+        var result = await sut.RollbackAsync("arm_restart",
+            $"{{\"resourceId\":\"{ValidResourceId}\"}}");
+
+        Assert.False(result.Success);
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("ROLLBACK_NOT_SUPPORTED", doc.RootElement.GetProperty("reason").GetString());
+    }
+
+    [Fact]
+    public async Task RollbackAsync_Routes_ArmRestart_To_DryRun_When_Disabled()
+    {
+        var sut = CreateSut(enableRealHttpProbe: false, enableArmWrite: false);
+        var result = await sut.RollbackAsync("arm_restart",
+            $"{{\"resourceId\":\"{ValidResourceId}\"}}");
+
+        // Feature gate off → falls through to dry-run rollback
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("dry-run-rollback", doc.RootElement.GetProperty("mode").GetString());
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Execute / Rollback: arm_scale routing (Slice 188)
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task ExecuteAsync_Routes_ArmScale_To_Real_When_Enabled()
+    {
+        var writer = new Mock<IAzureScaleWriter>(MockBehavior.Strict);
+        writer.Setup(w => w.GetCapacityAsync(ValidVmssId, It.IsAny<CancellationToken>()))
+              .ReturnsAsync(2);
+        writer.Setup(w => w.SetCapacityAsync(ValidVmssId, 5, It.IsAny<CancellationToken>()))
+              .Returns(Task.CompletedTask);
+
+        var sut = CreateSut(
+            enableRealHttpProbe: false,
+            enableArmWrite: true,
+            scaleWriter: writer.Object);
+
+        var result = await sut.ExecuteAsync("arm_scale",
+            $"{{\"resourceId\":\"{ValidVmssId}\",\"targetCapacity\":5}}");
+
+        Assert.True(result.Success);
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("arm_scale", doc.RootElement.GetProperty("mode").GetString());
+        writer.VerifyAll();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Routes_ArmScale_To_DryRun_When_Disabled()
+    {
+        var sut = CreateSut(enableRealHttpProbe: false, enableArmWrite: false);
+        var result = await sut.ExecuteAsync("arm_scale",
+            $"{{\"resourceId\":\"{ValidVmssId}\",\"targetCapacity\":3}}");
+
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("dry-run", doc.RootElement.GetProperty("mode").GetString());
+    }
+
+    [Fact]
+    public async Task RollbackAsync_Routes_ArmScale_To_Real_When_Enabled()
+    {
+        var sut = CreateSut(
+            enableRealHttpProbe: false,
+            enableArmWrite: true,
+            scaleWriter: Mock.Of<IAzureScaleWriter>());
+
+        var result = await sut.RollbackAsync("arm_scale",
+            $"{{\"resourceId\":\"{ValidVmssId}\"}}");
+
+        Assert.False(result.Success);
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("ROLLBACK_NOT_SUPPORTED", doc.RootElement.GetProperty("reason").GetString());
+    }
+
+    [Fact]
+    public async Task RollbackAsync_Routes_ArmScale_To_DryRun_When_Disabled()
+    {
+        var sut = CreateSut(enableRealHttpProbe: false, enableArmWrite: false);
+        var result = await sut.RollbackAsync("arm_scale",
+            $"{{\"resourceId\":\"{ValidVmssId}\"}}");
+
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("dry-run-rollback", doc.RootElement.GetProperty("mode").GetString());
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Execute / Rollback: app_config_feature_flag routing (Slice 189)
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task ExecuteAsync_Routes_AppConfigFf_To_Real_When_Enabled()
+    {
+        var writer = new Mock<IAppConfigFeatureFlagWriter>(MockBehavior.Strict);
+        writer.Setup(w => w.GetEnabledAsync(ValidAppConfigEndpoint, "my-flag", It.IsAny<CancellationToken>()))
+              .ReturnsAsync(false);
+        writer.Setup(w => w.SetEnabledAsync(ValidAppConfigEndpoint, "my-flag", true, It.IsAny<CancellationToken>()))
+              .Returns(Task.CompletedTask);
+
+        var sut = CreateSut(
+            enableRealHttpProbe: false,
+            enableAppConfigWrite: true,
+            appConfigWriter: writer.Object);
+
+        var result = await sut.ExecuteAsync("app_config_feature_flag",
+            $"{{\"endpoint\":\"{ValidAppConfigEndpoint}\",\"featureFlagId\":\"my-flag\",\"enabled\":true}}");
+
+        Assert.True(result.Success);
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("app_config_feature_flag", doc.RootElement.GetProperty("mode").GetString());
+        Assert.Equal(ValidAppConfigEndpoint, doc.RootElement.GetProperty("endpoint").GetString());
+        Assert.Equal("my-flag", doc.RootElement.GetProperty("featureFlagId").GetString());
+        Assert.True(doc.RootElement.GetProperty("enabled").GetBoolean());
+        Assert.False(doc.RootElement.GetProperty("previousEnabled").GetBoolean());
+        writer.VerifyAll();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Routes_AppConfigFf_To_DryRun_When_Disabled()
+    {
+        var sut = CreateSut(enableRealHttpProbe: false, enableAppConfigWrite: false);
+        var result = await sut.ExecuteAsync("app_config_feature_flag",
+            $"{{\"endpoint\":\"{ValidAppConfigEndpoint}\",\"featureFlagId\":\"my-flag\",\"enabled\":true}}");
+
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("dry-run", doc.RootElement.GetProperty("mode").GetString());
+    }
+
+    [Fact]
+    public async Task RollbackAsync_Routes_AppConfigFf_To_Real_When_Enabled()
+    {
+        var writer = new Mock<IAppConfigFeatureFlagWriter>(MockBehavior.Strict);
+        writer.Setup(w => w.SetEnabledAsync(ValidAppConfigEndpoint, "my-flag", false, It.IsAny<CancellationToken>()))
+              .Returns(Task.CompletedTask);
+
+        var sut = CreateSut(
+            enableRealHttpProbe: false,
+            enableAppConfigWrite: true,
+            appConfigWriter: writer.Object);
+
+        var result = await sut.RollbackAsync("app_config_feature_flag",
+            $"{{\"endpoint\":\"{ValidAppConfigEndpoint}\",\"featureFlagId\":\"my-flag\",\"enabled\":false}}");
+
+        Assert.True(result.Success);
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("app_config_feature_flag_rollback", doc.RootElement.GetProperty("mode").GetString());
+        writer.VerifyAll();
+    }
+
+    [Fact]
+    public async Task RollbackAsync_Routes_AppConfigFf_To_DryRun_When_Disabled()
+    {
+        var sut = CreateSut(enableRealHttpProbe: false, enableAppConfigWrite: false);
+        var result = await sut.RollbackAsync("app_config_feature_flag",
+            $"{{\"endpoint\":\"{ValidAppConfigEndpoint}\",\"featureFlagId\":\"my-flag\",\"enabled\":false}}");
+
+        var doc = JsonDocument.Parse(result.ResponseJson);
+        Assert.Equal("dry-run-rollback", doc.RootElement.GetProperty("mode").GetString());
     }
 
     // ═══════════════════════════════════════════════════════════════

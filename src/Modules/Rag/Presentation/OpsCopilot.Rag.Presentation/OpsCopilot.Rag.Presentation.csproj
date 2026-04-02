@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Composition root: wires Infrastructure (→ Application → Domain) into the host -->
     <ProjectReference Include="..\..\Infrastructure\OpsCopilot.Rag.Infrastructure\OpsCopilot.Rag.Infrastructure.csproj" />
   </ItemGroup>

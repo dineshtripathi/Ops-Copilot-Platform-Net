@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
+using OpsCopilot.McpHost;
 using OpsCopilot.Rag.Presentation.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,6 +232,9 @@ builder.Services.AddSingleton(_ => new ArmClient(credential));
 // ── RAG module (runbook retrieval for the runbook_search tool) ────────────────
 builder.Services.AddRagModule(builder.Configuration);
 
+// ── HTTP client factory (for safe-actions and future REST tool calls) ────────
+builder.Services.AddHttpClient();
+
 // ── RAG diagnostics — log base path so runbook resolution issues are obvious ──
 {
     var ragBasePath = builder.Configuration["Rag:RunbookBasePath"] ?? "(default — embedded)";
@@ -307,6 +311,30 @@ if (isDevelopment)
 }
 
 var app = builder.Build();
+
+// ── McpAuth: inbound API-key validation (HTTP mode only) ─────────────────────
+// When McpAuth:ApiKey is configured, all inbound HTTP requests must present
+// the key via Authorization: Bearer <key> or X-Api-Key: <key>.
+// When the key is empty (default), a startup warning is logged and the
+// endpoint remains open — dev-safe fallback. The key value is never logged.
+if (!isStdioPipeMode)
+{
+    var mcpAuthKey = app.Configuration["McpAuth:ApiKey"];
+    if (string.IsNullOrEmpty(mcpAuthKey))
+    {
+        startupLogger.LogWarning(
+            "[McpAuth] McpAuth:ApiKey is not configured — the /mcp endpoint " +
+            "is open to all callers. Set McpAuth:ApiKey in configuration " +
+            "to enable inbound authentication.");
+    }
+    else
+    {
+        startupLogger.LogInformation(
+            "[McpAuth] API-key authentication enabled for /mcp endpoint.");
+    }
+
+    app.UseMiddleware<McpApiKeyMiddleware>();
+}
 
 // Register the MCP SSE endpoint in HTTP mode only.
 // In stdio-pipe mode the server communicates over stdin/stdout; MapMcp requires

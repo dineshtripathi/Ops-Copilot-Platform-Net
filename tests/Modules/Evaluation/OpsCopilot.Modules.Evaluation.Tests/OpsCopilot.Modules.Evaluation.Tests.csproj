@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.2" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.4.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
@@ -23,9 +25,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\src\BuildingBlocks\Contracts\OpsCopilot.BuildingBlocks.Contracts\OpsCopilot.BuildingBlocks.Contracts.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\Evaluation\Application\OpsCopilot.Evaluation.Application\OpsCopilot.Evaluation.Application.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\Evaluation\Domain\OpsCopilot.Evaluation.Domain\OpsCopilot.Evaluation.Domain.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\Evaluation\Presentation\OpsCopilot.Evaluation.Presentation\OpsCopilot.Evaluation.Presentation.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\Evaluation\Infrastructure\OpsCopilot.Evaluation.Infrastructure\OpsCopilot.Evaluation.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

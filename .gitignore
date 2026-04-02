@@ -506,4 +506,9 @@ $RECYCLE.BIN/
 # Internal development artefacts (per-slice build evidence logs).
 # Kept locally but not useful to public repo readers.
 docs/dev-slice-*.md
+docs/dev-slice-ga-readiness-evidence.md
 docs/archive/dev-slices/
+
+# -- OpsCopilot: AI assistant local config -------------------------------------
+# Developer-machine-specific AI assistant instructions (not project docs).
+CLAUDE.md

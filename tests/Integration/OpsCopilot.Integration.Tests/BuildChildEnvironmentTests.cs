@@ -99,6 +99,31 @@ public sealed class BuildChildEnvironmentTests : IDisposable
             "AzureAuth prefix matching should be case-insensitive.");
     }
 
+    // ── McpAuth__* prefix forwarding ──────────────────────────────────────
+
+    [Fact]
+    public void McpAuthPrefixVars_AreForwarded()
+    {
+        SetEnv("McpAuth__ApiKey", "test-secret-key-12345");
+
+        var result = McpStdioKqlToolClient.BuildChildEnvironment();
+
+        Assert.True(result.ContainsKey("McpAuth__ApiKey"),
+            "McpAuth__ApiKey should be forwarded to child process.");
+        Assert.Equal("test-secret-key-12345", result["McpAuth__ApiKey"]);
+    }
+
+    [Fact]
+    public void McpAuthPrefixVars_CaseInsensitive()
+    {
+        SetEnv("mcpauth__apikey", "value");
+
+        var result = McpStdioKqlToolClient.BuildChildEnvironment();
+
+        Assert.True(result.ContainsKey("mcpauth__apikey"),
+            "McpAuth prefix matching should be case-insensitive.");
+    }
+
     // ── Arbitrary vars are NOT forwarded ──────────────────────────────────
 
     [Fact]

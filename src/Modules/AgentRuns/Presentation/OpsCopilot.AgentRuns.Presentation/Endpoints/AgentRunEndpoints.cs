@@ -10,8 +10,10 @@ using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
 using OpsCopilot.AgentRuns.Domain.Models;
+using OpsCopilot.BuildingBlocks.Contracts.Evaluation;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
+using OpsCopilot.BuildingBlocks.Contracts.Prompting;
 
 namespace OpsCopilot.AgentRuns.Presentation.Endpoints;
 
@@ -384,6 +386,89 @@ public static class AgentRunEndpoints
         .Produces<ChatResponse>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest);
 
+        // POST /agent/chat/stream
+        // Header (required): x-tenant-id
+        // Body   (JSON)    : ChatRequest { Query }
+        //
+        // Streams the LLM response as Server-Sent Events using AG-UI delta protocol:
+        //   RunStarted → TextMessageStart → TextMessageContent* → TextMessageEnd → RunFinished
+        app.MapPost("/agent/chat/stream", async (
+            HttpContext      httpContext,
+            ChatRequest      request,
+            ChatOrchestrator chatOrchestrator,
+            CancellationToken ct) =>
+        {
+            var tenantId = httpContext.Request.Headers["x-tenant-id"].FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(tenantId))
+                return Results.Problem(
+                    detail:     "The x-tenant-id header is required.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title:      "Missing required header");
+
+            if (string.IsNullOrWhiteSpace(request?.Query))
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]>
+                    {
+                        ["Query"] = ["Query is required and must not be empty."]
+                    });
+
+            // ── Begin SSE response ───────────────────────────────────────────
+            httpContext.Response.StatusCode  = StatusCodes.Status200OK;
+            httpContext.Response.ContentType = "text/event-stream";
+            httpContext.Response.Headers["Cache-Control"]     = "no-cache";
+            httpContext.Response.Headers["X-Accel-Buffering"] = "no";
+
+            var chatRunId = Guid.NewGuid().ToString();
+            var chatMsgId = Guid.NewGuid().ToString();
+
+            // AG-UI event 1: RunStarted
+            await httpContext.Response.WriteAsync(
+                "data: " + JsonSerializer.Serialize(
+                    new RunStartedEvent("RunStarted", chatRunId), SseJsonOpts) + "\n\n", ct);
+            await httpContext.Response.Body.FlushAsync(ct);
+
+            // AG-UI event 2: TextMessageStart
+            await httpContext.Response.WriteAsync(
+                "data: " + JsonSerializer.Serialize(
+                    new TextMessageStartEvent("TextMessageStart", chatMsgId, "assistant"), SseJsonOpts) + "\n\n", ct);
+            await httpContext.Response.Body.FlushAsync(ct);
+
+            // AG-UI events 3…N: TextMessageContent — one per streamed token delta
+            try
+            {
+                await foreach (var delta in chatOrchestrator.ChatStreamingAsync(tenantId, request.Query, ct))
+                {
+                    await httpContext.Response.WriteAsync(
+                        "data: " + JsonSerializer.Serialize(
+                            new TextMessageContentEvent("TextMessageContent", chatMsgId, delta), SseJsonOpts) + "\n\n", ct);
+                    await httpContext.Response.Body.FlushAsync(ct);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Client disconnected — close stream cleanly.
+                return Results.Empty;
+            }
+
+            // AG-UI event N+1: TextMessageEnd
+            await httpContext.Response.WriteAsync(
+                "data: " + JsonSerializer.Serialize(
+                    new TextMessageEndEvent("TextMessageEnd", chatMsgId), SseJsonOpts) + "\n\n", ct);
+            await httpContext.Response.Body.FlushAsync(ct);
+
+            // AG-UI event N+2: RunFinished (lightweight — no full triage payload)
+            await httpContext.Response.WriteAsync(
+                "data: " + JsonSerializer.Serialize(
+                    new RunFinishedEvent("RunFinished", chatRunId, null!), SseJsonOpts) + "\n\n", ct);
+            await httpContext.Response.Body.FlushAsync(ct);
+
+            return Results.Empty;
+        })
+        .WithName("PostChatStream")
+        .WithTags("AgentRuns")
+        .Accepts<ChatRequest>("application/json")
+        .ProducesProblem(StatusCodes.Status400BadRequest);
+
         // POST /agent/triage/stream
         // Same contract as POST /agent/triage but uses Server-Sent Events.
         // Immediately yields {"event":"started"} so the client knows the server is alive,
@@ -727,6 +812,8 @@ public static class AgentRunEndpoints
             HttpContext             httpContext,
             SubmitFeedbackRequest   request,
             IAgentRunRepository     runRepository,
+            IFeedbackQualityGate    qualityGate,
+            IRunEvalSink            evalSink,
             CancellationToken       ct) =>
         {
             // ── Header validation ────────────────────────────────────────────
@@ -772,6 +859,20 @@ public static class AgentRunEndpoints
                     title:      "Run tenant mismatch");
             }
 
+            // ── Online eval recording ─────────────────────────────────────────────
+            await evalSink.RecordAsync(new RunEvalRecord(
+                RunId:               feedback.RunId,
+                RetrievalConfidence: 0.0,
+                FeedbackScore:       feedback.Rating / 5.0f,
+                ModelVersion:        "unknown",
+                PromptVersionId:     "unknown",
+                RecordedAt:          feedback.SubmittedAtUtc), ct);
+
+            // ── Canary promotion gate ─────────────────────────────────────────────
+            var promotionDecision = qualityGate.Evaluate(
+                promptKey:    "default",
+                qualityScore: feedback.Rating / 5.0f);
+
             return Results.Created(
                 $"/agent/runs/{runId}/feedback",
                 new RunFeedbackResponse(
@@ -779,7 +880,8 @@ public static class AgentRunEndpoints
                     feedback.RunId,
                     feedback.Rating,
                     feedback.Comment,
-                    feedback.SubmittedAtUtc));
+                    feedback.SubmittedAtUtc,
+                    promotionDecision));
         })
         .WithName("PostRunFeedback")
         .WithTags("AgentRuns")

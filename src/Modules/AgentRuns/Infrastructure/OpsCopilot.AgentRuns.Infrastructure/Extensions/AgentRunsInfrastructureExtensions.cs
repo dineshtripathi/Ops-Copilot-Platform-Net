@@ -10,6 +10,8 @@ using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Infrastructure.AI;
 using OpsCopilot.AgentRuns.Infrastructure.McpClient;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
+using OpsCopilot.Governance.Application.Services;
 using OpsCopilot.AgentRuns.Infrastructure.Memory;
 using OpsCopilot.AgentRuns.Infrastructure.Persistence;
 using OpsCopilot.AgentRuns.Infrastructure.Routing;
@@ -73,6 +75,12 @@ public static class AgentRunsInfrastructureExtensions
         services.AddScoped<IAgentRunRepository, SqlAgentRunRepository>();
         services.AddScoped<BuildingBlocks.Contracts.AgentRuns.IAgentRunCreator, Adapters.AgentRunCreatorAdapter>();
         services.AddScoped<IModelRoutingPolicy,   TenantConfigModelRoutingPolicy>();
+
+        // SQL-backed token tracking — overrides Governance module's InMemory fallback.
+        // Last registration wins: GovernanceApplicationExtensions (registered first in ApiHost)
+        // registers InMemoryTokenUsageAccumulator; these scoped registrations replace it.
+        services.AddScoped<ISessionTokenQuery, AgentRunSessionTokenQuery>();
+        services.AddScoped<ITokenUsageAccumulator, SqlTokenUsageAccumulator>();
         // IPromptVersionService is registered by AddPromptingModule (Prompting.Infrastructure)
 
         // ── Session store (config-driven: InMemory or Redis) ──────────────
@@ -116,12 +124,38 @@ public static class AgentRunsInfrastructureExtensions
                 mcpOptions,
                 sp.GetRequiredService<ILogger<McpStdioRunbookToolClient>>()));
 
-        // ── Incident recall (opt-in) ──────────────────────────────────────────
-        if (bool.TryParse(configuration["AgentRuns:IncidentRecall:Enabled"], out var incidentRecallEnabled) && incidentRecallEnabled)
+        // ── Incident recall ───────────────────────────────────────────────────
+        // Always register the concrete dependencies so both FallbackIncidentMemoryService
+        // and HybridIncidentMemoryService can be resolved regardless of which is the
+        // active IIncidentMemoryService binding.
+        services.AddScoped<SqlIncidentMemoryService>();
+        services.AddScoped<LiveKqlIncidentMemoryService>();
+        services.AddScoped<RagBackedIncidentMemoryService>();
+
+        // AI-primary path (§6.1 Hard Invariant): when a production vector backend is
+        // configured (AzureAISearch or Qdrant), use HybridIncidentMemoryService which
+        // chains SQL → RAG → KQL.  For local / InMemory-vector dev, fall back to the
+        // simpler SQL → KQL FallbackIncidentMemoryService.
+        var ragBackend = configuration["Rag:VectorBackend"] ?? "InMemory";
+        var useHybrid  = !string.Equals(ragBackend, "InMemory", StringComparison.OrdinalIgnoreCase);
+
+        if (useHybrid)
+        {
+            services.AddScoped<IIncidentMemoryService, HybridIncidentMemoryService>();
+            // Enable vector indexing so completed runs feed back into the RAG store.
+            services.AddSingleton<IIncidentMemoryIndexer, RagBackedIncidentMemoryIndexer>();
+        }
+        else
+        {
+            services.AddScoped<IIncidentMemoryService, FallbackIncidentMemoryService>();
+        }
+
+        // Backward-compat: legacy explicit opt-in overrides the automatic selection above
+        // (last-wins DI convention).  Operators who set AgentRuns:IncidentRecall:Enabled=true
+        // on an InMemory vector backend will still get RAG-backed recall as before.
+        if (bool.TryParse(configuration["AgentRuns:IncidentRecall:Enabled"], out var legacyRecallEnabled) && legacyRecallEnabled)
         {
             services.AddSingleton<IIncidentMemoryService, RagBackedIncidentMemoryService>();
-            // Override the null indexer registered in AddAgentRunsApplication so
-            // completed runs are indexed into vector memory when recall is enabled.
             services.AddSingleton<IIncidentMemoryIndexer, RagBackedIncidentMemoryIndexer>();
         }
 

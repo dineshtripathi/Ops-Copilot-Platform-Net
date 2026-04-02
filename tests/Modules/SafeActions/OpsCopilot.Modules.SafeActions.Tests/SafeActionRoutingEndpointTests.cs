@@ -57,6 +57,9 @@ public class SafeActionRoutingEndpointTests
                 ["SafeActions:AzureReadTimeoutMs"] = "5000",
                 ["SafeActions:EnableAzureMonitorReadExecutions"] = enableAzureMonitorRead.ToString(),
                 ["SafeActions:AzureMonitorQueryTimeoutMs"] = "5000",
+                ["SafeActions:EnableArmWrite"] = "False",
+                ["SafeActions:EnableAppConfigWrite"] = "False",
+                ["SafeActions:AppConfigWriteTimeoutMs"] = "5000",
             });
 
         // Register repository and policy
@@ -80,12 +83,27 @@ public class SafeActionRoutingEndpointTests
             azureMonitorReader ?? Mock.Of<IAzureMonitorLogsReader>(),
             builder.Configuration,
             NullLogger<AzureMonitorQueryActionExecutor>.Instance);
+        var armRestart = new ArmRestartActionExecutor(
+            Mock.Of<IAzureVmWriter>(),
+            builder.Configuration,
+            NullLogger<ArmRestartActionExecutor>.Instance);
+        var armScale = new ArmScaleActionExecutor(
+            Mock.Of<IAzureScaleWriter>(),
+            builder.Configuration,
+            NullLogger<ArmScaleActionExecutor>.Instance);
+        var appConfigFf = new AppConfigFeatureFlagExecutor(
+            Mock.Of<IAppConfigFeatureFlagWriter>(),
+            builder.Configuration,
+            NullLogger<AppConfigFeatureFlagExecutor>.Instance);
 
         var routing = new RoutingActionExecutor(
             dryRun,
             httpProbe,
             azureGet,
             azureMonitorQuery,
+            armRestart,
+            armScale,
+            appConfigFf,
             builder.Configuration,
             NullLogger<RoutingActionExecutor>.Instance);
 

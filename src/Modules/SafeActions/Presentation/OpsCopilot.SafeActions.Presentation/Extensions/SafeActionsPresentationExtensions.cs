@@ -11,6 +11,7 @@ using OpsCopilot.SafeActions.Presentation.Endpoints;
 using OpsCopilot.SafeActions.Presentation.Identity;
 using OpsCopilot.SafeActions.Presentation.Telemetry;
 using OpsCopilot.SafeActions.Presentation.Throttling;
+using StackExchange.Redis;
 
 namespace OpsCopilot.SafeActions.Presentation.Extensions;
 
@@ -26,7 +27,25 @@ public static class SafeActionsPresentationExtensions
         services.AddSafeActionsInfrastructure(configuration);
         services.AddSingleton<IActorIdentityResolver, ClaimsActorIdentityResolver>();
         services.AddSingleton<ISafeActionsTelemetry, SafeActionsTelemetry>();
-        services.AddSingleton<IExecutionThrottlePolicy, InMemoryExecutionThrottlePolicy>();
+
+        // Throttle policy: use Redis if configured, otherwise fall back to in-process.
+        var throttleProvider = configuration["SafeActions:ExecutionThrottle:Provider"];
+        if (string.Equals(throttleProvider, "Redis", StringComparison.OrdinalIgnoreCase))
+        {
+            var redisConn = configuration["SafeActions:ExecutionThrottle:ConnectionString"]
+                ?? throw new InvalidOperationException(
+                    "SafeActions:ExecutionThrottle:Provider is 'Redis' but no ConnectionString is configured. "
+                    + "Set 'SafeActions:ExecutionThrottle:ConnectionString' via User Secrets, Key Vault, or environment variable.");
+
+            services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConn));
+            services.AddSingleton<IExecutionThrottlePolicy, RedisExecutionThrottlePolicy>();
+        }
+        else
+        {
+            // Default: single-node in-process throttling (dev / single-replica).
+            services.AddSingleton<IExecutionThrottlePolicy, InMemoryExecutionThrottlePolicy>();
+        }
+
         return services;
     }
 

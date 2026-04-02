@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using OpsCopilot.AgentRuns.Application.Abstractions;
+using OpsCopilot.Prompting.Application.Abstractions;
 using OpsCopilot.Prompting.Application.Extensions;
 using OpsCopilot.Prompting.Domain.Repositories;
 using OpsCopilot.Prompting.Infrastructure.Adapters;
@@ -42,6 +44,20 @@ public static class PromptingInfrastructureExtensions
         services.AddScoped<IPromptTemplateRepository, SqlPromptTemplateRepository>();
         services.AddScoped<IPromptVersionService,     SqlPromptVersionService>();
 
+        // Replace the in-memory canary store with SQL-backed persistence.
+        // Options are built here (not resolved from DI) to avoid Singleton→Scoped
+        // captive dependency on DbContextOptions<PromptingDbContext>.
+        var canaryOpts = new DbContextOptionsBuilder<PromptingDbContext>()
+            .UseSqlServer(connStr, sql =>
+            {
+                sql.EnableRetryOnFailure(maxRetryCount: 3);
+                sql.MigrationsHistoryTable("__EFMigrationsHistory", "prompting");
+            })
+            .Options;
+
+        services.Replace(ServiceDescriptor.Singleton<ICanaryStore>(
+            _ => new SqlCanaryStore(canaryOpts)));
+
         return services;
     }
 
@@ -57,3 +73,4 @@ public static class PromptingInfrastructureExtensions
         app.Logger.LogInformation("PromptingDbContext migrations applied.");
     }
 }
+

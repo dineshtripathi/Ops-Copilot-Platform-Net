@@ -11,6 +11,8 @@ using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
 using OpsCopilot.AgentRuns.Presentation.Endpoints;
+using OpsCopilot.BuildingBlocks.Contracts.Evaluation;
+using OpsCopilot.BuildingBlocks.Contracts.Prompting;
 using Xunit;
 
 namespace OpsCopilot.Modules.AgentRuns.Tests;
@@ -32,6 +34,17 @@ public sealed class FeedbackEndpointTests
         builder.Logging.ClearProviders();
 
         builder.Services.AddSingleton<IAgentRunRepository>(runRepository);
+
+        // Stubs for Slice 180/181 cross-module dependencies injected by the endpoint.
+        var evalSink = new Mock<IRunEvalSink>();
+        evalSink.Setup(s => s.RecordAsync(It.IsAny<RunEvalRecord>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+        builder.Services.AddSingleton<IRunEvalSink>(evalSink.Object);
+
+        var qualityGate = new Mock<IFeedbackQualityGate>();
+        qualityGate.Setup(g => g.Evaluate(It.IsAny<string>(), It.IsAny<float>()))
+                   .Returns("NoCanary");
+        builder.Services.AddSingleton<IFeedbackQualityGate>(qualityGate.Object);
 
         var app = builder.Build();
         app.MapFeedbackEndpoints();

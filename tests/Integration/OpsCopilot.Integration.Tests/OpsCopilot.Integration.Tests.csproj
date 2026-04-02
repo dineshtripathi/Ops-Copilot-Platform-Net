@@ -9,16 +9,20 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.3" />
     <!-- MCP client used to start McpHost child process and call tools -->
     <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
-    <!-- Console logging in test output -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.2" />
+    <PackageReference Include="Moq" Version="4.20.72" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +30,16 @@
     <ProjectReference Include="..\..\..\src\Modules\AgentRuns\Infrastructure\OpsCopilot.AgentRuns.Infrastructure\OpsCopilot.AgentRuns.Infrastructure.csproj" />
     <!-- Application contracts: KqlToolRequest / KqlToolResponse -->
     <ProjectReference Include="..\..\..\src\Modules\AgentRuns\Application\OpsCopilot.AgentRuns.Application\OpsCopilot.AgentRuns.Application.csproj" />
+    <!-- Slice 156: E2E integration test coverage -->
+    <ProjectReference Include="..\..\..\src\Modules\AlertIngestion\Presentation\OpsCopilot.AlertIngestion.Presentation\OpsCopilot.AlertIngestion.Presentation.csproj" />
+    <ProjectReference Include="..\..\..\src\Modules\AlertIngestion\Application\OpsCopilot.AlertIngestion.Application\OpsCopilot.AlertIngestion.Application.csproj" />
+    <ProjectReference Include="..\..\..\src\Modules\SafeActions\Presentation\OpsCopilot.SafeActions.Presentation\OpsCopilot.SafeActions.Presentation.csproj" />
+    <ProjectReference Include="..\..\..\src\Modules\SafeActions\Application\OpsCopilot.SafeActions.Application\OpsCopilot.SafeActions.Application.csproj" />
+    <ProjectReference Include="..\..\..\src\Modules\SafeActions\Domain\OpsCopilot.SafeActions.Domain\OpsCopilot.SafeActions.Domain.csproj" />
+    <ProjectReference Include="..\..\..\src\Modules\Reporting\Presentation\OpsCopilot.Reporting.Presentation\OpsCopilot.Reporting.Presentation.csproj" />
+    <ProjectReference Include="..\..\..\src\Modules\Reporting\Application\OpsCopilot.Reporting.Application\OpsCopilot.Reporting.Application.csproj" />
+    <ProjectReference Include="..\..\..\src\Modules\Reporting\Domain\OpsCopilot.Reporting.Domain\OpsCopilot.Reporting.Domain.csproj" />
+    <ProjectReference Include="..\..\..\src\BuildingBlocks\Contracts\OpsCopilot.BuildingBlocks.Contracts\OpsCopilot.BuildingBlocks.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

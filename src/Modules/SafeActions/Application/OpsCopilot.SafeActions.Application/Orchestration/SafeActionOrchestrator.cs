@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpsCopilot.SafeActions.Application.Abstractions;
@@ -57,6 +58,11 @@ public sealed class SafeActionOrchestrator
         _logger                 = logger;
     }
 
+    // Slice 152: OpenTelemetry distributed tracing & metrics
+    private static readonly ActivitySource ActivitySrc    = new("OpsCopilot.SafeActions", "1.0.0");
+    private static readonly Meter         ActionsMeter   = new("OpsCopilot.SafeActions", "1.0.0");
+    private static readonly Counter<long> DenialCounter  = ActionsMeter.CreateCounter<long>("opscopilot.safeactions.policy_denials");
+
     // ─── Propose ──────────────────────────────────────────────────
 
     public async Task<ActionRecord> ProposeAsync(
@@ -68,9 +74,14 @@ public sealed class SafeActionOrchestrator
         string? manualRollbackGuidance,
         CancellationToken ct = default)
     {
+        using var activity = ActivitySrc.StartActivity("safeaction.propose");
+        activity?.SetTag("action_type", actionType);
+        activity?.SetTag("run_id", runId.ToString());
+
         // ── Catalog allowlist — unknown / disabled types are rejected before any policy check ───
         if (!_catalog.IsAllowlisted(actionType))
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "catalog_denied"));
             _telemetry.RecordPolicyDenied(actionType, tenantId);
             _logger.LogWarning(
                 "Catalog denied action {ActionType} for tenant {TenantId}: action_type_not_allowed",
@@ -84,6 +95,7 @@ public sealed class SafeActionOrchestrator
         var decision = _policy.Evaluate(tenantId, actionType);
         if (!decision.Allowed)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "policy_denied"));
             _telemetry.RecordPolicyDenied(actionType, tenantId);
             _logger.LogWarning(
                 "Policy denied action {ActionType} for tenant {TenantId}: {ReasonCode}",
@@ -95,6 +107,7 @@ public sealed class SafeActionOrchestrator
         var govToolDecision = _governanceClient.EvaluateToolAllowlist(tenantId, actionType);
         if (!govToolDecision.Allowed)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "governance_tool_denied"));
             _telemetry.RecordPolicyDenied(actionType, tenantId);
             _logger.LogWarning(
                 "Governance tool allowlist denied {ActionType} for tenant {TenantId}: {ReasonCode}",
@@ -179,7 +192,9 @@ public sealed class SafeActionOrchestrator
         Guid actionRecordId,
         CancellationToken ct = default)
     {
+        using var activity = ActivitySrc.StartActivity("safeaction.execute");
         var record = await GetRequiredAsync(actionRecordId, ct);
+        activity?.SetTag("action_type", record.ActionType);
         _telemetry.RecordExecutionAttempt(record.ActionType, record.TenantId);
 
         // ── Tenant execution policy gate ────────────────────────
@@ -187,6 +202,7 @@ public sealed class SafeActionOrchestrator
             record.TenantId, record.ActionType);
         if (!tenantDecision.Allowed)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "tenant_policy_denied"));
             _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
             _logger.LogWarning(
                 "Tenant execution policy denied execute for action {ActionRecordId} "
@@ -202,6 +218,7 @@ public sealed class SafeActionOrchestrator
             record.TenantId, record.ActionType);
         if (!govToolDecision.Allowed)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "governance_tool_denied"));
             _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
             _logger.LogWarning(
                 "Governance tool allowlist denied execute for action {ActionRecordId} "
@@ -217,6 +234,7 @@ public sealed class SafeActionOrchestrator
             record.TenantId, record.ActionType, actionRecordId, requestedTokens);
         if (!govBudgetDecision.Allowed)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "governance_budget_denied"));
             _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
             _logger.LogWarning(
                 "Governance token budget denied execute for action {ActionRecordId} "
@@ -229,6 +247,7 @@ public sealed class SafeActionOrchestrator
         // ── Deterministic MaxTokens enforcement ─────────────────
         if (govBudgetDecision.MaxTokens is not null && requestedTokens > govBudgetDecision.MaxTokens.Value)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "max_tokens_denied"));
             _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
             _logger.LogWarning(
                 "Governance MaxTokens exceeded for action {ActionRecordId} "
@@ -240,6 +259,7 @@ public sealed class SafeActionOrchestrator
         // ── Replay guard — only Approved records may begin execution ──
         if (record.Status is not ActionStatus.Approved)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "replay_guard_denied"));
             _telemetry.RecordReplayConflict(record.ActionType);
             _logger.LogWarning(
                 "Execute replay blocked for action {ActionRecordId} — current status {Status} is not Approved",
@@ -390,7 +410,9 @@ public sealed class SafeActionOrchestrator
         Guid actionRecordId,
         CancellationToken ct = default)
     {
+        using var activity = ActivitySrc.StartActivity("safeaction.rollback");
         var record = await GetRequiredAsync(actionRecordId, ct);
+        activity?.SetTag("action_type", record.ActionType);
         _telemetry.RecordExecutionAttempt(record.ActionType, record.TenantId);
 
         // ── Tenant execution policy gate ────────────────────────
@@ -398,6 +420,7 @@ public sealed class SafeActionOrchestrator
             record.TenantId, record.ActionType);
         if (!tenantDecision.Allowed)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "tenant_policy_denied"));
             _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
             _logger.LogWarning(
                 "Tenant execution policy denied rollback-execute for action {ActionRecordId} "
@@ -413,6 +436,7 @@ public sealed class SafeActionOrchestrator
             record.TenantId, record.ActionType);
         if (!govToolDecision.Allowed)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "governance_tool_denied"));
             _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
             _logger.LogWarning(
                 "Governance tool allowlist denied rollback-execute for action {ActionRecordId} "
@@ -432,6 +456,7 @@ public sealed class SafeActionOrchestrator
             record.TenantId, record.ActionType, actionRecordId, rollbackTokens);
         if (!govBudgetDecision.Allowed)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "governance_budget_denied"));
             _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
             _logger.LogWarning(
                 "Governance token budget denied rollback-execute for action {ActionRecordId} "
@@ -444,6 +469,7 @@ public sealed class SafeActionOrchestrator
         // ── Deterministic MaxTokens enforcement ─────────────────
         if (govBudgetDecision.MaxTokens is not null && rollbackTokens > govBudgetDecision.MaxTokens.Value)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "max_tokens_denied"));
             _telemetry.RecordPolicyDenied(record.ActionType, record.TenantId);
             _logger.LogWarning(
                 "Governance MaxTokens exceeded for rollback {ActionRecordId} "
@@ -455,6 +481,7 @@ public sealed class SafeActionOrchestrator
         // ── Replay guard — only RollbackApproved records may begin rollback execution ──
         if (record.RollbackStatus is not RollbackStatus.Approved)
         {
+            DenialCounter.Add(1, new KeyValuePair<string, object?>("reason", "replay_guard_denied"));
             _telemetry.RecordReplayConflict(record.ActionType);
             _logger.LogWarning(
                 "Rollback replay blocked for action {ActionRecordId} — current rollback status {RollbackStatus} is not Approved",

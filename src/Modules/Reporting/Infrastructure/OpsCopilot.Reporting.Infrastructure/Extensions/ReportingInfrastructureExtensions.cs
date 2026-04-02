@@ -41,6 +41,8 @@ public static class ReportingInfrastructureExtensions
         services.AddScoped<IReportingQueryService, ReportingQueryService>();
         services.AddSingleton<IPlatformReportingQueryService, PlatformReportingQueryService>();
         services.AddScoped<IAgentRunsReportingQueryService, AgentRunsReportingQueryService>();
+        // Slice 193: SQL-backed operational dashboard (MTTR, savings, incident categories)
+        services.AddScoped<IOperationalDashboardQueryService, SqlOperationalDashboardQueryService>();
         // Slice 98: deterministic evidence-quality evaluator — stateless, no I/O
         services.AddSingleton<IEvidenceQualityEvaluator, EvidenceQualityEvaluator>();
         var sbNamespace = configuration["Reporting:ServiceBus:FullyQualifiedNamespace"];

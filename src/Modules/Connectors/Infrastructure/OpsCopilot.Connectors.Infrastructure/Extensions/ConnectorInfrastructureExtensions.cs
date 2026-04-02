@@ -1,5 +1,8 @@
+using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using OpsCopilot.Connectors.Abstractions;
 using OpsCopilot.Connectors.Application.Extensions;
 using OpsCopilot.Connectors.Infrastructure.Connectors;
@@ -23,10 +26,36 @@ public static class ConnectorInfrastructureExtensions
         // Credential provider — reads connector secrets from IConfiguration / Azure Key Vault.
         services.AddSingleton<IConnectorCredentialProvider, KeyVaultConnectorCredentialProvider>();
 
+        // Health check — verifies that a credential is present for a given connector.
+        services.AddSingleton<IConnectorHealthCheck, ConnectorHealthCheckRunner>();
+
+        // Tenant credential manager — §6.18; override with Key Vault when configured.
+        var vaultUri = configuration?["KeyVault:VaultUri"];
+        if (!string.IsNullOrWhiteSpace(vaultUri))
+            services.AddSingleton<ITenantCredentialManager>(
+                new KeyVaultTenantCredentialManager(
+                    new SecretClient(new Uri(vaultUri), new DefaultAzureCredential())));
+        else
+            services.AddSingleton<ITenantCredentialManager, NullTenantCredentialManager>();
+
         // Infrastructure — concrete connectors (config-driven, explicit, no reflection)
         services.AddSingleton<IObservabilityConnector, AzureMonitorObservabilityConnector>();
-        services.AddSingleton<IRunbookConnector, InMemoryRunbookConnector>();
-        services.AddSingleton<IActionTargetConnector, StaticActionTargetConnector>();
+
+        // Runbook connector: switch to the Git-backed implementation when a repository URL is
+        // provided; otherwise fall back to the in-memory connector (no external dependencies).
+        if (!string.IsNullOrWhiteSpace(configuration?[GitRunbookConnector.RepositoryUrlConfigKey]))
+            services.AddSingleton<IRunbookConnector, GitRunbookConnector>();
+        else
+            services.AddSingleton<IRunbookConnector, InMemoryRunbookConnector>();
+
+        // Resolve ARM action types from configuration once at startup; fall back to defaults.
+        var armActionTypes = configuration?["Connectors:ArmTarget:SupportedActions"]
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            ?? ArmResourceTargetConnector.DefaultActionTypes;
+        services.AddSingleton<IActionTargetConnector>(sp =>
+            new ArmResourceTargetConnector(
+                armActionTypes,
+                sp.GetRequiredService<ILogger<ArmResourceTargetConnector>>()));
 
         // Observability query executor (MCP stdio to McpHost; no direct Azure Monitor SDK calls).
         // Registered as a concrete singleton first so both interface registrations share one instance.

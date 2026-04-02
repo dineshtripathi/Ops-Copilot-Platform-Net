@@ -2213,5 +2213,190 @@ public sealed class TriageOrchestratorTests
         Assert.Equal(AgentRunStatus.Completed, result.Status);
         Assert.Equal(RawNarrative, result.LlmNarrative);
     }
+
+    // ── Dev Slice 184 — Multi-turn tool-call loop ─────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_LlmRequestsFunctionCall_LoopDispatchesTool_ContinuesToFinalResponse()
+    {
+        // Arrange — LLM first requests kql_query tool call, then returns final text
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock.Setup(r => r.UpdateRunLedgerAsync(
+                agentRun.RunId, It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        // Response 1: LLM requests kql_query tool
+        var toolCallMsg = new ChatMessage(ChatRole.Assistant,
+            [new FunctionCallContent("call-1", "kql_query",
+                new Dictionary<string, object?> { ["query"] = "search *", ["timespan"] = "PT1H" })]);
+        var call1Response = new ChatResponse(toolCallMsg);
+
+        // Response 2: LLM returns final narrative after seeing tool result
+        var finalMsg = new ChatMessage(ChatRole.Assistant, "Root cause: OOM");
+        var call2Response = new ChatResponse(finalMsg);
+
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .SetupSequence(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(call1Response)
+            .ReturnsAsync(call2Response);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock.Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock.Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze."));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            chatClientMock.Object, modelRoutingMock.Object, promptVersionMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal("Root cause: OOM", result.LlmNarrative);
+        chatClientMock.Verify(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions?>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task RunAsync_ToolLoop_RespectsMaxToolCallIterations()
+    {
+        // Arrange — MaxToolCallIterations=2; LLM always returns a tool call, loop must stop at cap
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock.Setup(r => r.UpdateRunLedgerAsync(
+                agentRun.RunId, It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        // Always returns a tool call — would loop forever without the iteration cap
+        var toolCallResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant,
+            [new FunctionCallContent("call-n", "kql_query",
+                new Dictionary<string, object?> { ["query"] = "search *", ["timespan"] = "PT1H" })]));
+
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(toolCallResponse);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock.Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock.Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze."));
+
+        var opts = Options.Create(new AgentLoopOptions { MaxToolCallIterations = 2 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            chatClientMock.Object, modelRoutingMock.Object, promptVersionMock.Object,
+            agentLoopOptions: opts);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — GetResponseAsync called exactly MaxToolCallIterations=2 times, then loop exits
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        chatClientMock.Verify(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions?>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task RunAsync_ToolLoop_UnknownToolName_ErrorFedBackToLlm_LoopCompletes()
+    {
+        // Arrange — LLM calls an unknown tool; error JSON is fed back; second response is final text
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock.Setup(r => r.UpdateRunLedgerAsync(
+                agentRun.RunId, It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var unknownToolCallResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant,
+            [new FunctionCallContent("call-x", "nonexistent_tool",
+                new Dictionary<string, object?>())]));
+        var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Analysis complete"));
+
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .SetupSequence(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(unknownToolCallResponse)
+            .ReturnsAsync(finalResponse);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock.Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock.Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze."));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            chatClientMock.Object, modelRoutingMock.Object, promptVersionMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — loop completes; unknown tool produces error JSON fed to LLM; final response used
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal("Analysis complete", result.LlmNarrative);
+        chatClientMock.Verify(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions?>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
 }
 

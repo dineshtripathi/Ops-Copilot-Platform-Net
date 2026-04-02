@@ -8,6 +8,7 @@ public sealed class PromptingDbContext : DbContext
     public PromptingDbContext(DbContextOptions<PromptingDbContext> options) : base(options) { }
 
     public DbSet<PromptTemplate> PromptTemplates => Set<PromptTemplate>();
+    internal DbSet<CanaryExperimentRow> CanaryExperiments => Set<CanaryExperimentRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -21,6 +22,14 @@ public sealed class PromptingDbContext : DbContext
             e.Property(x => x.CreatedAt).IsRequired();
             // Partial index: only one active row per key is enforced at the application layer.
             e.HasIndex(x => new { x.PromptKey, x.IsActive });
+        });
+
+        modelBuilder.Entity<CanaryExperimentRow>(e =>
+        {
+            e.HasKey(x => x.PromptKey);
+            e.Property(x => x.PromptKey).HasMaxLength(128).IsRequired();
+            e.Property(x => x.CandidateContent).HasColumnType("nvarchar(max)").IsRequired();
+            e.ToTable("CanaryExperiments");
         });
     }
 }

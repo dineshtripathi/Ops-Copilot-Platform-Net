@@ -6,6 +6,8 @@ using Microsoft.Extensions.VectorData;
 using OpsCopilot.Rag.Application;
 using OpsCopilot.Rag.Application.Memory;
 using OpsCopilot.Rag.Domain;
+using OpsCopilot.Rag.Application.Acl;
+using OpsCopilot.Rag.Infrastructure.Acl;
 using OpsCopilot.Rag.Infrastructure.Memory;
 using OpsCopilot.Rag.Infrastructure.Retrieval;
 
@@ -32,11 +34,23 @@ public static class RagInfrastructureExtensions
         // Default: in-memory keyword search loaded from markdown files.
         if (bool.TryParse(configuration["Rag:UseVectorRunbooks"], out var useVectorRunbooks) && useVectorRunbooks)
         {
+            // Embedding version config (PDD §2.2.10 Hard Invariant)
+            var embeddingModelId = configuration["Rag:EmbeddingModelId"] ?? "text-embedding-3-small";
+            var embeddingVersion = configuration["Rag:EmbeddingVersion"] ?? "1";
+
             services.AddSingleton<IRunbookRetrievalService>(sp =>
                 new VectorRunbookRetrievalService(
                     sp.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>(),
                     sp.GetRequiredService<VectorStoreCollection<Guid, VectorRunbookDocument>>(),
-                    sp.GetRequiredService<ILogger<VectorRunbookRetrievalService>>()));
+                    sp.GetRequiredService<ILogger<VectorRunbookRetrievalService>>(),
+                    embeddingVersion));
+
+            services.AddSingleton<IRunbookIndexer>(sp =>
+                new VectorRunbookIndexer(
+                    sp.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>(),
+                    sp.GetRequiredService<VectorStoreCollection<Guid, VectorRunbookDocument>>(),
+                    embeddingModelId,
+                    embeddingVersion));
         }
         else
         {
@@ -49,6 +63,8 @@ public static class RagInfrastructureExtensions
                 var entries = RunbookLoader.LoadFromDirectory(runbookPath, loaderLogger);
                 return new InMemoryRunbookRetrievalService(entries, logger);
             });
+
+            services.AddSingleton<IRunbookIndexer, NullRagRunbookIndexer>();
         }
 
         services.AddSingleton<IIncidentMemoryRetrievalService, InMemoryIncidentMemoryRetrievalService>();
@@ -61,6 +77,31 @@ public static class RagInfrastructureExtensions
             services.AddSingleton<IIncidentMemoryIndexer, VectorIncidentMemoryIndexer>();
         else
             services.AddSingleton<IIncidentMemoryIndexer, NullRagIncidentMemoryIndexer>();
+
+        // ── Runbook reindex service (Slice 183) ──────────────────────────────
+        // Admin endpoint uses this to re-ingest runbooks from disk on-demand.
+        services.AddSingleton<IRunbookReindexService>(sp =>
+            new RunbookReindexService(
+                sp.GetRequiredService<IRunbookIndexer>(),
+                runbookPath,
+                sp.GetRequiredService<ILogger<RunbookReindexService>>()));
+
+        // ── ACL filter service (§6.17) ────────────────────────────────────────
+        // Null/passthrough by default. When AzureAISearch is the vector backend the
+        // tenant-scoped implementation overrides the null one (last-registration-wins).
+        services.AddSingleton<IAclFilterService, NullAclFilterService>();
+
+        if (string.Equals(configuration["Rag:VectorBackend"], "AzureAISearch",
+                StringComparison.OrdinalIgnoreCase))
+            services.AddSingleton<IAclFilterService, TenantGroupRoleAclFilterService>();
+
+        // Slice 191: Entra-group-aware ACL filter (§6.18).
+        // Only active when AzureAISearch is the backend AND Rag:UseGroupAcl = true.
+        // Last-registration-wins: overrides both Null and TenantGroupRole registrations above.
+        if (bool.TryParse(configuration["Rag:UseGroupAcl"], out var useGroupAcl) && useGroupAcl
+            && string.Equals(configuration["Rag:VectorBackend"], "AzureAISearch",
+                StringComparison.OrdinalIgnoreCase))
+            services.AddSingleton<IAclFilterService, EntraGroupAclFilterService>();
 
         return services;
     }
