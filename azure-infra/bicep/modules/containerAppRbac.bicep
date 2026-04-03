@@ -53,6 +53,13 @@ var lawReaderRoleId     = '73c42c96-874c-492b-b04d-ab87d138a893'
 // AcrPull: allows pulling container images from ACR — needed by all three Container Apps.
 var acrPullRoleId       = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
+// Built-in roles live at the tenant root, not per-subscription.
+// Using the /providers/... path (tenant-scoped) avoids "RoleDefinitionDoesNotExist"
+// errors that occur when subscriptionResourceId() is used in resource-group-scoped modules.
+var kvSecretsUserRoleDefId = '/providers/Microsoft.Authorization/roleDefinitions/${kvSecretsUserRoleId}'
+var lawReaderRoleDefId     = '/providers/Microsoft.Authorization/roleDefinitions/${lawReaderRoleId}'
+var acrPullRoleDefId       = '/providers/Microsoft.Authorization/roleDefinitions/${acrPullRoleId}'
+
 // ── Existing resource references (required for resource-scoped assignments) ───
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: last(split(kvResourceId, '/'))
@@ -72,7 +79,7 @@ resource kvApiHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(kv.id, apiHostPrincipalId, kvSecretsUserRoleId)
   scope: kv
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    roleDefinitionId: kvSecretsUserRoleDefId
     principalId: apiHostPrincipalId
     principalType: 'ServicePrincipal'
     description: 'Key Vault Secrets User — ca-opscopilot-apihost (system MI)'
@@ -83,7 +90,7 @@ resource kvWorkerHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(kv.id, workerHostPrincipalId, kvSecretsUserRoleId)
   scope: kv
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    roleDefinitionId: kvSecretsUserRoleDefId
     principalId: workerHostPrincipalId
     principalType: 'ServicePrincipal'
     description: 'Key Vault Secrets User — ca-opscopilot-workerhost (system MI)'
@@ -94,7 +101,7 @@ resource kvMcpHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(kv.id, mcpHostPrincipalId, kvSecretsUserRoleId)
   scope: kv
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    roleDefinitionId: kvSecretsUserRoleDefId
     principalId: mcpHostPrincipalId
     principalType: 'ServicePrincipal'
     description: 'Key Vault Secrets User — ca-opscopilot-mcphost (system MI)'
@@ -109,7 +116,7 @@ resource lawApiHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(law.id, apiHostPrincipalId, lawReaderRoleId)
   scope: law
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', lawReaderRoleId)
+    roleDefinitionId: lawReaderRoleDefId
     principalId: apiHostPrincipalId
     principalType: 'ServicePrincipal'
     description: 'Log Analytics Reader — ca-opscopilot-apihost (system MI)'
@@ -120,7 +127,7 @@ resource lawMcpHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(law.id, mcpHostPrincipalId, lawReaderRoleId)
   scope: law
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', lawReaderRoleId)
+    roleDefinitionId: lawReaderRoleDefId
     principalId: mcpHostPrincipalId
     principalType: 'ServicePrincipal'
     description: 'Log Analytics Reader — ca-opscopilot-mcphost (system MI)'
@@ -135,7 +142,7 @@ resource acrApiHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!
   name: guid(acr.id, apiHostPrincipalId, acrPullRoleId)
   scope: acr
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    roleDefinitionId: acrPullRoleDefId
     principalId: apiHostPrincipalId
     principalType: 'ServicePrincipal'
     description: 'AcrPull — ca-opscopilot-apihost (system MI)'
@@ -146,7 +153,7 @@ resource acrWorkerHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = if
   name: guid(acr.id, workerHostPrincipalId, acrPullRoleId)
   scope: acr
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    roleDefinitionId: acrPullRoleDefId
     principalId: workerHostPrincipalId
     principalType: 'ServicePrincipal'
     description: 'AcrPull — ca-opscopilot-workerhost (system MI)'
@@ -157,7 +164,7 @@ resource acrMcpHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!
   name: guid(acr.id, mcpHostPrincipalId, acrPullRoleId)
   scope: acr
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    roleDefinitionId: acrPullRoleDefId
     principalId: mcpHostPrincipalId
     principalType: 'ServicePrincipal'
     description: 'AcrPull — ca-opscopilot-mcphost (system MI)'

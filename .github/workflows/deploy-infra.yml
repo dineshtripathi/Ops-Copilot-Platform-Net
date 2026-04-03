@@ -101,6 +101,31 @@ jobs:
             --subscription-a "${{ secrets.AZURE_SUBSCRIPTION_ID_PLATFORM }}" \
             --target platform
 
+      - name: Purge stale RBAC assignments (Platform)
+        # Removes any role assignments that were created by a previous partial deploy
+        # with a different guid-name formula. Without this step, ARM returns
+        # "RoleAssignmentExists" when Bicep tries to create the same (scope+principal+role)
+        # triple under a new guid name, blocking idempotent re-deploys.
+        run: |
+          RG="rg-opscopilot-platform-${{ inputs.environment }}-uks"
+          for APP in \
+            "ca-opscopilot-apihost-${{ inputs.environment }}" \
+            "ca-opscopilot-workerhost-${{ inputs.environment }}" \
+            "ca-opscopilot-mcphost-${{ inputs.environment }}"; do
+            PRINCIPAL=$(az containerapp show -n "$APP" -g "$RG" \
+              --query identity.principalId -o tsv 2>/dev/null || echo "")
+            if [ -n "$PRINCIPAL" ]; then
+              echo "Removing stale role assignments for $APP (principal: $PRINCIPAL)..."
+              IDS=$(az role assignment list --assignee "$PRINCIPAL" --all \
+                --query "[].id" -o tsv 2>/dev/null || echo "")
+              if [ -n "$IDS" ]; then
+                echo "$IDS" | xargs az role assignment delete --ids || true
+              fi
+            else
+              echo "$APP not found (first deploy or already cleaned up) — skipping."
+            fi
+          done
+
       - name: What-if (Platform)
         run: |
           az deployment sub what-if \
