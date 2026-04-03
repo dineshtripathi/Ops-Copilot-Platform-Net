@@ -43,6 +43,7 @@ jobs:
   build-push-deploy:
     name: Build · Push · Deploy
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'dev' }}
     # Skip if triggered by a failed CI run
     if: >
       github.event_name == 'workflow_dispatch' ||
@@ -62,7 +63,7 @@ jobs:
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
-          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          client-id:       ${{ secrets.AZURE_CLIENT_ID_PLATFORM }}
           tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PLATFORM }}
 
