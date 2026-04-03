@@ -385,7 +385,7 @@ else
                         @foreach (var hit in priorIncidents)
                         {
                             <tr class="oc-similar-incident">
-                                <td class="oc-score">@($"{hit.Score:P0}")</td>
+                                <td class="oc-score">@($"{hit.Score * 100:F0}%")</td>
                                 <td>@(hit.AlertFingerprint ?? "\u2014")</td>
                                 <td>@hit.SummarySnippet</td>
                                 <td>@hit.OccurredAtUtc.ToString("yyyy-MM-dd")</td>
