@@ -39,12 +39,12 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
     // Admin user disabled — always authenticate via managed identity + AcrPull role.
     adminUserEnabled: false
     publicNetworkAccess: 'Enabled'
-    zoneRedundancy: 'Disabled'
-    // Quarantine policy (off by default, enable on Standard/Premium if content trust needed)
+    // zoneRedundancy is Premium-only; omit on Basic/Standard.
+    zoneRedundancy: skuName == 'Premium' ? 'Enabled' : 'Disabled'
     policies: {
       retentionPolicy: {
-        // Retain untagged manifests for 7 days, then auto-purge (keeps storage costs low).
-        status: 'enabled'
+        // retentionPolicy can only be enabled on Standard or Premium SKU.
+        status: skuName == 'Basic' ? 'disabled' : 'enabled'
         days: 7
       }
     }
