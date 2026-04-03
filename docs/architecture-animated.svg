@@ -1,0 +1,196 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 510" width="960" height="510">
+  <defs>
+    <marker id="a1" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#0078d4"/></marker>
+    <marker id="a2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#f43f5e"/></marker>
+    <marker id="a3" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#008272"/></marker>
+    <marker id="a4" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#16a34a"/></marker>
+    <marker id="a5" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#5c2d91"/></marker>
+    <marker id="a6" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#dc2626"/></marker>
+    <marker id="a7" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#1d4ed8"/></marker>
+    <marker id="a8" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#ca8a04"/></marker>
+  </defs>
+
+  <style>
+    @keyframes flow  { from { stroke-dashoffset: 24 } to { stroke-dashoffset: 0 } }
+    @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .65 } }
+    .fl { stroke-dasharray: 8 4; animation: flow 1.4s linear infinite }
+    .pu { animation: pulse 2.8s ease-in-out infinite }
+    text { font-family: 'Segoe UI', Arial, sans-serif }
+  </style>
+
+  <!-- Background -->
+  <rect width="960" height="510" fill="#f6f8fa" rx="10"/>
+  <rect x="1" y="1" width="958" height="508" fill="none" stroke="#d0d7de" stroke-width="1" rx="9"/>
+
+  <!-- Title -->
+  <text x="480" y="27" text-anchor="middle" font-size="15" font-weight="700" fill="#1f2328">OpsCopilot Platform — Runtime Architecture</text>
+
+  <!-- Column header labels -->
+  <text x="90"  y="50" text-anchor="middle" font-size="9.5" font-weight="600" fill="#8b949e" letter-spacing=".8">ENTRY POINTS</text>
+  <text x="300" y="50" text-anchor="middle" font-size="9.5" font-weight="600" fill="#8b949e" letter-spacing=".8">HOSTS</text>
+  <text x="530" y="50" text-anchor="middle" font-size="9.5" font-weight="600" fill="#8b949e" letter-spacing=".8">MODULES  (10 total)</text>
+  <text x="802" y="50" text-anchor="middle" font-size="9.5" font-weight="600" fill="#8b949e" letter-spacing=".8">AZURE INFRASTRUCTURE</text>
+
+  <!-- Column dividers -->
+  <line x1="184" y1="38" x2="184" y2="460" stroke="#d0d7de" stroke-dasharray="4 3"/>
+  <line x1="422" y1="38" x2="422" y2="460" stroke="#d0d7de" stroke-dasharray="4 3"/>
+  <line x1="648" y1="38" x2="648" y2="460" stroke="#d0d7de" stroke-dasharray="4 3"/>
+
+  <!-- ═══════════════  ENTRY POINTS  ═══════════════ -->
+
+  <!-- Operator -->
+  <rect x="12" y="80" width="162" height="62" fill="#fffbeb" stroke="#f59e0b" stroke-width="2" rx="7" class="pu"/>
+  <text x="93" y="107" text-anchor="middle" font-size="18">🌐</text>
+  <text x="93" y="124" text-anchor="middle" font-size="12" font-weight="700" fill="#92400e">Operator</text>
+  <text x="93" y="137" text-anchor="middle" font-size="9.5" fill="#b45309">HTTP / REST Client</text>
+
+  <!-- Azure Alerts -->
+  <rect x="12" y="198" width="162" height="62" fill="#fff1f2" stroke="#f43f5e" stroke-width="2" rx="7" class="pu" style="animation-delay:.5s"/>
+  <text x="93" y="225" text-anchor="middle" font-size="18">🚨</text>
+  <text x="93" y="242" text-anchor="middle" font-size="12" font-weight="700" fill="#9f1239">Azure Alerts</text>
+  <text x="93" y="255" text-anchor="middle" font-size="9.5" fill="#be123c">Action Groups</text>
+
+  <!-- MCP Client -->
+  <rect x="12" y="344" width="162" height="62" fill="#f0fdf4" stroke="#16a34a" stroke-width="2" rx="7" class="pu" style="animation-delay:1s"/>
+  <text x="93" y="371" text-anchor="middle" font-size="18">🔌</text>
+  <text x="93" y="388" text-anchor="middle" font-size="12" font-weight="700" fill="#14532d">MCP Client</text>
+  <text x="93" y="401" text-anchor="middle" font-size="9.5" fill="#15803d">stdio consumer</text>
+
+  <!-- ═══════════════  HOSTS  ═══════════════ -->
+
+  <!-- ApiHost -->
+  <rect x="198" y="72" width="212" height="88" fill="#dbeafe" stroke="#0078d4" stroke-width="2.5" rx="8" class="pu"/>
+  <text x="304" y="101" text-anchor="middle" font-size="18">🖥</text>
+  <text x="304" y="120" text-anchor="middle" font-size="13" font-weight="700" fill="#1e3a5f">ApiHost</text>
+  <text x="304" y="137" text-anchor="middle" font-size="9.5" fill="#1e4d8c">Minimal APIs · 19 endpoints</text>
+  <text x="304" y="152" text-anchor="middle" font-size="9.5" fill="#1e4d8c">:5000 · Rate-limit · OpenTelemetry</text>
+
+  <!-- WorkerHost -->
+  <rect x="198" y="200" width="212" height="74" fill="#ede9fe" stroke="#5c2d91" stroke-width="2.5" rx="8" class="pu" style="animation-delay:.8s"/>
+  <text x="304" y="226" text-anchor="middle" font-size="18">⚙️</text>
+  <text x="304" y="244" text-anchor="middle" font-size="13" font-weight="700" fill="#2e1065">WorkerHost</text>
+  <text x="304" y="261" text-anchor="middle" font-size="9.5" fill="#4c1d95">AlertIngestion Worker · Digest</text>
+
+  <!-- McpHost -->
+  <rect x="198" y="336" width="212" height="74" fill="#ccfbf1" stroke="#008272" stroke-width="2.5" rx="8" class="pu" style="animation-delay:1.2s"/>
+  <text x="304" y="362" text-anchor="middle" font-size="18">🔧</text>
+  <text x="304" y="380" text-anchor="middle" font-size="13" font-weight="700" fill="#134e4a">McpHost</text>
+  <text x="304" y="397" text-anchor="middle" font-size="9.5" fill="#0f766e">MCP stdio · KQL · CostQuery</text>
+
+  <!-- ═══════════════  MODULES  ═══════════════ -->
+
+  <!-- AgentRuns -->
+  <rect x="436" y="68" width="196" height="52" fill="#dcfce7" stroke="#16a34a" stroke-width="2" rx="6"/>
+  <text x="534" y="92" text-anchor="middle" font-size="12" font-weight="700" fill="#14532d">🧩 AgentRuns</text>
+  <text x="534" y="109" text-anchor="middle" font-size="9" fill="#166534">Triage session · chat ledger</text>
+
+  <!-- SafeActions -->
+  <rect x="436" y="134" width="196" height="52" fill="#dcfce7" stroke="#16a34a" stroke-width="2" rx="6"/>
+  <text x="534" y="158" text-anchor="middle" font-size="12" font-weight="700" fill="#14532d">🛡️ SafeActions</text>
+  <text x="534" y="175" text-anchor="middle" font-size="9" fill="#166534">Proposal → Approval → Exec</text>
+
+  <!-- Governance -->
+  <rect x="436" y="200" width="196" height="52" fill="#dcfce7" stroke="#16a34a" stroke-width="2" rx="6"/>
+  <text x="534" y="224" text-anchor="middle" font-size="12" font-weight="700" fill="#14532d">🏛️ Governance</text>
+  <text x="534" y="241" text-anchor="middle" font-size="9" fill="#166534">Allow-lists · token budgets</text>
+
+  <!-- AlertIngestion module -->
+  <rect x="436" y="266" width="196" height="52" fill="#dcfce7" stroke="#16a34a" stroke-width="2" rx="6"/>
+  <text x="534" y="290" text-anchor="middle" font-size="12" font-weight="700" fill="#14532d">🚨 AlertIngestion</text>
+  <text x="534" y="307" text-anchor="middle" font-size="9" fill="#166534">SHA-256 fingerprint · dedup</text>
+
+  <!-- +6 more -->
+  <rect x="436" y="332" width="196" height="52" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5" rx="6" stroke-dasharray="5 3"/>
+  <text x="534" y="356" text-anchor="middle" font-size="12" font-weight="700" fill="#15803d">+ 6 more modules</text>
+  <text x="534" y="373" text-anchor="middle" font-size="9" fill="#16a34a">Tenancy · Eval · Reporting · Rag…</text>
+
+  <!-- BuildingBlocks footer band -->
+  <rect x="436" y="395" width="196" height="46" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" rx="6"/>
+  <text x="534" y="416" text-anchor="middle" font-size="10" font-weight="700" fill="#475569">📦 BuildingBlocks</text>
+  <text x="534" y="431" text-anchor="middle" font-size="8.5" fill="#64748b">Contracts · Domain · App · Infra</text>
+
+  <!-- ═══════════════  AZURE INFRA  ═══════════════ -->
+
+  <!-- Azure Monitor -->
+  <rect x="660" y="68" width="285" height="72" fill="#fee2e2" stroke="#dc2626" stroke-width="2" rx="7" class="pu" style="animation-delay:.3s"/>
+  <text x="802" y="97" text-anchor="middle" font-size="18">📊</text>
+  <text x="802" y="115" text-anchor="middle" font-size="13" font-weight="700" fill="#7f1d1d">Azure Monitor</text>
+  <text x="802" y="131" text-anchor="middle" font-size="9.5" fill="#991b1b">Log Analytics · App Insights KQL</text>
+
+  <!-- Azure SQL -->
+  <rect x="660" y="210" width="285" height="72" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2" rx="7" class="pu" style="animation-delay:.6s"/>
+  <text x="802" y="239" text-anchor="middle" font-size="18">🗄️</text>
+  <text x="802" y="257" text-anchor="middle" font-size="13" font-weight="700" fill="#1e3a5f">Azure SQL</text>
+  <text x="802" y="273" text-anchor="middle" font-size="9.5" fill="#1e40af">EF Core · SafeActions · Sessions</text>
+
+  <!-- Key Vault + OpenAI -->
+  <rect x="660" y="350" width="285" height="72" fill="#fefce8" stroke="#ca8a04" stroke-width="2" rx="7" class="pu" style="animation-delay:.9s"/>
+  <text x="802" y="379" text-anchor="middle" font-size="18">🔑</text>
+  <text x="802" y="397" text-anchor="middle" font-size="13" font-weight="700" fill="#713f12">Key Vault · Azure OpenAI</text>
+  <text x="802" y="413" text-anchor="middle" font-size="9.5" fill="#854d0e">Secrets · Certs · Semantic Kernel</text>
+
+  <!-- ═══════════════  ANIMATED ARROWS  ═══════════════ -->
+
+  <!-- Operator → ApiHost -->
+  <line x1="174" y1="111" x2="196" y2="111" stroke="#0078d4" stroke-width="2" class="fl" marker-end="url(#a1)"/>
+
+  <!-- Azure Alerts → WorkerHost -->
+  <line x1="174" y1="229" x2="196" y2="237" stroke="#f43f5e" stroke-width="2" class="fl" marker-end="url(#a2)" style="animation-delay:.4s"/>
+
+  <!-- MCP Client → McpHost -->
+  <line x1="174" y1="375" x2="196" y2="375" stroke="#008272" stroke-width="2" class="fl" marker-end="url(#a3)" style="animation-delay:.8s"/>
+
+  <!-- ApiHost → AgentRuns (direct horizontal) -->
+  <line x1="410" y1="94" x2="434" y2="94" stroke="#16a34a" stroke-width="2" class="fl" marker-end="url(#a4)"/>
+
+  <!-- ApiHost → SafeActions -->
+  <path d="M410,130 C428,130 428,160 434,160" fill="none" stroke="#16a34a" stroke-width="2" class="fl" marker-end="url(#a4)" style="animation-delay:.25s"/>
+
+  <!-- ApiHost → Governance -->
+  <path d="M410,150 C430,150 430,226 434,226" fill="none" stroke="#16a34a" stroke-width="2" class="fl" marker-end="url(#a4)" style="animation-delay:.5s"/>
+
+  <!-- WorkerHost → AlertIngestion module -->
+  <path d="M410,237 C428,237 428,292 434,292" fill="none" stroke="#5c2d91" stroke-width="2" class="fl" marker-end="url(#a5)" style="animation-delay:.6s"/>
+
+  <!-- AgentRuns → McpHost (MCP stdio — backward, route below) -->
+  <path d="M534,120 C534,448 304,448 304,410" fill="none" stroke="#008272" stroke-width="1.5" class="fl" marker-end="url(#a3)" style="animation-delay:1.4s"/>
+
+  <!-- McpHost → Azure Monitor (KQL queries — route over top) -->
+  <path d="M304,336 C304,52 802,52 802,68" fill="none" stroke="#dc2626" stroke-width="1.5" class="fl" marker-end="url(#a6)" style="animation-delay:1.8s"/>
+
+  <!-- AgentRuns → Azure Monitor -->
+  <line x1="632" y1="94" x2="658" y2="104" stroke="#dc2626" stroke-width="2" class="fl" marker-end="url(#a6)" style="animation-delay:.2s"/>
+
+  <!-- SafeActions → Azure SQL -->
+  <path d="M632,160 C648,160 648,246 658,246" fill="none" stroke="#1d4ed8" stroke-width="2" class="fl" marker-end="url(#a7)" style="animation-delay:.7s"/>
+
+  <!-- AlertIngestion → Azure SQL -->
+  <path d="M632,292 C648,292 648,268 658,268" fill="none" stroke="#1d4ed8" stroke-width="2" class="fl" marker-end="url(#a7)" style="animation-delay:.3s"/>
+
+  <!-- Governance → Key Vault -->
+  <path d="M632,226 C648,226 648,386 658,386" fill="none" stroke="#ca8a04" stroke-width="2" class="fl" marker-end="url(#a8)" style="animation-delay:1.1s"/>
+
+  <!-- MCP stdio label -->
+  <rect x="474" y="440" width="118" height="16" fill="#f0fdf4" rx="3"/>
+  <text x="533" y="452" text-anchor="middle" font-size="8.5" fill="#008272">↙ AgentRuns→McpHost (stdio)</text>
+
+  <!-- KQL label -->
+  <rect x="350" y="38" width="80" height="14" fill="#fee2e2" rx="3"/>
+  <text x="390" y="48.5" text-anchor="middle" font-size="8" fill="#dc2626">↑ McpHost→Monitor (KQL)</text>
+
+  <!-- ═══════════════  FOOTER LEGEND  ═══════════════ -->
+  <rect x="10" y="462" width="940" height="38" fill="#f1f5f9" rx="6"/>
+  <line x1="32" y1="481" x2="58" y2="481" stroke="#0078d4" stroke-width="2" stroke-dasharray="8 4"/>
+  <text x="66" y="484.5" font-size="9.5" fill="#475569">HTTP / API call</text>
+  <line x1="162" y1="481" x2="188" y2="481" stroke="#16a34a" stroke-width="2" stroke-dasharray="8 4"/>
+  <text x="196" y="484.5" font-size="9.5" fill="#475569">Module dispatch</text>
+  <line x1="302" y1="481" x2="328" y2="481" stroke="#008272" stroke-width="2" stroke-dasharray="8 4"/>
+  <text x="336" y="484.5" font-size="9.5" fill="#475569">MCP stdio</text>
+  <line x1="412" y1="481" x2="438" y2="481" stroke="#dc2626" stroke-width="2" stroke-dasharray="8 4"/>
+  <text x="446" y="484.5" font-size="9.5" fill="#475569">KQL / Azure call</text>
+  <line x1="544" y1="481" x2="570" y2="481" stroke="#1d4ed8" stroke-width="2" stroke-dasharray="8 4"/>
+  <text x="578" y="484.5" font-size="9.5" fill="#475569">Persistence</text>
+  <line x1="656" y1="481" x2="682" y2="481" stroke="#ca8a04" stroke-width="2" stroke-dasharray="8 4"/>
+  <text x="690" y="484.5" font-size="9.5" fill="#475569">Secrets / Config</text>
+  <text x="800" y="484.5" font-size="9" fill="#94a3b8">Animated = live data flow direction</text>
+</svg>

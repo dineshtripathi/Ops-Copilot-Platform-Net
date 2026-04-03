@@ -52,6 +52,10 @@ graph LR
     Modules --> BuildingBlocks
 ```
 
+> 📐 **[Open & edit in Draw.io](docs/architecture.drawio)** — interactive diagram with all 10 modules, connector types, and deployment mode annotations.
+
+![Runtime Architecture — animated data flows](docs/architecture-animated.svg)
+
 ---
 
 ## Deployment Modes
@@ -141,31 +145,28 @@ OpsCopilot treats execution as a **danger zone** â€” all actions flow throu
 
 ## Solution Layout
 
-```
-src/
-  BuildingBlocks/          Shared libraries (Application, Contracts, Domain, Infrastructure)
-  Hosts/
-    OpsCopilot.ApiHost/    HTTP API (Minimal APIs)
-    OpsCopilot.McpHost/    MCP tool server (stdio, KQL)
-    OpsCopilot.WorkerHost/ Background processing
-  Modules/                 Bounded modules (10 total)
-    AgentRuns/               Triage session + ledger persistence
-    AlertIngestion/          Alert intake + SHA-256 fingerprinting
-    Connectors/              Observability, Runbook, ActionTarget connectors
-    Evaluation/              Deterministic evaluation framework
-    Governance/              Tool allow-lists, token budgets, tenant config
-    Prompting/               Prompt template management
-    Rag/                     Retrieval-augmented generation
-    Reporting/               SafeActions + platform reports
-    SafeActions/             Proposal â†’ Approval â†’ Execution lifecycle
-    Tenancy/                 Multi-tenant registry + per-tenant config
-tests/                    Integration, module, and MCP contract tests
-infrastructure/           Azure Bicep deployment artifacts
-docs/                     Developer guides, architecture docs
-examples/                 Configuration and integration examples
-templates/                CI/CD, Bicep, and Terraform starter templates
-packs/                    Community and starter packs
-```
+| | Path | Purpose |
+|:---:|---|---|
+| 📦 | `src/BuildingBlocks/` | Shared contracts, domain primitives, application & infrastructure abstractions |
+| 🌐 | `src/Hosts/OpsCopilot.ApiHost/` | HTTP API — 19 Minimal API endpoints, rate-limiting, OpenTelemetry |
+| 🔌 | `src/Hosts/OpsCopilot.McpHost/` | MCP tool server — stdio transport, KQL tool, CostQuery tool |
+| ⚙️ | `src/Hosts/OpsCopilot.WorkerHost/` | Background workers — alert ingestion, digest scheduling |
+| 🧩 | `src/Modules/AgentRuns/` | Triage session orchestration + chat ledger persistence |
+| 🚨 | `src/Modules/AlertIngestion/` | Alert intake pipeline with SHA-256 fingerprinting & dedup |
+| 🔗 | `src/Modules/Connectors/` | Observability, runbook, and action-target connectors |
+| 📊 | `src/Modules/Evaluation/` | Deterministic evaluation framework (11 scenarios) |
+| 🏛️ | `src/Modules/Governance/` | Tool allow-lists, token budgets, per-tenant config chains |
+| 💬 | `src/Modules/Prompting/` | Prompt template registry and quality gate |
+| 🔍 | `src/Modules/Rag/` | Retrieval-augmented generation (Azure AI Search) |
+| 📋 | `src/Modules/Reporting/` | SafeActions + platform operational reports |
+| 🛡️ | `src/Modules/SafeActions/` | Proposal → Approval → Execution lifecycle with throttling |
+| 🏢 | `src/Modules/Tenancy/` | Multi-tenant registry + per-tenant configuration |
+| 🧪 | `tests/` | Integration, module-level, and MCP contract tests |
+| ☁️ | `infrastructure/` | Azure Bicep deployment artifacts |
+| 📚 | `docs/` | Developer guides, architecture docs, subpage reference |
+| 💡 | `examples/` | Configuration and integration examples |
+| 📝 | `templates/` | CI/CD, Bicep, and Terraform starter templates |
+| 🎁 | `packs/` | Community and starter packs |
 
 ---
 
