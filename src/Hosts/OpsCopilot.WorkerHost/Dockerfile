@@ -4,7 +4,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY global.json OpsCopilot.sln ./
+# global.json excluded via .dockerignore; sdk:10.0 base image provides the SDK
+COPY OpsCopilot.sln ./
 COPY src/ src/
 
 RUN dotnet restore src/Hosts/OpsCopilot.WorkerHost/OpsCopilot.WorkerHost.csproj

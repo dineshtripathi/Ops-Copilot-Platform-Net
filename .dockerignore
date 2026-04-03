@@ -1,7 +1,7 @@
 # ================================================================
 # .dockerignore — OpsCopilot solution root
 # Docker build context is always the solution root.
-# Only src/ packs/ global.json and OpsCopilot.sln are needed.
+# Only src/ packs/ and OpsCopilot.sln are needed.
 # ================================================================
 
 # Version control
@@ -45,3 +45,9 @@ examples/
 **/appsettings.Development.json
 **/appsettings.Local.json
 **/launchSettings.json
+
+# global.json pins the SDK version for local dev (rollForward: disable).
+# Inside the Docker build the mcr.microsoft.com/dotnet/sdk:10.0 base image
+# already provides a .NET 10 SDK; excluding this prevents an exact-version
+# mismatch that causes exit-code 155 / sdk-not-found.
+global.json

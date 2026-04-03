@@ -5,7 +5,8 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy restore targets first for layer-cache efficiency
-COPY global.json OpsCopilot.sln ./
+# global.json is excluded via .dockerignore (sdk:10.0 base image provides the SDK)
+COPY OpsCopilot.sln ./
 COPY src/ src/
 
 # Restore only this project's dependency graph (tests not needed)
