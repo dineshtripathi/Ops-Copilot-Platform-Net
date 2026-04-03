@@ -17,7 +17,7 @@ targetScope = 'resourceGroup'
     └────────────────────────┴───────────┴───────────┴──────────┘
 
   Built-in role definition IDs (stable, no subscription prefix needed):
-    Key Vault Secrets User  : 4633458b-17de-408a-b874-0445c86b69e0
+    Key Vault Secrets User  : 4633458b-17de-408a-b874-0445c86b69e6
     Log Analytics Reader    : 73c42c96-874c-492b-b04d-ab87d138a893
 
   Role assignment names use deterministic GUIDs:
@@ -48,7 +48,7 @@ param workerHostPrincipalId string
 param mcpHostPrincipalId string
 
 // ── Built-in role definition IDs ──────────────────────────────────────────────
-var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e0'
+var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 var lawReaderRoleId     = '73c42c96-874c-492b-b04d-ab87d138a893'
 // AcrPull: allows pulling container images from ACR — needed by all three Container Apps.
 var acrPullRoleId       = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
