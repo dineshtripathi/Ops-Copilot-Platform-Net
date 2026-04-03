@@ -23,8 +23,8 @@ param location string
 @description('Tags to apply.')
 param tags object
 
-@description('ACR SKU tier. Basic = dev/sandbox. Standard = prod.')
-@allowed(['Basic', 'Standard', 'Premium'])
+@description('ACR SKU tier. Basic = dev/sandbox. Standard = prod. Premium is not used.')
+@allowed(['Basic', 'Standard'])
 param skuName string = 'Basic'
 
 // ── Registry ─────────────────────────────────────────────────────────────────
@@ -39,12 +39,12 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
     // Admin user disabled — always authenticate via managed identity + AcrPull role.
     adminUserEnabled: false
     publicNetworkAccess: 'Enabled'
-    // zoneRedundancy is Premium-only; omit on Basic/Standard.
-    zoneRedundancy: skuName == 'Premium' ? 'Enabled' : 'Disabled'
+    // Zone redundancy requires Premium SKU — not used here.
+    zoneRedundancy: 'Disabled'
     policies: {
       retentionPolicy: {
-        // retentionPolicy can only be enabled on Standard or Premium SKU.
-        status: skuName == 'Basic' ? 'disabled' : 'enabled'
+        // retentionPolicy can only be enabled on Standard SKU (not Basic).
+        status: skuName == 'Standard' ? 'enabled' : 'disabled'
         days: 7
       }
     }
