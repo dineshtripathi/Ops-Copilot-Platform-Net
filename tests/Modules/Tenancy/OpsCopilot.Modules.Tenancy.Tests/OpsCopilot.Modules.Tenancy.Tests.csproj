@@ -29,6 +29,8 @@
     <ProjectReference Include="..\..\..\..\src\Modules\Tenancy\Application\OpsCopilot.Tenancy.Application\OpsCopilot.Tenancy.Application.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\Tenancy\Infrastructure\OpsCopilot.Tenancy.Infrastructure\OpsCopilot.Tenancy.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\Tenancy\Presentation\OpsCopilot.Tenancy.Presentation\OpsCopilot.Tenancy.Presentation.csproj" />
+    <!-- Slice 199: explicit ref for Moq mocking of IConnectorRegistry + IConnectorHealthCheck -->
+    <ProjectReference Include="..\..\..\..\src\Modules\Connectors\Abstractions\OpsCopilot.Connectors.Abstractions\OpsCopilot.Connectors.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

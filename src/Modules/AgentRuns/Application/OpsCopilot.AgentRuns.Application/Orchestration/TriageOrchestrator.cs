@@ -1,12 +1,17 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using OpsCopilot.AgentRuns.Application.Options;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
+using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
+using OpsCopilot.BuildingBlocks.Contracts.Privacy;
 using OpsCopilot.BuildingBlocks.Contracts.Rag;
 
 namespace OpsCopilot.AgentRuns.Application.Orchestration;
@@ -25,7 +30,7 @@ namespace OpsCopilot.AgentRuns.Application.Orchestration;
 /// recorded in the ToolCall + CitationsJson. No fabricated data ever enters the ledger.
 /// Denied paths NEVER call MCP — the run short-circuits to Failed immediately.
 /// </summary>
-public sealed class TriageOrchestrator
+public sealed class TriageOrchestrator : ITriageOrchestrator
 {
     private readonly IAgentRunRepository _repo;
     private readonly IKqlToolClient      _kql;
@@ -45,12 +50,24 @@ public sealed class TriageOrchestrator
     private readonly IPromptVersionService? _promptVersion;
     private readonly IIncidentMemoryService? _memory;
     private readonly IDeploymentDiffToolClient? _deploymentDiff;
+    private readonly IIncidentMemoryIndexer?    _indexer;
+    private readonly IOptions<IdempotencyOptions>? _idempotencyOptions;
+    private readonly IOptions<AgentLoopOptions>?   _agentLoopOptions;
+    private readonly IPiiRedactor? _piiRedactor;
+    private readonly ICitationValidator? _citationValidator;
+    private readonly IContextWindowManager? _contextWindowManager;
 
     private const string ToolName        = "kql_query";
     private const string RunbookToolName = "runbook_search";
     private const string MemoryToolName        = "memory_recall";
     private const string DeploymentDiffToolName = "deployment_diff";
     private const int    MaxPriorRuns           = 5;
+
+    // Slice 152: OpenTelemetry distributed tracing & metrics
+    private static readonly ActivitySource ActivitySrc = new("OpsCopilot.Triage", "1.0.0");
+    private static readonly Meter         TriageMeter  = new("OpsCopilot.Triage", "1.0.0");
+    private static readonly Counter<long>      RunsCounter  = TriageMeter.CreateCounter<long>("opscopilot.triage.runs");
+    private static readonly Histogram<double>  LatencyHist  = TriageMeter.CreateHistogram<double>("opscopilot.triage.latency_ms");
 
     private static readonly JsonSerializerOptions JsonOpts =
         new(JsonSerializerDefaults.Web) { WriteIndented = false };
@@ -72,7 +89,13 @@ public sealed class TriageOrchestrator
         IPromptVersionService? promptVersion = null,
         ITargetScopeEvaluator? scopeEvaluator = null,
         IIncidentMemoryService? memory = null,
-        IDeploymentDiffToolClient? deploymentDiff = null)
+        IDeploymentDiffToolClient? deploymentDiff = null,
+        IIncidentMemoryIndexer? indexer = null,
+        IOptions<IdempotencyOptions>? idempotencyOptions = null,
+        IOptions<AgentLoopOptions>? agentLoopOptions = null,
+        IPiiRedactor? piiRedactor = null,
+        ICitationValidator? citationValidator = null,
+        IContextWindowManager? contextWindowManager = null)
     {
         _repo          = repo;
         _kql           = kql;
@@ -90,7 +113,13 @@ public sealed class TriageOrchestrator
         _modelRouting  = modelRouting;
         _promptVersion = promptVersion;
         _memory        = memory;
-        _deploymentDiff = deploymentDiff;
+        _deploymentDiff      = deploymentDiff;
+        _indexer             = indexer;
+        _idempotencyOptions  = idempotencyOptions;
+        _agentLoopOptions    = agentLoopOptions;
+        _piiRedactor         = piiRedactor;
+        _citationValidator   = citationValidator;
+        _contextWindowManager = contextWindowManager;
     }
 
     public async Task<TriageResult> RunAsync(
@@ -102,10 +131,34 @@ public sealed class TriageOrchestrator
         string? subscriptionId = null,
         string? resourceGroup  = null,
         Guid? sessionId = null,
+        RunContext? context = null,
+        AgentRun?   existingRun = null,
         CancellationToken ct = default)
     {
+        using var activity = ActivitySrc.StartActivity("triage.run");
+        activity?.SetTag("alert.source", context?.AlertProvider ?? "unknown");
+        activity?.SetTag("mode", "triage");
+
         _log.LogInformation("Triage run starting for tenant {TenantId}, fingerprint {Fingerprint}",
             tenantId, alertFingerprint);
+
+        // ── Idempotency guard (skip when resuming a dispatcher-initiated run) ─────────
+        if (existingRun is null && _idempotencyOptions is not null)
+        {
+            var windowMinutes = _idempotencyOptions.Value.WindowMinutes;
+            if (windowMinutes > 0)
+            {
+                var dedupRun = await _repo.FindRecentRunAsync(
+                    tenantId, alertFingerprint, windowMinutes, ct);
+                if (dedupRun is not null)
+                {
+                    _log.LogInformation(
+                        "Idempotency: deduplicating run for fingerprint {Fingerprint} — reusing run {RunId} (status {Status})",
+                        alertFingerprint, dedupRun.RunId, dedupRun.Status);
+                    return BuildDedupResult(dedupRun);
+                }
+            }
+        }
 
         // ── Session resolution ──────────────────────────────────────
         var ttl = _sessionPolicy.GetSessionTtl(tenantId);
@@ -115,7 +168,7 @@ public sealed class TriageOrchestrator
         string sessionReasonCode;
         string sessionMessage;
 
-        if (sessionId is not null)
+        if (sessionId is not null && existingRun is null)
         {
             var existing = await _sessionStore.GetIncludingExpiredAsync(sessionId.Value, ct);
             if (existing is not null)
@@ -143,7 +196,7 @@ public sealed class TriageOrchestrator
                                 r.Status,
                                 r.AlertFingerprint,
                                 ParseCitationCount(r.CitationsJson),
-                                0, // RunbookCitationCount not stored on AgentRun — MVP-safe default
+                                ParseRunbookCitationCount(r.SummaryJson),
                                 r.CreatedAtUtc)).ToList());
                         usedSessionContext = true;
                     }
@@ -179,7 +232,15 @@ public sealed class TriageOrchestrator
             sessionMessage = $"Created new session {session.SessionId}";
         }
 
-        var run = await _repo.CreateRunAsync(tenantId, alertFingerprint, session.SessionId, ct);
+        var run = existingRun
+            ?? await _repo.CreateRunAsync(tenantId, alertFingerprint, session.SessionId, context, ct);
+
+        // Slice 128: Transition Pending → Running so the status ledger reflects in-progress state.
+        if (existingRun is not null)
+            await _repo.MarkRunningAsync(run.RunId, ct);
+
+        activity?.SetTag("run.id", run.RunId.ToString());
+        RunsCounter.Add(1);
 
         // ── Session lifecycle audit event ────────────────────────────
         await _repo.AppendPolicyEventAsync(
@@ -221,7 +282,7 @@ public sealed class TriageOrchestrator
         // ── Guardrail 2.5: workspace scope ──────────────────────────────────
         if (_scopeEvaluator is not null)
         {
-            var scopeDecision = _scopeEvaluator.Evaluate(tenantId, "LogAnalyticsWorkspace", workspaceId);
+            var scopeDecision = _scopeEvaluator.Evaluate(tenantId, "log_analytics_workspace", workspaceId);
             await _repo.AppendPolicyEventAsync(
                 AgentRunPolicyEvent.Create(run.RunId, nameof(ITargetScopeEvaluator),
                     scopeDecision.Allowed, scopeDecision.ReasonCode, scopeDecision.Message), ct);
@@ -309,137 +370,179 @@ public sealed class TriageOrchestrator
                 JsonSerializer.Serialize(response, JsonOpts),
                 toolStatus, sw.ElapsedMilliseconds, toolCitationsJson), ct);
 
-        // ── Runbook search (partial degradation — failure here does NOT fail the run) ──
-        var runbookCitations = new List<RunbookCitation>();
+        // ── Secondary tools: runbook search, incident memory, deployment diff (PARALLEL) ────────
+        // Slice 186: Guard decisions are pure synchronous calls made before the fan-out so that
+        // all DB audit writes can occur sequentially after parallel I/O completes.
+        // (EF Core DbContext is not thread-safe; never write to _repo from concurrent tasks.)
 
         var rbAllowlist = _allowlist.CanUseTool(tenantId, RunbookToolName);
+        var rbBudget    = rbAllowlist.Allowed
+            ? _budget.CheckRunBudget(tenantId, run.RunId)
+            : BudgetDecision.Deny("Skipped", "Allowlist denied runbook search");
+
+        // Prefer context fields (populated from alert payload) over the legacy named params.
+        var effectiveSubscriptionId = subscriptionId ?? context?.AzureSubscriptionId;
+        var effectiveResourceGroup  = resourceGroup  ?? context?.AzureResourceGroup;
+
+        var ddEnabled   = _deploymentDiff is not null && effectiveSubscriptionId is not null;
+        var ddAllowlist = ddEnabled
+            ? _allowlist.CanUseTool(tenantId, DeploymentDiffToolName)
+            : PolicyDecision.Deny("NA", "Deployment diff client not configured");
+        var ddBudget    = ddAllowlist.Allowed
+            ? _budget.CheckRunBudget(tenantId, run.RunId)
+            : BudgetDecision.Deny("Skipped", "Allowlist denied deployment diff");
+
+        var memAllowed = _memory is not null && _allowlist.CanUseTool(tenantId, MemoryToolName).Allowed;
+
+        // ── Fan-out: start all three I/O-bound tool calls concurrently ─────────────────────────
+        var rbRequest = new RunbookSearchToolRequest(alertTitle ?? alertFingerprint);
+        var rbSw      = Stopwatch.StartNew();
+
+        var runbookTask = rbBudget.Allowed
+            ? _runbook.ExecuteAsync(rbRequest, ct)
+            : Task.FromResult(new RunbookSearchToolResponse(false, Array.Empty<RunbookSearchHit>(), rbRequest.Query));
+
+        var memoryTask = memAllowed
+            ? _memory!.RecallAsync(alertFingerprint, tenantId, ct)
+            : Task.FromResult<IReadOnlyList<MemoryCitation>>(Array.Empty<MemoryCitation>());
+
+        var ddRequest = ddBudget.Allowed
+            ? new DeploymentDiffRequest(tenantId, effectiveSubscriptionId!, effectiveResourceGroup, timeRangeMinutes)
+            : null;
+        var ddSw = Stopwatch.StartNew();
+
+        var diffTask = ddRequest is not null
+            ? _deploymentDiff!.ExecuteAsync(ddRequest, ct)
+            : Task.FromResult(new DeploymentDiffResponse(false, Array.Empty<DeploymentDiffChange>(), string.Empty, DateTimeOffset.MinValue));
+
+        try
+        {
+            await Task.WhenAll(new Task[] { runbookTask, memoryTask, diffTask }).ConfigureAwait(false);
+        }
+        catch { /* individual task faults are inspected below; aggregate exception is discarded */ }
+
+        rbSw.Stop();
+        ddSw.Stop();
+
+        // ── Collect results (inspect each task individually after WhenAll) ──────────────────────
+        var runbookCitations        = new List<RunbookCitation>();
+        IReadOnlyList<MemoryCitation> memoryCitations = Array.Empty<MemoryCitation>();
+        var deploymentDiffCitations = new List<DeploymentDiffCitation>();
+
+        RunbookSearchToolResponse? rbResponse = null;
+        Exception? rbEx = null;
+        DeploymentDiffResponse? ddResponse = null;
+        Exception? ddEx = null;
+
+        // Runbook result
+        if (rbBudget.Allowed)
+        {
+            if (runbookTask.IsCompletedSuccessfully)
+            {
+                rbResponse = runbookTask.Result;
+                if (rbResponse.Ok)
+                {
+                    var callerCtx  = RunbookCallerContext.TenantOnly(tenantId);
+                    var authorized = _aclFilter.Filter(rbResponse.Hits, callerCtx);
+                    _log.LogDebug("ACL filter: {InCount} hits \u2192 {OutCount} authorized for tenant {TenantId}",
+                        rbResponse.Hits.Count, authorized.Count, tenantId);
+                    foreach (var hit in authorized)
+                        runbookCitations.Add(new RunbookCitation(hit.RunbookId, hit.Title, hit.Snippet, hit.Score));
+                }
+            }
+            else
+            {
+                rbEx = runbookTask.Exception?.InnerException ?? runbookTask.Exception;
+                _log.LogWarning(rbEx, "Runbook search failed for run {RunId}, continuing with partial results", run.RunId);
+                var rbDeg = _degraded.MapFailure(rbEx!);
+                await _repo.AppendPolicyEventAsync(
+                    AgentRunPolicyEvent.Create(run.RunId, nameof(IDegradedModePolicy),
+                        !rbDeg.IsDegraded, rbDeg.ErrorCode, rbDeg.UserMessage), ct);
+            }
+        }
+
+        // Memory result
+        if (memAllowed)
+        {
+            if (memoryTask.IsCompletedSuccessfully)
+                memoryCitations = memoryTask.Result;
+            else
+                _log.LogWarning(memoryTask.Exception, "Incident memory recall failed for tenant {TenantId}; continuing without citations", tenantId);
+        }
+
+        // Deployment diff result
+        if (ddRequest is not null)
+        {
+            if (diffTask.IsCompletedSuccessfully)
+            {
+                ddResponse = diffTask.Result;
+                if (ddResponse.Ok)
+                {
+                    foreach (var change in ddResponse.Changes)
+                        deploymentDiffCitations.Add(new DeploymentDiffCitation(
+                            ddResponse.SubscriptionId, change.ResourceGroup, change.ResourceId,
+                            change.ChangeType, change.ChangeTime, change.Summary));
+                }
+            }
+            else
+            {
+                ddEx = diffTask.Exception?.InnerException ?? diffTask.Exception;
+                _log.LogWarning(ddEx, "Deployment diff failed for run {RunId}, continuing with partial results", run.RunId);
+                var ddDeg = _degraded.MapFailure(ddEx!);
+                await _repo.AppendPolicyEventAsync(
+                    AgentRunPolicyEvent.Create(run.RunId, nameof(IDegradedModePolicy),
+                        !ddDeg.IsDegraded, ddDeg.ErrorCode, ddDeg.UserMessage), ct);
+            }
+        }
+
+        // ── Sequential audit writes (after all parallel I/O has completed) ─────────────────────
         await _repo.AppendPolicyEventAsync(
             AgentRunPolicyEvent.Create(run.RunId, nameof(IToolAllowlistPolicy),
                 rbAllowlist.Allowed, rbAllowlist.ReasonCode, rbAllowlist.Message), ct);
 
         if (rbAllowlist.Allowed)
         {
-            var rbBudget = _budget.CheckRunBudget(tenantId, run.RunId);
             await _repo.AppendPolicyEventAsync(
                 AgentRunPolicyEvent.Create(run.RunId, nameof(ITokenBudgetPolicy),
                     rbBudget.Allowed, rbBudget.ReasonCode, rbBudget.Message), ct);
 
             if (rbBudget.Allowed)
             {
-                var rbSw = Stopwatch.StartNew();
-                try
-                {
-                    var rbRequest  = new RunbookSearchToolRequest(alertTitle ?? alertFingerprint);
-                    var rbResponse = await _runbook.ExecuteAsync(rbRequest, ct);
-                    rbSw.Stop();
-
-                    var rbStatus = rbResponse.Ok ? "Success" : "Failed";
-
-                    if (rbResponse.Ok)
-                    {
-                        var callerCtx  = RunbookCallerContext.TenantOnly(tenantId);
-                        var authorized = _aclFilter.Filter(rbResponse.Hits, callerCtx);
-                        _log.LogDebug("ACL filter: {InCount} hits \u2192 {OutCount} authorized for tenant {TenantId}",
-                            rbResponse.Hits.Count, authorized.Count, tenantId);
-                        foreach (var hit in authorized)
-                            runbookCitations.Add(new RunbookCitation(hit.RunbookId, hit.Title, hit.Snippet, hit.Score));
-                    }
-
-                    await _repo.AppendToolCallAsync(
-                        ToolCall.Create(run.RunId, RunbookToolName,
-                            JsonSerializer.Serialize(rbRequest, JsonOpts),
-                            JsonSerializer.Serialize(rbResponse, JsonOpts),
-                            rbStatus, rbSw.ElapsedMilliseconds,
-                            JsonSerializer.Serialize(runbookCitations, JsonOpts)), ct);
-                }
-                catch (Exception rbEx)
-                {
-                    rbSw.Stop();
-                    _log.LogWarning(rbEx, "Runbook search failed for run {RunId}, continuing with partial results", run.RunId);
-
-                    var rbDeg = _degraded.MapFailure(rbEx);
-                    await _repo.AppendPolicyEventAsync(
-                        AgentRunPolicyEvent.Create(run.RunId, nameof(IDegradedModePolicy),
-                            !rbDeg.IsDegraded, rbDeg.ErrorCode, rbDeg.UserMessage), ct);
-
-                    await _repo.AppendToolCallAsync(
-                        ToolCall.Create(run.RunId, RunbookToolName,
-                            JsonSerializer.Serialize(new { query = alertFingerprint }, JsonOpts),
-                            JsonSerializer.Serialize(new { error = rbEx.Message }, JsonOpts),
-                            "Failed", rbSw.ElapsedMilliseconds, "[]"), ct);
-                }
+                await _repo.AppendToolCallAsync(
+                    ToolCall.Create(run.RunId, RunbookToolName,
+                        JsonSerializer.Serialize(rbRequest, JsonOpts),
+                        rbEx is null
+                            ? JsonSerializer.Serialize(rbResponse, JsonOpts)
+                            : JsonSerializer.Serialize(new { error = rbEx.Message }, JsonOpts),
+                        rbEx is null && rbResponse?.Ok == true ? "Success" : "Failed",
+                        rbSw.ElapsedMilliseconds,
+                        JsonSerializer.Serialize(runbookCitations, JsonOpts)), ct);
             }
         }
 
-        // ── Incident memory recall (soft error — never fails the run) ──────────────────────────
-        IReadOnlyList<MemoryCitation> memoryCitations = Array.Empty<MemoryCitation>();
-        if (_memory is not null && _allowlist.CanUseTool(tenantId, MemoryToolName).Allowed)
+        if (ddEnabled)
         {
-            try
-            {
-                memoryCitations = await _memory.RecallAsync(alertFingerprint, tenantId, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning(ex, "Incident memory recall failed for tenant {TenantId}; continuing without citations", tenantId);
-            }
-        }
-
-        // ── Deployment diff (partial degradation — failure here does NOT fail the run) ────────
-        var deploymentDiffCitations = new List<DeploymentDiffCitation>();
-        if (_deploymentDiff is not null && subscriptionId is not null)
-        {
-            var ddAllowlist = _allowlist.CanUseTool(tenantId, DeploymentDiffToolName);
             await _repo.AppendPolicyEventAsync(
                 AgentRunPolicyEvent.Create(run.RunId, nameof(IToolAllowlistPolicy),
                     ddAllowlist.Allowed, ddAllowlist.ReasonCode, ddAllowlist.Message), ct);
 
             if (ddAllowlist.Allowed)
             {
-                var ddBudget = _budget.CheckRunBudget(tenantId, run.RunId);
                 await _repo.AppendPolicyEventAsync(
                     AgentRunPolicyEvent.Create(run.RunId, nameof(ITokenBudgetPolicy),
                         ddBudget.Allowed, ddBudget.ReasonCode, ddBudget.Message), ct);
 
                 if (ddBudget.Allowed)
                 {
-                    var ddSw = Stopwatch.StartNew();
-                    try
-                    {
-                        var ddRequest  = new DeploymentDiffRequest(tenantId, subscriptionId, resourceGroup, timeRangeMinutes);
-                        var ddResponse = await _deploymentDiff.ExecuteAsync(ddRequest, ct);
-                        ddSw.Stop();
-
-                        if (ddResponse.Ok)
-                        {
-                            foreach (var change in ddResponse.Changes)
-                                deploymentDiffCitations.Add(new DeploymentDiffCitation(
-                                    ddResponse.SubscriptionId, change.ResourceGroup, change.ResourceId,
-                                    change.ChangeType, change.ChangeTime, change.Summary));
-                        }
-
-                        await _repo.AppendToolCallAsync(
-                            ToolCall.Create(run.RunId, DeploymentDiffToolName,
-                                JsonSerializer.Serialize(ddRequest, JsonOpts),
-                                JsonSerializer.Serialize(ddResponse, JsonOpts),
-                                ddResponse.Ok ? "Success" : "Failed",
-                                ddSw.ElapsedMilliseconds,
-                                JsonSerializer.Serialize(deploymentDiffCitations, JsonOpts)), ct);
-                    }
-                    catch (Exception ddEx)
-                    {
-                        ddSw.Stop();
-                        _log.LogWarning(ddEx, "Deployment diff failed for run {RunId}, continuing with partial results", run.RunId);
-
-                        var ddDeg = _degraded.MapFailure(ddEx);
-                        await _repo.AppendPolicyEventAsync(
-                            AgentRunPolicyEvent.Create(run.RunId, nameof(IDegradedModePolicy),
-                                !ddDeg.IsDegraded, ddDeg.ErrorCode, ddDeg.UserMessage), ct);
-
-                        await _repo.AppendToolCallAsync(
-                            ToolCall.Create(run.RunId, DeploymentDiffToolName,
-                                "{}", "{}", "Failed", ddSw.ElapsedMilliseconds, "[]"), ct);
-                    }
+                    await _repo.AppendToolCallAsync(
+                        ToolCall.Create(run.RunId, DeploymentDiffToolName,
+                            JsonSerializer.Serialize(ddRequest, JsonOpts),
+                            ddEx is null
+                                ? JsonSerializer.Serialize(ddResponse, JsonOpts)
+                                : JsonSerializer.Serialize(new { error = ddEx.Message }, JsonOpts),
+                            ddEx is null && ddResponse?.Ok == true ? "Success" : "Failed",
+                            ddSw.ElapsedMilliseconds,
+                            JsonSerializer.Serialize(deploymentDiffCitations, JsonOpts)), ct);
                 }
             }
         }
@@ -451,6 +554,7 @@ public sealed class TriageOrchestrator
         int?     outputTokens    = null;
         int?     totalTokens     = null;
         decimal? estimatedCost   = null;
+        string?  llmNarrative    = null;
 
         var finalStatus = response.Ok ? AgentRunStatus.Completed : AgentRunStatus.Degraded;
         var summaryJson = response.Ok
@@ -465,12 +569,127 @@ public sealed class TriageOrchestrator
                                          ?? Task.FromResult(new ModelDescriptor("default")));
                 var versionInfo = await (_promptVersion?.GetCurrentVersionAsync("triage", ct)
                                          ?? Task.FromResult(new PromptVersionInfo("0.0.0", "Analyze the following triage data.")));
+
+                // Build a rich evidence payload (capped to avoid context window overflow).
+                const int MaxSampleRows = 20;
+                var richPayload = JsonSerializer.Serialize(new
+                {
+                    alertFingerprint,
+                    alertTitle,
+                    subscriptionId,
+                    resourceGroup,
+                    timeRangeMinutes,
+                    kqlResults = new
+                    {
+                        rowCount   = response.Rows.Count,
+                        sampleRows = response.Rows.Take(MaxSampleRows)
+                    },
+                    runbooks = runbookCitations
+                        .Select(r => new { r.Title, r.Snippet })
+                        .ToList(),
+                    memoryHits  = memoryCitations.Count,
+                    diffHits    = deploymentDiffCitations.Count
+                }, JsonOpts);
+
                 var messages = new List<ChatMessage>
                 {
                     new(ChatRole.System, versionInfo.SystemPrompt),
-                    new(ChatRole.User,   summaryJson ?? alertFingerprint)
+                    new(ChatRole.User,   richPayload)
                 };
-                var completion  = await _chatClient.GetResponseAsync(messages, cancellationToken: ct);
+                // ── Build AI functions for the tool-call registry (schema visible to LLM) ──
+                static string GetArg(IDictionary<string, object?>? d, string key, string fallback = "")
+                    => d != null && d.TryGetValue(key, out var v) ? v?.ToString() ?? fallback : fallback;
+
+                var kqlFn    = AIFunctionFactory.Create(
+                    (string query, string timespan) => Task.FromResult(""),
+                    ToolName,               "Execute a KQL query against the Log Analytics workspace.");
+                var runbookFn = AIFunctionFactory.Create(
+                    (string query) => Task.FromResult(""),
+                    RunbookToolName,        "Search runbooks for remediation guidance.");
+                var memoryFn  = AIFunctionFactory.Create(
+                    (string fingerprint) => Task.FromResult(""),
+                    MemoryToolName,         "Recall past incident resolutions from memory.");
+                var diffFn    = AIFunctionFactory.Create(
+                    (string subscriptionId, string? resourceGroup) => Task.FromResult(""),
+                    DeploymentDiffToolName, "Retrieve recent deployment changes in the subscription.");
+
+                var chatOpts = new ChatOptions { Tools = [kqlFn, runbookFn, memoryFn, diffFn] };
+
+                // ── Multi-turn tool-call loop ──────────────────────────────────────────
+                var maxIter   = _agentLoopOptions?.Value.MaxToolCallIterations ?? 5;
+                var iteration = 0;
+                ChatResponse completion;
+
+                do
+                {
+                    // Slice 200: Trim context window before each LLM call to prevent overflow.
+                    var budgetTokens = _agentLoopOptions?.Value.ContextWindowBudgetTokens ?? 100_000;
+                    _contextWindowManager?.TrimToTokenBudget(messages, budgetTokens);
+
+                    completion = await _chatClient.GetResponseAsync(messages, chatOpts, ct);
+                    messages.AddRange(completion.Messages);
+
+                    var toolCalls = completion.Messages
+                        .SelectMany(m => m.Contents)
+                        .OfType<FunctionCallContent>()
+                        .ToList();
+
+                    if (toolCalls.Count == 0) break;
+
+                    foreach (var call in toolCalls)
+                    {
+                        string toolResult;
+                        try
+                        {
+                            toolResult = call.Name switch
+                            {
+                                ToolName =>
+                                    JsonSerializer.Serialize(
+                                        await _kql.ExecuteAsync(
+                                            new KqlToolRequest(tenantId, workspaceId,
+                                                GetArg(call.Arguments, "query"),
+                                                GetArg(call.Arguments, "timespan", "PT1H")), ct), JsonOpts),
+
+                                RunbookToolName =>
+                                    JsonSerializer.Serialize(
+                                        await _runbook.ExecuteAsync(
+                                            new RunbookSearchToolRequest(
+                                                GetArg(call.Arguments, "query")), ct), JsonOpts),
+
+                                MemoryToolName when _memory is not null =>
+                                    JsonSerializer.Serialize(
+                                        await _memory.RecallAsync(
+                                            GetArg(call.Arguments, "fingerprint", alertFingerprint),
+                                            tenantId, ct), JsonOpts),
+
+                                DeploymentDiffToolName when _deploymentDiff is not null =>
+                                    JsonSerializer.Serialize(
+                                        await _deploymentDiff.ExecuteAsync(
+                                            new DeploymentDiffRequest(tenantId,
+                                                GetArg(call.Arguments, "subscriptionId", subscriptionId ?? ""),
+                                                GetArg(call.Arguments, "resourceGroup", resourceGroup ?? ""),
+                                                timeRangeMinutes), ct), JsonOpts),
+
+                                _ => JsonSerializer.Serialize(
+                                    new { error = $"Unknown tool: {call.Name}" }, JsonOpts)
+                            };
+                        }
+                        catch (Exception toolEx)
+                        {
+                            toolResult = JsonSerializer.Serialize(
+                                new { error = toolEx.Message }, JsonOpts);
+                        }
+
+                        messages.Add(new ChatMessage(ChatRole.Tool,
+                            [new FunctionResultContent(call.CallId, toolResult)]));
+                    }
+
+                    iteration++;
+                } while (iteration < maxIter);
+
+                llmNarrative    = completion.Text;
+                if (_piiRedactor is not null && llmNarrative is not null)
+                    llmNarrative = _piiRedactor.Redact(llmNarrative);
                 var usage       = completion.Usage;
                 modelId         = descriptor.ModelId;
                 promptVersionId = versionInfo.VersionId;
@@ -486,7 +705,56 @@ public sealed class TriageOrchestrator
             }
         }
 
+        // ── Slice 173: Citation integrity validation (policy event, never fails the run) ─────────
+        if (_citationValidator is not null)
+        {
+            var validationResult = _citationValidator.Validate(
+                new[] { toolCitation }, runbookCitations, memoryCitations, deploymentDiffCitations);
+
+            if (!validationResult.IsValid)
+            {
+                _log.LogWarning("Citation integrity check failed for run {RunId}: {Violations}",
+                    run.RunId, string.Join("; ", validationResult.Violations));
+
+                await _repo.AppendPolicyEventAsync(
+                    AgentRunPolicyEvent.Create(
+                        run.RunId, "CitationIntegrity",
+                        false, "CitationIntegrityViolation",
+                        string.Join("; ", validationResult.Violations)), ct);
+            }
+            else
+            {
+                await _repo.AppendPolicyEventAsync(
+                    AgentRunPolicyEvent.Create(
+                        run.RunId, "CitationIntegrity",
+                        true, "CitationIntegrityPass", "All citations passed integrity check."), ct);
+            }
+        }
+
         await _repo.CompleteRunAsync(run.RunId, finalStatus, summaryJson!, toolCitationsJson, ct);
+
+        // ── Fire-and-forget incident memory indexing ────────────────────────
+        if (_indexer is not null && summaryJson is not null && finalStatus == AgentRunStatus.Completed)
+        {
+            var capturedSummary     = summaryJson;
+            var capturedFingerprint = alertFingerprint;
+            var capturedTenantId    = tenantId;
+            var capturedRunId       = run.RunId;
+            var capturedTime        = _timeProvider.GetUtcNow();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _indexer.IndexAsync(
+                        capturedRunId, capturedTenantId, capturedFingerprint,
+                        capturedSummary, capturedTime, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "Incident memory indexing failed for run {RunId}", capturedRunId);
+                }
+            });
+        }
 
         if (modelId is not null)
             await _repo.UpdateRunLedgerAsync(
@@ -496,14 +764,56 @@ public sealed class TriageOrchestrator
         _log.LogInformation("Triage run {RunId} completed with status {Status} in {ElapsedMs}ms",
             run.RunId, finalStatus, sw.ElapsedMilliseconds);
 
+        LatencyHist.Record(sw.ElapsedMilliseconds);
+        activity?.SetTag("run.status", finalStatus.ToString());
+
         return new TriageResult(
             run.RunId, finalStatus, summaryJson, new[] { toolCitation }, runbookCitations,
             memoryCitations, deploymentDiffCitations,
             session.SessionId, session.IsNew, session.ExpiresAtUtc, usedSessionContext, sessionReasonCode,
             ModelId: modelId, PromptVersionId: promptVersionId,
             InputTokens: inputTokens, OutputTokens: outputTokens,
-            TotalTokens: totalTokens, EstimatedCost: estimatedCost);
+            TotalTokens: totalTokens, EstimatedCost: estimatedCost,
+            LlmNarrative: llmNarrative);
     }
+
+    /// <summary>
+    /// Slice 127: Applies the full triage pipeline to an existing Pending <see cref="AgentRun"/>
+    /// created by alert ingestion. Skips idempotency guard and run creation so the
+    /// caller's <paramref name="existingRun.RunId"/> is preserved end-to-end.
+    /// </summary>
+    public Task<TriageResult> ResumeRunAsync(
+        AgentRun  existingRun,
+        string    workspaceId,
+        int       timeRangeMinutes = 120,
+        string?   alertTitle = null,
+        CancellationToken ct = default)
+        => RunAsync(
+            existingRun.TenantId,
+            existingRun.AlertFingerprint ?? string.Empty,
+            workspaceId,
+            timeRangeMinutes,
+            alertTitle,
+            subscriptionId: existingRun.AzureSubscriptionId,
+            resourceGroup:  existingRun.AzureResourceGroup,
+            existingRun:    existingRun,
+            ct:             ct);
+
+    private static TriageResult BuildDedupResult(AgentRun existing)
+        => new(
+            existing.RunId,
+            existing.Status,
+            SummaryJson:             null,
+            Citations:               Array.Empty<KqlCitation>(),
+            RunbookCitations:        Array.Empty<RunbookCitation>(),
+            MemoryCitations:         Array.Empty<MemoryCitation>(),
+            DeploymentDiffCitations: Array.Empty<DeploymentDiffCitation>(),
+            SessionId:               existing.SessionId,
+            IsNewSession:            false,
+            SessionExpiresAtUtc:     null,
+            UsedSessionContext:      false,
+            SessionReasonCode:       "DedupReused",
+            WasDeduplicated:         true);
 
     private static KqlCitation BuildCitation(KqlToolResponse r)
         => new(r.WorkspaceId, r.ExecutedQuery, r.Timespan, r.ExecutedAtUtc);
@@ -523,6 +833,19 @@ public sealed class TriageOrchestrator
         {
             return 0;
         }
+    }
+
+    private static int ParseRunbookCitationCount(string? summaryJson)
+    {
+        if (string.IsNullOrWhiteSpace(summaryJson)) return 0;
+        try
+        {
+            using var doc = JsonDocument.Parse(summaryJson);
+            return doc.RootElement.TryGetProperty("runbookHits", out var prop)
+                ? prop.GetInt32()
+                : 0;
+        }
+        catch { return 0; }
     }
 }
 

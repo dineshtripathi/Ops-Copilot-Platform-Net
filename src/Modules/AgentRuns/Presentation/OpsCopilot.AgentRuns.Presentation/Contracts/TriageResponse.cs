@@ -95,6 +95,7 @@ public sealed record PackSafeActionRecordSummaryDto(
 /// <param name="OutputTokens">Number of output tokens produced (null when LLM is disabled).</param>
 /// <param name="TotalTokens">Total tokens (input + output) for this run (null when LLM is disabled).</param>
 /// <param name="EstimatedCost">Estimated monetary cost of the LLM call in USD (null when LLM is disabled).</param>
+/// <param name="LlmNarrative">Natural-language triage narrative produced by the LLM (null when LLM is disabled or call failed).</param>
 public sealed record TriageResponse(
     Guid                                       RunId,
     string                                     Status,
@@ -117,4 +118,6 @@ public sealed record TriageResponse(
     int?                                       InputTokens                 = null,
     int?                                       OutputTokens                = null,
     int?                                       TotalTokens                 = null,
-    decimal?                                   EstimatedCost               = null);
+    decimal?                                   EstimatedCost               = null,
+    string?                                    LlmNarrative                = null,
+    bool                                       WasDeduplicated             = false);

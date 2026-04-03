@@ -14,10 +14,12 @@ using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Application.Acl;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
+using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using OpsCopilot.AgentRuns.Presentation.Contracts;
 using OpsCopilot.AgentRuns.Presentation.Endpoints;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
+using Microsoft.Extensions.AI;
 using OpsCopilot.BuildingBlocks.Contracts.Packs;
 using Xunit;
 
@@ -411,7 +413,7 @@ public sealed class TriageEvidenceIntegrationTests
 
         var repo = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repo.Setup(r => r.CreateRunAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repo.Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -493,6 +495,7 @@ public sealed class TriageEvidenceIntegrationTests
 
         builder.Configuration.AddInMemoryCollection(configDict);
         builder.Services.AddSingleton(orchestrator);
+        builder.Services.AddSingleton<ITriageOrchestrator>(orchestrator);
         builder.Services.AddSingleton<IPackTriageEnricher>(enricher.Object);
         builder.Services.AddSingleton<IPackEvidenceExecutor>(executor.Object);
 
@@ -505,6 +508,13 @@ public sealed class TriageEvidenceIntegrationTests
         recorder.Setup(r => r.RecordAsync(It.IsAny<PackSafeActionRecordRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PackSafeActionRecordResult([], 0, 0, 0, []));
         builder.Services.AddSingleton<IPackSafeActionRecorder>(recorder.Object);
+
+        // ChatOrchestrator: needed by /agent/chat endpoint registered in MapAgentRunEndpoints (Slice 115)
+        builder.Services.AddSingleton<IChatClient>(new Mock<IChatClient>().Object);
+        builder.Services.AddSingleton<IIncidentMemoryService>(new Mock<IIncidentMemoryService>().Object);
+        builder.Services.AddSingleton<IRunbookSearchToolClient>(runbook.Object);
+        builder.Services.AddSingleton<IRunbookAclFilter>(new Mock<IRunbookAclFilter>().Object);
+        builder.Services.AddScoped<ChatOrchestrator>();
 
         var app = builder.Build();
         app.MapAgentRunEndpoints();
@@ -540,7 +550,7 @@ public sealed class TriageEvidenceIntegrationTests
 
         var agentRun = AgentRun.Create(TenantId, "test-fingerprint");
         var repo = new Mock<IAgentRunRepository>(MockBehavior.Strict);
-        repo.Setup(r => r.CreateRunAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        repo.Setup(r => r.CreateRunAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repo.Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -584,6 +594,7 @@ public sealed class TriageEvidenceIntegrationTests
         builder.Logging.ClearProviders();
         builder.Configuration.AddInMemoryCollection(configDict);
         builder.Services.AddSingleton(orchestrator);
+        builder.Services.AddSingleton<ITriageOrchestrator>(orchestrator);
         builder.Services.AddSingleton<IPackTriageEnricher>(enricher.Object);
         builder.Services.AddSingleton<IPackEvidenceExecutor>(executor.Object);
 
@@ -596,6 +607,13 @@ public sealed class TriageEvidenceIntegrationTests
         recorder.Setup(r => r.RecordAsync(It.IsAny<PackSafeActionRecordRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PackSafeActionRecordResult([], 0, 0, 0, []));
         builder.Services.AddSingleton<IPackSafeActionRecorder>(recorder.Object);
+
+        // ChatOrchestrator: needed by /agent/chat endpoint registered in MapAgentRunEndpoints (Slice 115)
+        builder.Services.AddSingleton<IChatClient>(new Mock<IChatClient>().Object);
+        builder.Services.AddSingleton<IIncidentMemoryService>(new Mock<IIncidentMemoryService>().Object);
+        builder.Services.AddSingleton<IRunbookSearchToolClient>(runbook.Object);
+        builder.Services.AddSingleton<IRunbookAclFilter>(new Mock<IRunbookAclFilter>().Object);
+        builder.Services.AddScoped<ChatOrchestrator>();
 
         var app = builder.Build();
         app.MapAgentRunEndpoints();

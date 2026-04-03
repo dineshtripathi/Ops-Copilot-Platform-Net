@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using OpsCopilot.Connectors.Abstractions;
@@ -19,9 +20,17 @@ public class ConnectorTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddConnectorsModule();
+        services.AddConnectorsModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build());
         using var sp = services.BuildServiceProvider();
         return sp.GetRequiredService<IConnectorRegistry>();
+    }
+
+    private static ServiceProvider BuildServices()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddConnectorsModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build());
+        return services.BuildServiceProvider();
     }
 
     // ── 1. Get observability connector by name (AC-2) ───────────
@@ -53,13 +62,13 @@ public class ConnectorTests
     // ── 3. Get action-target connector by name (AC-2) ───────────
 
     [Fact]
-    public void Registry_GetActionTargetConnector_ReturnsStaticActionTarget()
+    public void Registry_GetActionTargetConnector_ReturnsArmResourceTarget()
     {
         var registry = BuildRegistry();
-        var connector = registry.GetActionTargetConnector("static-action-target");
+        var connector = registry.GetActionTargetConnector("arm-resource-target");
 
         Assert.NotNull(connector);
-        Assert.Equal("static-action-target", connector.Descriptor.Name);
+        Assert.Equal("arm-resource-target", connector.Descriptor.Name);
         Assert.Equal(ConnectorKind.ActionTarget, connector.Descriptor.Kind);
     }
 
@@ -202,7 +211,7 @@ public class ConnectorTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddConnectorsModule();
+        services.AddConnectorsModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build());
         using var sp = services.BuildServiceProvider();
 
         var registry = sp.GetRequiredService<IConnectorRegistry>();
@@ -239,4 +248,66 @@ public class ConnectorTests
         Assert.True(connector.CanQuery("Log-Query"));
         Assert.True(connector.CanQuery("log-query"));
     }
+
+    [Fact]
+    public async Task DI_AddConnectorsModule_ResolvesMcpObservabilityExecutor()
+    {
+        await using var sp = BuildServices();
+
+        var executor = sp.GetRequiredService<IObservabilityQueryExecutor>();
+
+        Assert.Equal("McpObservabilityQueryExecutor", executor.GetType().Name);
+    }
+
+    // ── Slice 190: ArmResourceTargetConnector tests ──────────────
+
+    [Fact]
+    public void ArmResourceTarget_Descriptor_HasExpectedName()
+    {
+        var connector = new ArmResourceTargetConnector(
+            ArmResourceTargetConnector.DefaultActionTypes,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ArmResourceTargetConnector>.Instance);
+
+        Assert.Equal("arm-resource-target", connector.Descriptor.Name);
+        Assert.Equal(ConnectorKind.ActionTarget, connector.Descriptor.Kind);
+    }
+
+    [Theory]
+    [InlineData("restart-service", true)]
+    [InlineData("scale-resource", true)]
+    [InlineData("run-diagnostic", true)]
+    [InlineData("toggle-feature-flag", true)]
+    [InlineData("unsupported-action", false)]
+    public void ArmResourceTarget_SupportsActionType_DefaultTypes(string actionType, bool expected)
+    {
+        var connector = new ArmResourceTargetConnector(
+            ArmResourceTargetConnector.DefaultActionTypes,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ArmResourceTargetConnector>.Instance);
+
+        Assert.Equal(expected, connector.SupportsActionType(actionType));
+    }
+
+    [Fact]
+    public void ArmResourceTarget_SupportsActionType_IsConfigDriven()
+    {
+        var connector = new ArmResourceTargetConnector(
+            new[] { "custom-action", "another-action" },
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ArmResourceTargetConnector>.Instance);
+
+        Assert.True(connector.SupportsActionType("custom-action"));
+        Assert.True(connector.SupportsActionType("another-action"));
+        Assert.False(connector.SupportsActionType("restart-service"));
+    }
+
+    [Fact]
+    public void ArmResourceTarget_SupportsActionType_IsCaseInsensitive()
+    {
+        var connector = new ArmResourceTargetConnector(
+            ArmResourceTargetConnector.DefaultActionTypes,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ArmResourceTargetConnector>.Instance);
+
+        Assert.True(connector.SupportsActionType("RESTART-SERVICE"));
+        Assert.True(connector.SupportsActionType("Restart-Service"));
+    }
 }
+

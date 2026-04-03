@@ -1,8 +1,14 @@
 ﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Agents.Hosting.AspNetCore;
+using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Presentation.Endpoints;
 using OpsCopilot.AgentRuns.Presentation.Extensions;
 using OpsCopilot.AlertIngestion.Presentation.Endpoints;
 using OpsCopilot.AlertIngestion.Presentation.Extensions;
+using OpsCopilot.AlertIngestion.Application.Abstractions;
+using OpsCopilot.ApiHost.Dispatch;
 using OpsCopilot.BuildingBlocks.Infrastructure.Configuration;
 using OpsCopilot.Governance.Presentation.Extensions;
 using OpsCopilot.SafeActions.Presentation.Endpoints;
@@ -15,6 +21,12 @@ using OpsCopilot.Connectors.Infrastructure.Extensions;
 using OpsCopilot.Tenancy.Presentation.Extensions;
 using OpsCopilot.Packs.Presentation.Endpoints;
 using OpsCopilot.Packs.Presentation.Extensions;
+using OpsCopilot.Rag.Presentation.Extensions;
+using OpsCopilot.Rag.Presentation.Endpoints;
+using OpsCopilot.Reporting.Presentation.Blazor.Components;
+using OpsCopilot.Evaluation.Infrastructure.Extensions;
+using OpsCopilot.Prompting.Infrastructure.Extensions;
+using OpsCopilot.ApiHost.Infrastructure;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -100,36 +112,91 @@ builder.Services
     .AddTenancyModule(builder.Configuration)
     .AddGovernanceModule(builder.Configuration, startupLogger)
     .AddSafeActionsModule(builder.Configuration)
+    .AddVectorStoreInfrastructure(builder.Configuration)
+    .AddRagModule(builder.Configuration)
     .AddReportingModule(builder.Configuration)
     .AddEvaluationModule()
-    .AddConnectorsModule()
-    .AddPacksModule(builder.Configuration);
+    .AddEvaluationLlmGraded()
+    .AddEvaluationInfrastructure(builder.Configuration)
+    .AddConnectorsModule(builder.Configuration)
+    .AddPacksModule(builder.Configuration)
+    .AddPromptingModule(builder.Configuration);
+
+// Slice 127: Override NullAlertTriageDispatcher with the real orchestrator-backed dispatcher.
+// AddAlertIngestionModule registers NullAlertTriageDispatcher; Replace swaps it here at the
+// composition root without modifying the module's own DI extensions.
+builder.Services.Replace(ServiceDescriptor.Singleton(typeof(IAlertTriageDispatcher), typeof(TriageOrchestratorDispatcher)));
+
+// Slice 130: Register stuck-run watchdog to catch runs left in Running after server restart.
+builder.Services.Configure<StuckRunWatchdogOptions>(
+    builder.Configuration.GetSection("AgentRun:StuckRunWatchdog"));
+builder.Services.AddHostedService<StuckRunWatchdog>();
+
+builder.Services.AddRazorComponents();
+
+// ── Health checks (Slice 140) ─────────────────────────────────────────────────
+builder.Services.AddOpsCopilotHealthChecks(builder.Configuration);
+
+// ── Authentication & authorisation (Slice 149) ───────────────────────────────
+// Registers Entra ID JWT bearer (or DevBypass handler in Development).
+// All endpoints require auth via fallback policy; health probes use .AllowAnonymous().
+builder.Services.AddOpsCopilotAuthentication(builder.Configuration);
+
+// ── Rate limiting (Slice 151) ─────────────────────────────────────────────────
+// GlobalLimiter: triage-tier for /agent/triage* and /ingest/alert* (LLM + MCP);
+// default-tier for all other API endpoints; /healthz* exempt.
+// Partition key = authenticated NameIdentifier claim (set by Slice 149).
+builder.Services.AddOpsCopilotRateLimiting(builder.Configuration);
 
 // ── Observability ─────────────────────────────────────────────────────────────
+builder.Services.AddOpsCopilotOpenTelemetry(builder.Configuration);
 builder.Logging.AddConsole();
 
+// Slice 147: MAF bootstrap — registers CloudAdapter + IAgent → TriageAgentActivityHandler
+builder.AddAgent<TriageAgentActivityHandler>();
+
 var app = builder.Build();
+
+// ── Auth middleware (Slice 149) — must precede endpoint mapping ─────────────────
+app.UseAuthentication();
+app.UseAuthorization();
+
+// ── Rate limiting (Slice 151) — after auth so claims are available ──────────────
+app.UseRateLimiter();
 
 // ── Database bootstrap ────────────────────────────────────────────────────────
 await app.UseAgentRunsMigrations();
 await app.UseSafeActionsMigrations();
 await app.UseTenancyMigrations();
+await app.UsePromptingMigrations();
+await app.UseEvaluationMigrations();
 
-// ── Health probe ──────────────────────────────────────────────────────────────
-app.MapGet("/healthz", () => Results.Ok("healthy"))
-   .WithName("Health")
-   .ExcludeFromDescription();
+// ── Health probes (Slice 140) — /healthz/live, /healthz/ready, /healthz ─────────
+app.MapOpsCopilotHealthChecks();
 
 // ── Module endpoints ──────────────────────────────────────────────────────────
 app.MapAlertIngestionEndpoints();   // POST /ingest/alert
 app.MapAgentRunEndpoints();         // POST /agent/triage
 app.MapSessionEndpoints();          // GET  /session/{sessionId}
+app.MapFeedbackEndpoints();         // POST /agent/runs/{runId}/feedback
 app.MapSafeActionEndpoints();       // /safe-actions/*
 app.MapReportingEndpoints();            // /reports/safe-actions/*
 app.MapPlatformReportingEndpoints();    // /reports/platform/*
+app.MapAgentRunsReportingEndpoints();   // /reports/agent-runs/*
+app.MapDashboardEndpoints();            // /reports/dashboard/*
 app.MapEvaluationEndpoints();           // /evaluation/*
 app.MapTenancyEndpoints();              // /tenants/*
 app.MapPlatformPacksEndpoints();        // /reports/platform/packs
+app.MapPackRunbookEndpoints();          // /runbooks/{runbookName}
+app.MapRagAdminEndpoints();             // POST /rag/runbooks/reindex
+
+app.UseStaticFiles();
+app.UseAntiforgery();
+app.MapRazorComponents<App>();          // /app/dashboard (Blazor SSR operator UI)
+
+// Slice 147: MAF activity endpoint — POST /api/agent/messages
+// Slice 149: requireAuth flipped to true; Entra token required in production.
+app.MapAgentEndpoints(requireAuth: true, path: "/api/agent/messages");
 
 app.Run();
 

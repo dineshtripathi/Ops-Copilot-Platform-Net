@@ -1,0 +1,14 @@
+// Failed HTTP requests in the selected time window
+// Workspace schema: AppRequests
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
+AppRequests
+| where TimeGenerated between (_startTime .. _endTime) and Success == false
+| extend requestName = tostring(Name)
+| summarize
+    Count = count(),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated)
+    by resultCode = tostring(ResultCode), requestName, url = tostring(Url)
+| order by Count desc
+| take 25

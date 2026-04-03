@@ -1,0 +1,14 @@
+// Failed external dependencies in the selected time window
+// Workspace schema: AppDependencies
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
+AppDependencies
+| where TimeGenerated between (_startTime .. _endTime) and Success == false
+| summarize
+    Count = count(),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated),
+    ResultCodes = make_set(tostring(ResultCode), 10)
+    by type = tostring(DependencyType), target = tostring(Target)
+| order by Count desc
+| take 25

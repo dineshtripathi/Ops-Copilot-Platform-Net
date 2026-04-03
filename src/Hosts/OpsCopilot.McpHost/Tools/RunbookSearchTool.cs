@@ -97,7 +97,7 @@ public sealed class RunbookSearchTool
                 query,
                 hitCount = 0,
                 hits = Array.Empty<object>(),
-                error = new { message = ex.Message, type = ex.GetType().Name }
+                error = $"[{ex.GetType().Name}] {ex.Message}"
             };
 
             return JsonSerializer.Serialize(envelope, JsonOpts);

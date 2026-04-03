@@ -18,9 +18,13 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.AI" Version="9.10.2" />
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.2" /> <!-- Slice 147: bumped to satisfy Microsoft.Agents.Builder 1.5.83-beta transitive requirement -->
+    <PackageReference Include="Azure.Identity" Version="1.17.1" /> <!-- Slice 147: bumped to satisfy Microsoft.Agents.Authentication 1.5.83-beta transitive requirement -->
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.4.1" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.1" />
     <!-- MCP stdio client — calls McpHost child process via StdioClientTransport -->
-    <PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.1" />
+    <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
     <!-- Redis session store for durable multi-replica sessions -->
     <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
   </ItemGroup>
@@ -31,6 +35,8 @@
     <ProjectReference Include="..\..\..\..\BuildingBlocks\Contracts\OpsCopilot.BuildingBlocks.Contracts\OpsCopilot.BuildingBlocks.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Tenancy\Application\OpsCopilot.Tenancy.Application\OpsCopilot.Tenancy.Application.csproj" />
     <ProjectReference Include="..\..\..\Rag\Application\OpsCopilot.Rag.Application\OpsCopilot.Rag.Application.csproj" />
+    <!-- Slice 176: SQL-backed token accumulator lives in Governance.Application (no circular dep) -->
+    <ProjectReference Include="..\..\..\Governance\Application\OpsCopilot.Governance.Application\OpsCopilot.Governance.Application.csproj" />
   </ItemGroup>
 
 </Project>

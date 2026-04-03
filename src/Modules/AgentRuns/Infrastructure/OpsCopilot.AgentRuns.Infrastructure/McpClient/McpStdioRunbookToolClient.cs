@@ -7,6 +7,8 @@ using OpsCopilot.AgentRuns.Application.Abstractions;
 using SdkMcpClient = ModelContextProtocol.Client.McpClient;
 using StdioTransport = ModelContextProtocol.Client.StdioClientTransport;
 using StdioTransportOptions = ModelContextProtocol.Client.StdioClientTransportOptions;
+using HttpTransport = ModelContextProtocol.Client.HttpClientTransport;
+using HttpTransportOptions = ModelContextProtocol.Client.HttpClientTransportOptions;
 
 namespace OpsCopilot.AgentRuns.Infrastructure.McpClient;
 
@@ -139,28 +141,41 @@ public sealed class McpStdioRunbookToolClient : IRunbookSearchToolClient, IAsync
             if (_mcpClient is not null)
                 return _mcpClient;
 
-            var workDir = _options.WorkingDirectory ?? DiscoverSolutionRoot();
-
-            _logger.LogInformation(
-                "Starting McpHost child process (runbook) | executable={Exe} args={Args} workdir={WorkDir}",
-                _options.Executable,
-                string.Join(' ', _options.Arguments),
-                workDir ?? "(inherited)");
-
-            var envVars = McpStdioKqlToolClient.BuildChildEnvironment();
-
-            var transport = new StdioTransport(new StdioTransportOptions
+            if (!string.IsNullOrWhiteSpace(_options.ServerUrl))
             {
-                Name                 = "OpsCopilotMcpHost-Runbook",
-                Command              = _options.Executable,
-                Arguments            = _options.Arguments.ToList(),
-                WorkingDirectory     = workDir,
-                EnvironmentVariables = envVars,
-            });
+                _logger.LogInformation(
+                    "Connecting to McpHost (runbook) via HTTP | url={Url}", _options.ServerUrl);
+                var httpTransport = new HttpTransport(new HttpTransportOptions
+                {
+                    Endpoint = new Uri(_options.ServerUrl),
+                });
+                _mcpClient = await SdkMcpClient.CreateAsync(httpTransport, cancellationToken: ct);
+                _logger.LogInformation("McpHost HTTP connection (runbook) established.");
+            }
+            else
+            {
+                var workDir = _options.WorkingDirectory ?? DiscoverSolutionRoot();
 
-            _mcpClient = await SdkMcpClient.CreateAsync(transport, cancellationToken: ct);
+                _logger.LogInformation(
+                    "Starting McpHost child process (runbook) | executable={Exe} args={Args} workdir={WorkDir}",
+                    _options.Executable,
+                    string.Join(' ', _options.Arguments),
+                    workDir ?? "(inherited)");
 
-            _logger.LogInformation("McpHost child process (runbook) started and connected.");
+                var envVars = McpStdioKqlToolClient.BuildChildEnvironment();
+
+                var transport = new StdioTransport(new StdioTransportOptions
+                {
+                    Name                 = "OpsCopilotMcpHost-Runbook",
+                    Command              = _options.Executable,
+                    Arguments            = _options.Arguments.ToList(),
+                    WorkingDirectory     = workDir,
+                    EnvironmentVariables = envVars,
+                });
+
+                _mcpClient = await SdkMcpClient.CreateAsync(transport, cancellationToken: ct);
+                _logger.LogInformation("McpHost child process (runbook) started and connected.");
+            }
             return _mcpClient;
         }
         finally

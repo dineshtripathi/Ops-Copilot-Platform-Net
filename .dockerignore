@@ -1,0 +1,47 @@
+# ================================================================
+# .dockerignore — OpsCopilot solution root
+# Docker build context is always the solution root.
+# Only src/ packs/ global.json and OpsCopilot.sln are needed.
+# ================================================================
+
+# Version control
+.git/
+.gitattributes
+.gitignore
+
+# IDE / editor
+.vs/
+**/*.user
+**/*.suo
+**/*.swp
+
+# Local build output (never send to daemon)
+**/bin/
+**/obj/
+
+# Test projects — not needed in any image
+tests/
+
+# Documentation
+docs/
+Doc/
+*.md
+*.txt
+*.drawio
+
+# Azure infra / IaC — not part of any runtime image
+azure-infra/
+infrastructure/
+
+# Templates and scripts
+templates/
+scripts/
+examples/
+
+# CI/CD definition files
+.github/
+
+# Local config overrides
+**/appsettings.Development.json
+**/appsettings.Local.json
+**/launchSettings.json

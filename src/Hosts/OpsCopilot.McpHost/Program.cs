@@ -1,4 +1,5 @@
-﻿using Azure.Core;
+﻿using System.Runtime.InteropServices;
+using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.Query;
 using Azure.ResourceManager;
@@ -6,13 +7,19 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
+using OpsCopilot.McpHost;
 using OpsCopilot.Rag.Presentation.Extensions;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OpsCopilot.McpHost — MCP tool server (stdio transport)
+// OpsCopilot.McpHost — MCP tool server (HTTP or stdio transport)
 //
-// Protocol : Model Context Protocol (MCP) over stdin/stdout.
-// Transport: stdio  — stdout is the MCP wire; stderr is for application logs.
+// Transports:
+//   HTTP (SSE) — primary; enabled when NOT spawned as a child process.
+//                Listens on http://+:8081/mcp (matches Container Apps targetPort).
+//   stdio       — fallback; enabled when stdin is redirected (child-process mode).
+//                 Allows local dev clients to spawn McpHost directly without a
+//                 running HTTP instance.
+//
 // Tools    : kql_query — executes KQL against Azure Log Analytics.
 //            runbook_search — searches the operational runbook knowledge base.
 //
@@ -20,14 +27,45 @@ using OpsCopilot.Rag.Presentation.Extensions;
 //   ExplicitChain          — deterministic credential chain; default in Development.
 //   DefaultAzureCredential — full DAC with configurable exclusions; default in Production.
 //
-// How to run locally:
+// How to run locally (HTTP mode):
 //   az login --tenant <your-tenant-id>
 //   dotnet run --project src/Hosts/OpsCopilot.McpHost
+//   # MCP endpoint:  http://localhost:8081/mcp
 //
 // See docs/local-dev-auth.md for full troubleshooting.
 // ─────────────────────────────────────────────────────────────────────────────
 
-var builder = Host.CreateApplicationBuilder(args);
+// ── Transport mode detection ──────────────────────────────────────────────────
+// When clients spawn McpHost as a child process they redirect stdin; that is
+// the reliable signal that we are in stdio-pipe mode.  All other invocations
+// (Azure Container Apps, manual dotnet run) use HTTP transport on port 8081.
+bool isStdioPipeMode = Console.IsInputRedirected;
+
+// ── Win32 stdin handle non-inheritance guard ──────────────────────────────────
+// Azure.Identity's AzureCliCredential (and AzurePowerShellCredential) spawn child
+// processes WITHOUT redirecting stdin, so they would inherit McpHost's stdin
+// handle — the live MCP protocol pipe.  The .NET MCP SDK reads that same handle
+// concurrently (reading ahead for the next JSON-RPC message while a tool runs),
+// so az.exe / pwsh.exe race the SDK for MCP data instead of receiving nothing or
+// a clean EOF, causing Python / pwsh to block indefinitely.
+//
+// Fix: mark the Win32 STDIN handle non-inheritable right at process start.
+// This does NOT affect McpHost's own Console.In reading — the handle stays open
+// and fully usable for the MCP SDK.  Only new child processes will no longer
+// inherit it.  On non-Windows this is a no-op.
+if (OperatingSystem.IsWindows())
+{
+    var hIn = Win32Stdin.GetStdHandle(Win32Stdin.StdInputHandle);
+    if (hIn != IntPtr.Zero && hIn != Win32Stdin.InvalidHandleValue)
+        Win32Stdin.SetHandleInformation(hIn, Win32Stdin.HandleFlagInherit, 0);
+}
+
+var builder = WebApplication.CreateBuilder(args);
+
+// ── HTTP port — listen on 8081 to match Container Apps targetPort ─────────────
+// In stdio-pipe mode use an ephemeral loopback port (OS-assigned) so that
+// spawning multiple child processes never causes a port conflict.
+builder.WebHost.UseUrls(isStdioPipeMode ? "http://127.0.0.1:0" : "http://+:8081");
 
 // ── Logging → all to stderr so stdout remains clean for MCP wire ──────────────
 builder.Logging.AddConsole(o =>
@@ -194,6 +232,9 @@ builder.Services.AddSingleton(_ => new ArmClient(credential));
 // ── RAG module (runbook retrieval for the runbook_search tool) ────────────────
 builder.Services.AddRagModule(builder.Configuration);
 
+// ── HTTP client factory (for safe-actions and future REST tool calls) ────────
+builder.Services.AddHttpClient();
+
 // ── RAG diagnostics — log base path so runbook resolution issues are obvious ──
 {
     var ragBasePath = builder.Configuration["Rag:RunbookBasePath"] ?? "(default — embedded)";
@@ -203,53 +244,105 @@ builder.Services.AddRagModule(builder.Configuration);
 }
 
 // ── MCP server ────────────────────────────────────────────────────────────────
-// - StdioServerTransport: reads JSON-RPC from stdin, writes to stdout
+// - HTTP transport (MapMcp below): SSE endpoint at /mcp — used in Azure and
+//   by any client that sets McpKql:ServerUrl to the McpHost HTTP address.
+// - Stdio transport (conditional): also registered when stdin is redirected
+//   (child-process mode) so local dev clients can spawn McpHost directly.
 // - WithToolsFromAssembly: discovers all [McpServerToolType] classes in this exe
-builder.Services
+var mcpBuilder = builder.Services
     .AddMcpServer()
-    .WithStdioServerTransport()
     .WithToolsFromAssembly();
 
-startupLogger.LogInformation("[Startup] MCP server configured — stdio transport, tools from assembly");
+if (isStdioPipeMode)
+    mcpBuilder.WithStdioServerTransport();
+else
+    mcpBuilder.WithHttpTransport();
+
+startupLogger.LogInformation(
+    "[Startup] MCP server configured — {Transport} transport, tools from assembly",
+    isStdioPipeMode ? "stdio" : "HTTP (SSE at /mcp)");
 
 // ── Development-only auth probe ─────────────────────────────────────────────
-// Attempt to acquire a real token before the MCP wire starts. This surfaces
+// Attempt to acquire real tokens before the MCP wire starts. This surfaces
 // credential problems (expired `az login`, wrong tenant, missing CLI) as a
 // clear log message instead of a cryptic MCP tool-call failure later.
+// Probing both scopes here also pre-warms the MSAL token cache so that
+// concurrent tool calls (KQL + list_subscriptions) do not race on the
+// first `az account get-access-token` invocation and hit cache-lock contention.
 if (isDevelopment)
 {
-    const string logAnalyticsScope = "https://api.loganalytics.io/.default";
-    try
-    {
-        startupLogger.LogInformation("[Auth-Probe] Acquiring token for {Scope} …", logAnalyticsScope);
-        var tokenResult = await credential.GetTokenAsync(
-            new TokenRequestContext(new[] { logAnalyticsScope }),
-            CancellationToken.None);
+    string[] probedScopes =
+    [
+        "https://api.loganalytics.io/.default",
+        "https://management.azure.com/.default",
+    ];
 
-        startupLogger.LogInformation(
-            "[Auth-Probe] ✔ Token acquired — expires {ExpiresOn:u}",
-            tokenResult.ExpiresOn);
-    }
-    catch (AuthenticationFailedException ex)
+    foreach (var scope in probedScopes)
     {
-        startupLogger.LogError(
-            ex,
-            "[Auth-Probe] ✘ Failed to acquire a token for {Scope}.  " +
-            "Ensure you are logged in:  az login --tenant <tenant-id>  or  " +
-            "Connect-AzAccount -TenantId <tenant-id>",
-            logAnalyticsScope);
-    }
-    catch (Exception ex)
-    {
-        startupLogger.LogWarning(
-            ex,
-            "[Auth-Probe] ✘ Unexpected error during probe for {Scope}. " +
-            "The MCP server will still start, but KQL tool calls may fail.",
-            logAnalyticsScope);
+        try
+        {
+            startupLogger.LogInformation("[Auth-Probe] Acquiring token for {Scope} …", scope);
+            var tokenResult = await credential.GetTokenAsync(
+                new TokenRequestContext(new[] { scope }),
+                CancellationToken.None);
+
+            startupLogger.LogInformation(
+                "[Auth-Probe] ✔ Token acquired for {Scope} — expires {ExpiresOn:u}",
+                scope, tokenResult.ExpiresOn);
+        }
+        catch (AuthenticationFailedException ex)
+        {
+            startupLogger.LogError(
+                ex,
+                "[Auth-Probe] ✘ Failed to acquire a token for {Scope}.  " +
+                "Ensure you are logged in:  az login --tenant <tenant-id>  or  " +
+                "Connect-AzAccount -TenantId <tenant-id>",
+                scope);
+        }
+        catch (Exception ex)
+        {
+            startupLogger.LogWarning(
+                ex,
+                "[Auth-Probe] ✘ Unexpected error during probe for {Scope}. " +
+                "The MCP server will still start, but tool calls may fail.",
+                scope);
+        }
     }
 }
 
-await builder.Build().RunAsync();
+var app = builder.Build();
+
+// ── McpAuth: inbound API-key validation (HTTP mode only) ─────────────────────
+// When McpAuth:ApiKey is configured, all inbound HTTP requests must present
+// the key via Authorization: Bearer <key> or X-Api-Key: <key>.
+// When the key is empty (default), a startup warning is logged and the
+// endpoint remains open — dev-safe fallback. The key value is never logged.
+if (!isStdioPipeMode)
+{
+    var mcpAuthKey = app.Configuration["McpAuth:ApiKey"];
+    if (string.IsNullOrEmpty(mcpAuthKey))
+    {
+        startupLogger.LogWarning(
+            "[McpAuth] McpAuth:ApiKey is not configured — the /mcp endpoint " +
+            "is open to all callers. Set McpAuth:ApiKey in configuration " +
+            "to enable inbound authentication.");
+    }
+    else
+    {
+        startupLogger.LogInformation(
+            "[McpAuth] API-key authentication enabled for /mcp endpoint.");
+    }
+
+    app.UseMiddleware<McpApiKeyMiddleware>();
+}
+
+// Register the MCP SSE endpoint in HTTP mode only.
+// In stdio-pipe mode the server communicates over stdin/stdout; MapMcp requires
+// HTTP transport services and must not be called in stdio mode.
+if (!isStdioPipeMode)
+    app.MapMcp("/mcp");
+
+await app.RunAsync();
 
 static bool ReadBool(string? raw, bool defaultValue)
     => bool.TryParse(raw, out var parsed) ? parsed : defaultValue;
@@ -280,6 +373,22 @@ static int ReadInt(string? raw, int defaultValue)
 /// <see cref="CredentialUnavailableException"/>, allowing
 /// <see cref="ChainedTokenCredential"/> to try the next credential.
 /// </summary>
+// ── Win32 P/Invoke helpers (stdin handle non-inheritance) ───────────────────
+file static class Win32Stdin
+{
+    internal const int  StdInputHandle     = -10;
+    internal const uint HandleFlagInherit  = 0x00000001;
+    internal static readonly IntPtr InvalidHandleValue = new IntPtr(-1);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern IntPtr GetStdHandle(int nStdHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetHandleInformation(
+        IntPtr hObject, uint dwMask, uint dwFlags);
+}
+
 internal sealed class ResilientCredential : TokenCredential
 {
     private readonly string          _name;

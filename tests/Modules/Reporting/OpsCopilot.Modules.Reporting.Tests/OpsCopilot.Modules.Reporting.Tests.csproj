@@ -17,6 +17,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.2" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,7 +27,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\src\Modules\Reporting\Application\OpsCopilot.Reporting.Application\OpsCopilot.Reporting.Application.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\Reporting\Domain\OpsCopilot.Reporting.Domain\OpsCopilot.Reporting.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\Reporting\Infrastructure\OpsCopilot.Reporting.Infrastructure\OpsCopilot.Reporting.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\Reporting\Presentation\OpsCopilot.Reporting.Presentation\OpsCopilot.Reporting.Presentation.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\Reporting\Presentation\OpsCopilot.Reporting.Presentation.Blazor\OpsCopilot.Reporting.Presentation.Blazor.csproj" />
   </ItemGroup>
 
 </Project>

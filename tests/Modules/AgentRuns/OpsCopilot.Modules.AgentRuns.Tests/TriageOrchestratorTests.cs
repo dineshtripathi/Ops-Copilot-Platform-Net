@@ -1,14 +1,18 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using OpsCopilot.AgentRuns.Application.Abstractions;
-using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Application.Acl;
+using OpsCopilot.AgentRuns.Application.Options;
+using OpsCopilot.AgentRuns.Application.Orchestration;
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
+using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
-using Microsoft.Extensions.AI;
 using OpsCopilot.BuildingBlocks.Contracts.Governance;
+using OpsCopilot.BuildingBlocks.Contracts.Privacy;
 using System.Net.Http;
 using Xunit;
 
@@ -40,7 +44,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
@@ -115,7 +119,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
@@ -183,7 +187,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
@@ -291,7 +295,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
@@ -372,7 +376,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
@@ -427,7 +431,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
@@ -485,7 +489,7 @@ public sealed class TriageOrchestratorTests
 
         var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
         repoMock
-            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         repoMock
             .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
@@ -928,7 +932,7 @@ public sealed class TriageOrchestratorTests
     private static Mock<IAgentRunRepository> CreateHappyPathRepo(AgentRun agentRun)
     {
         var mock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
-        mock.Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        mock.Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentRun);
         mock.Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -1297,7 +1301,7 @@ public sealed class TriageOrchestratorTests
 
         var scopeEvaluator = new Mock<ITargetScopeEvaluator>(MockBehavior.Strict);
         scopeEvaluator
-            .Setup(x => x.Evaluate(TenantId, "LogAnalyticsWorkspace", WorkspaceId))
+            .Setup(x => x.Evaluate(TenantId, "log_analytics_workspace", WorkspaceId))
             .Returns(TargetScopeDecision.Deny("WORKSPACE_NOT_ALLOWED",
                 $"Workspace '{WorkspaceId}' is not in the tenant's approved workspace list."));
 
@@ -1650,6 +1654,749 @@ public sealed class TriageOrchestratorTests
         Assert.NotNull(result.SummaryJson);
         using var doc = System.Text.Json.JsonDocument.Parse(result.SummaryJson!);
         Assert.Equal(2, doc.RootElement.GetProperty("diffHits").GetInt32());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Slice 105: RunContext propagation
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_WithContext_ContextPassedToCreateRunAsync()
+    {
+        // Arrange
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var capturedContext = (RunContext?)null;
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        repoMock
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid?>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, Guid?, RunContext?, CancellationToken>((_, _, _, ctx, _) => capturedContext = ctx)
+            .ReturnsAsync(agentRun);
+        repoMock
+            .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(agentRun.RunId, It.IsAny<AgentRunStatus>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var context = new RunContext(
+            AlertProvider:    "AzureMonitor",
+            AlertSourceType:  "Metric",
+            AzureResourceId:  "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Web/sites/myapp",
+            AzureApplication: "myapp",
+            AzureWorkspaceId: WorkspaceId,
+            AzureSubscriptionId: "sub-1",
+            AzureResourceGroup:  "rg-prod");
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter());
+
+        // Act
+        await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes, context: context);
+
+        // Assert
+        Assert.NotNull(capturedContext);
+        Assert.Equal("AzureMonitor", capturedContext!.AlertProvider);
+        Assert.Equal("Metric",       capturedContext.AlertSourceType);
+        Assert.Equal("sub-1",        capturedContext.AzureSubscriptionId);
+        Assert.Equal("rg-prod",      capturedContext.AzureResourceGroup);
+        Assert.Equal("myapp",        capturedContext.AzureApplication);
+        Assert.Equal(WorkspaceId,    capturedContext.AzureWorkspaceId);
+    }
+
+    // ── Dev Slice 122 — Triage Run Idempotency ───────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_WithIdempotency_PendingRunExists_ReturnsDeduplicatedResult()
+    {
+        // Arrange — a run with the same fingerprint is already Pending
+        var sessionId   = Guid.NewGuid();
+        var existingRun = AgentRun.Create(TenantId, AlertFingerprint, sessionId: sessionId);
+        // existingRun.Status is Pending by default
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        repoMock
+            .Setup(r => r.FindRecentRunAsync(TenantId, AlertFingerprint, 60, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingRun);
+        // CreateRunAsync is NOT set up — dedup must short-circuit before it is called
+
+        var opts = Options.Create(new IdempotencyOptions { WindowMinutes = 60 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object,
+            new Mock<IKqlToolClient>(MockBehavior.Strict).Object,
+            new Mock<IRunbookSearchToolClient>(MockBehavior.Strict).Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            new Mock<IToolAllowlistPolicy>(MockBehavior.Strict).Object,
+            new Mock<ITokenBudgetPolicy>(MockBehavior.Strict).Object,
+            new Mock<IDegradedModePolicy>(MockBehavior.Strict).Object,
+            new Mock<ISessionStore>(MockBehavior.Strict).Object,
+            new Mock<ISessionPolicy>(MockBehavior.Strict).Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            idempotencyOptions: opts);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert
+        Assert.True(result.WasDeduplicated);
+        Assert.Equal(existingRun.RunId, result.RunId);
+        Assert.Equal(existingRun.Status, result.Status);
+        Assert.Equal(sessionId, result.SessionId);
+        Assert.Equal("DedupReused", result.SessionReasonCode);
+        Assert.Empty(result.Citations);
+        Assert.Empty(result.RunbookCitations);
+        Assert.Empty(result.MemoryCitations);
+        Assert.Empty(result.DeploymentDiffCitations);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithIdempotency_CompletedRunWithinWindow_ReturnsDeduplicatedResult()
+    {
+        // Arrange — a Completed run exists within the window
+        var existingRun = AgentRun.Create(TenantId, AlertFingerprint);
+        existingRun.Complete(AgentRunStatus.Completed, "{}", "[]");
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        repoMock
+            .Setup(r => r.FindRecentRunAsync(TenantId, AlertFingerprint, 60, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingRun);
+        // CreateRunAsync is NOT set up — dedup must short-circuit
+
+        var opts = Options.Create(new IdempotencyOptions { WindowMinutes = 60 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object,
+            new Mock<IKqlToolClient>(MockBehavior.Strict).Object,
+            new Mock<IRunbookSearchToolClient>(MockBehavior.Strict).Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            new Mock<IToolAllowlistPolicy>(MockBehavior.Strict).Object,
+            new Mock<ITokenBudgetPolicy>(MockBehavior.Strict).Object,
+            new Mock<IDegradedModePolicy>(MockBehavior.Strict).Object,
+            new Mock<ISessionStore>(MockBehavior.Strict).Object,
+            new Mock<ISessionPolicy>(MockBehavior.Strict).Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            idempotencyOptions: opts);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert
+        Assert.True(result.WasDeduplicated);
+        Assert.Equal(existingRun.RunId, result.RunId);
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal("DedupReused", result.SessionReasonCode);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithIdempotency_NoExistingRun_ProceedsNormally()
+    {
+        // Arrange — FindRecentRunAsync returns null → full triage runs
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock
+            .Setup(r => r.FindRecentRunAsync(TenantId, AlertFingerprint, 60, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AgentRun?)null);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+        var opts = Options.Create(new IdempotencyOptions { WindowMinutes = 60 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            idempotencyOptions: opts);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — normal triage completed, NOT deduplicated
+        Assert.False(result.WasDeduplicated);
+        Assert.Equal(agentRun.RunId, result.RunId);
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.NotEmpty(result.Citations);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithIdempotency_WindowMinutesZero_SkipsGuard()
+    {
+        // Arrange — WindowMinutes = 0 disables dedup; FindRecentRunAsync must NOT be called
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        // FindRecentRunAsync is intentionally NOT set up on MockBehavior.Strict mock
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+        var opts = Options.Create(new IdempotencyOptions { WindowMinutes = 0 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            idempotencyOptions: opts);
+
+        // Act — must not throw (Strict mock verifies FindRecentRunAsync not called)
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — normal triage, guard skipped
+        Assert.False(result.WasDeduplicated);
+        Assert.Equal(agentRun.RunId, result.RunId);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithIdempotencyOptionsNull_SkipsGuard()
+    {
+        // Arrange — no IOptions injected; FindRecentRunAsync must NOT be called
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        // FindRecentRunAsync is intentionally NOT set up on MockBehavior.Strict mock
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter()
+            /* idempotencyOptions omitted → null */);
+
+        // Act — must not throw
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — normal triage, guard skipped
+        Assert.False(result.WasDeduplicated);
+        Assert.Equal(agentRun.RunId, result.RunId);
+    }
+
+    // ── Dev Slice 127 — ResumeRunAsync (dispatcher entry point) ──────────────
+
+    [Fact]
+    public async Task ResumeRunAsync_UsesExistingRunId_SkipsCreateRun()
+    {
+        // Arrange — repo has NO CreateRunAsync setup (Strict mock validates it is never called).
+        // Only tool-call persistence and completion are expected.
+        var existingRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        // CreateRunAsync intentionally omitted — must NOT be called
+        repoMock
+            .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(
+                existingRun.RunId, AgentRunStatus.Completed,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        // Slice 128: MarkRunningAsync is called on every dispatcher-resume path
+        repoMock
+            .Setup(r => r.MarkRunningAsync(existingRun.RunId, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter());
+
+        // Act
+        var result = await sut.ResumeRunAsync(existingRun, WorkspaceId);
+
+        // Assert — the pre-created run's ID is preserved end-to-end
+        Assert.Equal(existingRun.RunId, result.RunId);
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.False(result.WasDeduplicated);
+
+        // Verify CreateRunAsync was never called (Strict mock would throw if called)
+        repoMock.Verify(r => r.CompleteRunAsync(
+            existingRun.RunId, AgentRunStatus.Completed,
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ResumeRunAsync_SkipsIdempotencyGuard_EvenWhenIdempotencyIsConfigured()
+    {
+        // Arrange — idempotency is configured but FindRecentRunAsync must NOT be called
+        // because existingRun != null short-circuits the guard.
+        var existingRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        // FindRecentRunAsync intentionally omitted — must NOT be called
+        // CreateRunAsync intentionally omitted — must NOT be called
+        repoMock
+            .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(
+                existingRun.RunId, AgentRunStatus.Completed,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        // Slice 128: MarkRunningAsync is called on every dispatcher-resume path
+        repoMock
+            .Setup(r => r.MarkRunningAsync(existingRun.RunId, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        // Configure idempotency — if the guard ran, it would call FindRecentRunAsync
+        // (not set up on Strict mock → would throw). Absence of exception confirms guard bypassed.
+        var opts = Options.Create(new IdempotencyOptions { WindowMinutes = 60 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            idempotencyOptions: opts);
+
+        // Act — must not throw even though FindRecentRunAsync is not set up
+        var result = await sut.ResumeRunAsync(existingRun, WorkspaceId);
+
+        // Assert
+        Assert.Equal(existingRun.RunId, result.RunId);
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.False(result.WasDeduplicated);
+    }
+
+    // ── Dev Slice 128 — Pending → Running transition ─────────────────────────
+
+    [Fact]
+    public async Task ResumeRunAsync_MarksRunRunning_BeforePipelineStarts()
+    {
+        // Arrange — verifies MarkRunningAsync is called exactly once on the dispatcher-resume path.
+        var existingRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Strict);
+        repoMock
+            .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(
+                existingRun.RunId, AgentRunStatus.Completed,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.MarkRunningAsync(existingRun.RunId, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
+            .Verifiable();
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter());
+
+        // Act
+        await sut.ResumeRunAsync(existingRun, WorkspaceId);
+
+        // Assert — transition was applied exactly once before the pipeline ran
+        repoMock.Verify(
+            r => r.MarkRunningAsync(existingRun.RunId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotCallMarkRunningAsync_WhenNoExistingRun()
+    {
+        // Arrange — normal RunAsync (dispatcher not involved) must NOT call MarkRunningAsync.
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+
+        var repoMock = new Mock<IAgentRunRepository>(MockBehavior.Loose);
+        repoMock
+            .Setup(r => r.FindRecentRunAsync(TenantId, AlertFingerprint, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AgentRun?)null);
+        repoMock
+            .Setup(r => r.CreateRunAsync(TenantId, AlertFingerprint, It.IsAny<Guid>(), It.IsAny<RunContext?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(agentRun);
+        repoMock
+            .Setup(r => r.AppendToolCallAsync(It.IsAny<ToolCall>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.AppendPolicyEventAsync(It.IsAny<AgentRunPolicyEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repoMock
+            .Setup(r => r.CompleteRunAsync(
+                agentRun.RunId, AgentRunStatus.Completed,
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter());
+
+        // Act
+        await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — MarkRunningAsync must never be called in the non-dispatcher path
+        repoMock.Verify(
+            r => r.MarkRunningAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // ── Dev Slice 146 — PII redaction pipeline integration ─────────────────────
+
+    [Fact]
+    public async Task RunAsync_WithPiiRedactor_LlmNarrativeIsRedacted()
+    {
+        // Arrange
+        const string RawNarrative      = "Contact admin@contoso.com or call (555) 867-5309 for help.";
+        const string RedactedNarrative = "Contact [EMAIL] or call [PHONE] for help.";
+
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock.Setup(r => r.UpdateRunLedgerAsync(
+            agentRun.RunId, It.IsAny<string>(), It.IsAny<string?>(),
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var chatResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, RawNarrative))
+        {
+            Usage = new UsageDetails { InputTokenCount = 10, OutputTokenCount = 20, TotalTokenCount = 30 }
+        };
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(chatResponse);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock
+            .Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock
+            .Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze the situation."));
+
+        var piiRedactorMock = new Mock<IPiiRedactor>(MockBehavior.Strict);
+        piiRedactorMock.Setup(r => r.Redact(RawNarrative)).Returns(RedactedNarrative);
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System,
+            new PermissiveRunbookAclFilter(),
+            chatClientMock.Object, modelRoutingMock.Object, promptVersionMock.Object,
+            piiRedactor: piiRedactorMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal(RedactedNarrative, result.LlmNarrative);
+        piiRedactorMock.Verify(r => r.Redact(RawNarrative), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunAsync_NoPiiRedactor_LlmNarrativePassesThroughUnchanged()
+    {
+        // Arrange — no IPiiRedactor injected; raw narrative must not be modified
+        const string RawNarrative = "Contact admin@contoso.com for info.";
+
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock.Setup(r => r.UpdateRunLedgerAsync(
+            agentRun.RunId, It.IsAny<string>(), It.IsAny<string?>(),
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var chatResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, RawNarrative))
+        {
+            Usage = new UsageDetails { InputTokenCount = 5, OutputTokenCount = 10, TotalTokenCount = 15 }
+        };
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(chatResponse);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock
+            .Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock
+            .Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze the situation."));
+
+        // No piiRedactor — omit parameter (defaults to null)
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object, TimeProvider.System,
+            new PermissiveRunbookAclFilter(),
+            chatClientMock.Object, modelRoutingMock.Object, promptVersionMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — narrative must be the raw, unredacted text
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal(RawNarrative, result.LlmNarrative);
+    }
+
+    // ── Dev Slice 184 — Multi-turn tool-call loop ─────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_LlmRequestsFunctionCall_LoopDispatchesTool_ContinuesToFinalResponse()
+    {
+        // Arrange — LLM first requests kql_query tool call, then returns final text
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock.Setup(r => r.UpdateRunLedgerAsync(
+                agentRun.RunId, It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        // Response 1: LLM requests kql_query tool
+        var toolCallMsg = new ChatMessage(ChatRole.Assistant,
+            [new FunctionCallContent("call-1", "kql_query",
+                new Dictionary<string, object?> { ["query"] = "search *", ["timespan"] = "PT1H" })]);
+        var call1Response = new ChatResponse(toolCallMsg);
+
+        // Response 2: LLM returns final narrative after seeing tool result
+        var finalMsg = new ChatMessage(ChatRole.Assistant, "Root cause: OOM");
+        var call2Response = new ChatResponse(finalMsg);
+
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .SetupSequence(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(call1Response)
+            .ReturnsAsync(call2Response);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock.Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock.Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze."));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            chatClientMock.Object, modelRoutingMock.Object, promptVersionMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal("Root cause: OOM", result.LlmNarrative);
+        chatClientMock.Verify(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions?>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task RunAsync_ToolLoop_RespectsMaxToolCallIterations()
+    {
+        // Arrange — MaxToolCallIterations=2; LLM always returns a tool call, loop must stop at cap
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock.Setup(r => r.UpdateRunLedgerAsync(
+                agentRun.RunId, It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        // Always returns a tool call — would loop forever without the iteration cap
+        var toolCallResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant,
+            [new FunctionCallContent("call-n", "kql_query",
+                new Dictionary<string, object?> { ["query"] = "search *", ["timespan"] = "PT1H" })]));
+
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(toolCallResponse);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock.Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock.Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze."));
+
+        var opts = Options.Create(new AgentLoopOptions { MaxToolCallIterations = 2 });
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            chatClientMock.Object, modelRoutingMock.Object, promptVersionMock.Object,
+            agentLoopOptions: opts);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — GetResponseAsync called exactly MaxToolCallIterations=2 times, then loop exits
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        chatClientMock.Verify(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions?>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task RunAsync_ToolLoop_UnknownToolName_ErrorFedBackToLlm_LoopCompletes()
+    {
+        // Arrange — LLM calls an unknown tool; error JSON is fed back; second response is final text
+        var agentRun = AgentRun.Create(TenantId, AlertFingerprint);
+        var repoMock = CreateHappyPathRepo(agentRun);
+        repoMock.Setup(r => r.UpdateRunLedgerAsync(
+                agentRun.RunId, It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var kqlMock     = CreateHappyPathKql();
+        var runbookMock = CreateHappyPathRunbook();
+        var (allowlist, budget, degraded) = CreateAllowAllGovernanceMocks();
+        var (sessionStore, sessionPolicy) = CreateDefaultSessionMocks();
+
+        var unknownToolCallResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant,
+            [new FunctionCallContent("call-x", "nonexistent_tool",
+                new Dictionary<string, object?>())]));
+        var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Analysis complete"));
+
+        var chatClientMock = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClientMock
+            .SetupSequence(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(unknownToolCallResponse)
+            .ReturnsAsync(finalResponse);
+
+        var modelRoutingMock = new Mock<IModelRoutingPolicy>(MockBehavior.Strict);
+        modelRoutingMock.Setup(m => m.SelectModelAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModelDescriptor("gpt-4o"));
+
+        var promptVersionMock = new Mock<IPromptVersionService>(MockBehavior.Strict);
+        promptVersionMock.Setup(p => p.GetCurrentVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PromptVersionInfo("1.0.0", "Analyze."));
+
+        var sut = new TriageOrchestrator(
+            repoMock.Object, kqlMock.Object, runbookMock.Object,
+            NullLogger<TriageOrchestrator>.Instance,
+            allowlist.Object, budget.Object, degraded.Object,
+            sessionStore.Object, sessionPolicy.Object,
+            TimeProvider.System, new PermissiveRunbookAclFilter(),
+            chatClientMock.Object, modelRoutingMock.Object, promptVersionMock.Object);
+
+        // Act
+        var result = await sut.RunAsync(TenantId, AlertFingerprint, WorkspaceId, Minutes);
+
+        // Assert — loop completes; unknown tool produces error JSON fed to LLM; final response used
+        Assert.Equal(AgentRunStatus.Completed, result.Status);
+        Assert.Equal("Analysis complete", result.LlmNarrative);
+        chatClientMock.Verify(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions?>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 }
 

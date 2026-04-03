@@ -12,11 +12,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Modules\AlertIngestion\Presentation\OpsCopilot.AlertIngestion.Presentation\OpsCopilot.AlertIngestion.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Packs\Infrastructure\OpsCopilot.Packs.Infrastructure\OpsCopilot.Packs.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Packs\Presentation\OpsCopilot.Packs.Presentation\OpsCopilot.Packs.Presentation.csproj" />
+    <ProjectReference Include="..\..\Modules\Connectors\Infrastructure\OpsCopilot.Connectors.Infrastructure\OpsCopilot.Connectors.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="OpsCopilot.Modules.Packs.Tests" />
+    <InternalsVisibleTo Include="OpsCopilot.WorkerHost.Tests" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 

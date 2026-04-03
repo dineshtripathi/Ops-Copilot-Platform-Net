@@ -1,0 +1,15 @@
+// Availability signals from Application Insights
+// Workspace schema: AppRequests
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
+AppRequests
+| where TimeGenerated between (_startTime .. _endTime)
+| summarize
+    TotalRequests = count(),
+    SuccessfulRequests = sum(iff(Success == true, 1, 0)),
+    FailedRequests = sum(iff(Success == false, 1, 0)),
+    AvailabilityPercent = iff(count() == 0, 0.0, sum(iff(Success == true, 1, 0)) * 100.0 / count()),
+    AvgResponseTime = avg(todouble(DurationMs)),
+    P99ResponseTime = percentile(todouble(DurationMs), 99)
+    by timestamp = bin(TimeGenerated, 5m)
+| order by timestamp desc

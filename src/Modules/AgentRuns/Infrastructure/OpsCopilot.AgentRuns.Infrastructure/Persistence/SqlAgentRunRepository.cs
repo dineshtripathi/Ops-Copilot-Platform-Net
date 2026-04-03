@@ -1,5 +1,6 @@
 using OpsCopilot.AgentRuns.Domain.Entities;
 using OpsCopilot.AgentRuns.Domain.Enums;
+using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.AgentRuns.Domain.Repositories;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,10 +18,21 @@ public sealed class SqlAgentRunRepository : IAgentRunRepository
 
     public SqlAgentRunRepository(AgentRunsDbContext db) => _db = db;
 
+    public Task<AgentRun> CreateRunAsync(
+        string tenantId,
+        string alertFingerprint,
+        Guid? sessionId = null,
+        CancellationToken ct = default)
+        => CreateRunAsync(tenantId, alertFingerprint, sessionId, context: null, ct);
+
     public async Task<AgentRun> CreateRunAsync(
-        string tenantId, string alertFingerprint, Guid? sessionId = null, CancellationToken ct = default)
+        string tenantId,
+        string alertFingerprint,
+        Guid? sessionId = null,
+        RunContext? context = null,
+        CancellationToken ct = default)
     {
-        var run = AgentRun.Create(tenantId, alertFingerprint, sessionId);
+        var run = AgentRun.Create(tenantId, alertFingerprint, sessionId, context);
         _db.AgentRuns.Add(run);
         await _db.SaveChangesAsync(ct);
         return run;
@@ -81,4 +93,66 @@ public sealed class SqlAgentRunRepository : IAgentRunRepository
         run.SetLedgerMetadata(modelId, promptVersionId, inputTokens, outputTokens, totalTokens, estimatedCost);
         await _db.SaveChangesAsync(ct);
     }
+
+    /// <inheritdoc />
+    public async Task<AgentRun?> FindRecentRunAsync(
+        string tenantId,
+        string alertFingerprint,
+        int    windowMinutes,
+        CancellationToken ct = default)
+    {
+        var since = DateTimeOffset.UtcNow.AddMinutes(-windowMinutes);
+        return await _db.AgentRuns
+            .Where(r => r.TenantId        == tenantId
+                     && r.AlertFingerprint == alertFingerprint
+                     && (r.Status == AgentRunStatus.Pending
+                         || (r.Status == AgentRunStatus.Completed && r.CompletedAtUtc >= since)))
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<AgentRunFeedback> SaveFeedbackAsync(
+        Guid    runId,
+        string  tenantId,
+        int     rating,
+        string? comment,
+        CancellationToken ct = default)
+    {
+        // Guard: run must exist and belong to this tenant.
+        var run = await _db.AgentRuns.FindAsync([runId], ct)
+                  ?? throw new InvalidOperationException($"AgentRun {runId} not found.");
+
+        if (!string.Equals(run.TenantId, tenantId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"AgentRun {runId} does not belong to tenant '{tenantId}'.");
+
+        var feedback = AgentRunFeedback.Create(runId, tenantId, rating, comment);
+        _db.Feedbacks.Add(feedback);
+        await _db.SaveChangesAsync(ct);
+        return feedback;
+    }
+
+    /// <inheritdoc />
+    public Task<bool> FeedbackExistsAsync(Guid runId, CancellationToken ct = default)
+        => _db.Feedbacks.AnyAsync(f => f.RunId == runId, ct);
+
+    /// <inheritdoc />
+    public async Task<AgentRun?> GetByRunIdAsync(Guid runId, string tenantId, CancellationToken ct = default)
+        => await _db.AgentRuns.FirstOrDefaultAsync(
+            r => r.RunId == runId && r.TenantId == tenantId, ct);
+
+    /// <inheritdoc />
+    public async Task MarkRunningAsync(Guid runId, CancellationToken ct = default)
+        => await _db.AgentRuns
+            .Where(r => r.RunId == runId && r.Status == AgentRunStatus.Pending)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, AgentRunStatus.Running), ct);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<AgentRun>> GetStuckRunsAsync(
+        DateTimeOffset createdBefore,
+        CancellationToken ct = default)
+        => await _db.AgentRuns
+            .Where(r => r.Status == AgentRunStatus.Running && r.CreatedAtUtc < createdBefore)
+            .ToListAsync(ct);
 }

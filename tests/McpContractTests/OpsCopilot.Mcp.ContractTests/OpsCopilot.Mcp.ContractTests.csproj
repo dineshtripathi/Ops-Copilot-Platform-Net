@@ -20,7 +20,7 @@
       via StdioClientTransport and validate the tool registration contract.
       The same package that drives the server; includes both client + server APIs.
     -->
-    <PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.1" />
+    <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
   </ItemGroup>
 
   <ItemGroup>

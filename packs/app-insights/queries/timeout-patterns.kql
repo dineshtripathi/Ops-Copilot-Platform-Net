@@ -1,0 +1,14 @@
+// Timeout patterns: requests exceeding 30 seconds
+// Workspace schema: AppRequests.DurationMs
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
+AppRequests
+| where TimeGenerated between (_startTime .. _endTime) and todouble(DurationMs) > 30000
+| summarize
+    Count = count(),
+    AvgDuration = avg(todouble(DurationMs)),
+    MaxDuration = max(todouble(DurationMs)),
+    P95Duration = percentile(todouble(DurationMs), 95)
+    by url = tostring(Url), resultCode = tostring(ResultCode)
+| order by Count desc
+| take 20

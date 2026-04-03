@@ -1,0 +1,17 @@
+// Distribution of HTTP status codes in the selected time window
+// Workspace schema: AppRequests
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
+let Total = toscalar(AppRequests | where TimeGenerated between (_startTime .. _endTime) | count);
+AppRequests
+| where TimeGenerated between (_startTime .. _endTime)
+| extend statusCode = toint(ResultCode)
+| extend StatusFamily = case(
+    statusCode >= 500, "5xx",
+    statusCode >= 400, "4xx",
+    statusCode >= 300, "3xx",
+    statusCode >= 200, "2xx",
+    "Other")
+| summarize Count = count() by StatusFamily, resultCode = tostring(ResultCode)
+| extend Percentage = iff(Total == 0, 0.0, Count * 100.0 / todouble(Total))
+| order by Count desc

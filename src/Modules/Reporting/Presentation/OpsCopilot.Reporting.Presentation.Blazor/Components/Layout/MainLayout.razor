@@ -1,0 +1,76 @@
+@inherits LayoutComponentBase
+@inject Microsoft.AspNetCore.Components.NavigationManager Nav
+
+@{
+    var _q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
+    var _tid = _q.TryGetValue("tenantId", out var _tids) ? (_tids.FirstOrDefault() ?? "") : "";
+    var _ts = string.IsNullOrEmpty(_tid) ? "" : $"?tenantId={Uri.EscapeDataString(_tid)}";
+    var _path = new Uri(Nav.Uri).AbsolutePath;
+    var _segments = _path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+    var _contextLabel = _segments.Length >= 3 && _segments[0] == "app" && _segments[1] == "runs"
+        ? $"Run {_segments[2][..Math.Min(8, _segments[2].Length)]}"
+        : (_segments.Length >= 3 && _segments[0] == "app" && _segments[1] == "sessions"
+            ? $"Session {_segments[2][..Math.Min(8, _segments[2].Length)]}"
+            : "No active incident");
+}
+
+<div class="oc-shell">
+    <div class="oc-layout-with-sidebar">
+        <nav class="oc-sidebar" aria-label="Primary navigation">
+            <div class="oc-sidebar-brand">
+                <span class="oc-brand-mark" aria-hidden="true">OC</span>
+                <div class="oc-sidebar-brand-copy">
+                    <span class="oc-brand">OpsCopilot</span>
+                    <span class="oc-brand-subtitle">Operator Command Center</span>
+                </div>
+            </div>
+            <div class="oc-sidebar-section-label">Navigate</div>
+            <ul class="oc-nav-list" role="list">
+                <li>
+                    <a class="oc-nav-link @(_path.StartsWith("/app/dashboard") ? "oc-nav-link--active" : "")"
+                       href="/app/dashboard@_ts">
+                        <span class="oc-nav-icon" aria-hidden="true">DB</span>
+                        Dashboard
+                    </a>
+                </li>
+                <li>
+                    <a class="oc-nav-link @(_path.StartsWith("/app/runs") || _path.StartsWith("/app/sessions") ? "oc-nav-link--active" : "")"
+                       href="/app/dashboard@_ts">
+                        <span class="oc-nav-icon" aria-hidden="true">CI</span>
+                        Current Incident
+                    </a>
+                </li>
+                <li>
+                    <a class="oc-nav-link @(_path.StartsWith("/app/chat") ? "oc-nav-link--active" : "")"
+                       href="/app/chat@_ts">
+                        <span class="oc-nav-icon" aria-hidden="true">AI</span>
+                        Ask Copilot
+                    </a>
+                </li>
+            </ul>
+            <section class="oc-sidebar-context" aria-label="Current context">
+                <span class="oc-sidebar-section-label">Active Context</span>
+                <div class="oc-context-card">
+                    <span class="oc-context-kicker">Focus</span>
+                    <strong>@_contextLabel</strong>
+                    <span class="oc-context-copy">Live reporting workspace for governed incident triage.</span>
+                </div>
+            </section>
+            @if (!string.IsNullOrEmpty(_tid))
+            {
+                <div class="oc-sidebar-footer">
+                    <span class="oc-sidebar-section-label">Tenant</span>
+                    <span class="oc-tenant-badge">@_tid</span>
+                </div>
+            }
+        </nav>
+        <div class="oc-content-area">
+            <main class="oc-main">
+                @Body
+            </main>
+            <footer class="oc-footer">
+                <small>Ops Copilot Operator UI &mdash; read-only view</small>
+            </footer>
+        </div>
+    </div>
+</div>

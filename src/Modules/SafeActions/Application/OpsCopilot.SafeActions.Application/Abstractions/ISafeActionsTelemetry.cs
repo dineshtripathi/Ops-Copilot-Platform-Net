@@ -40,4 +40,13 @@ public interface ISafeActionsTelemetry
 
     /// <summary>safe_actions.execution.throttled — incremented when an execution attempt is denied by the throttle policy.</summary>
     void RecordExecutionThrottled(string actionType, string tenantId, string operationKind);
+
+    /// <summary>safeactions.proposal.recorded — incremented when a proposal is persisted successfully.</summary>
+    void RecordProposed(string actionType, string tenantId);
+
+    /// <summary>safeactions.rollback.requested — incremented when a rollback is requested.</summary>
+    void RecordRollbackRequested(string actionType, string tenantId);
+
+    /// <summary>safeactions.approval.reason_rejected — incremented when approval reason validation blocks a decision (tag: operation_kind=approve|reject|rollback_approve).</summary>
+    void RecordApprovalReasonRejected(string operationKind);
 }

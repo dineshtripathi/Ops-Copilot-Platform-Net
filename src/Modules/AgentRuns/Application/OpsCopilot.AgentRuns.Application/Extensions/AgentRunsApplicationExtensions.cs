@@ -12,7 +12,16 @@ public static class AgentRunsApplicationExtensions
     {
         services.AddSingleton<IRunbookAclFilter, TenantGroupRoleRunbookAclFilter>();
         services.AddSingleton<IIncidentMemoryService, NullIncidentMemoryService>();
+        services.AddSingleton<IIncidentMemoryIndexer, NullIncidentMemoryIndexer>();
+        // Slice 173: Citation integrity guardrail (§8.1 MVP)
+        services.AddSingleton<ICitationValidator, DefaultCitationIntegrityValidator>();
+        // Slice 200: Context window manager prevents context overflow in multi-turn LLM loops.
+        services.AddSingleton<IContextWindowManager, DefaultContextWindowManager>();
         services.AddScoped<TriageOrchestrator>();
+        services.AddScoped<ITriageOrchestrator>(sp => sp.GetRequiredService<TriageOrchestrator>());
+        services.AddScoped<ChatOrchestrator>();
+        // Slice 147: MAF IAgent adapter — Transient matches AddAgent<T> lifecycle
+        services.AddTransient<ITriageAgentHandler, TriageAgentActivityHandler>();
         return services;
     }
 }

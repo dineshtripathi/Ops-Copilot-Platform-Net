@@ -195,7 +195,22 @@ public class SafeActionOrchestratorTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => orchestrator.ApproveAsync(
-                record.ActionRecordId, "admin@ops.com", "duplicate"));
+                record.ActionRecordId, "admin@ops.com", "duplicate approval attempt for already approved action"));
+    }
+
+    [Fact]
+    public async Task ApproveAsync_Throws_ArgumentException_For_Generic_Reason()
+    {
+        var record = CreateProposedRecord();
+        var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
+
+        var orchestrator = CreateOrchestrator(repo);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => orchestrator.ApproveAsync(
+                record.ActionRecordId, "admin@ops.com", "lgtm"));
+
+        repo.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ─── RejectAsync ──────────────────────────────────────────────────
@@ -232,6 +247,9 @@ public class SafeActionOrchestratorTests
         var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
         repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(record);
+        repo.Setup(r => r.AppendExecutionLogAsync(
+                It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
         repo.Setup(r => r.SaveAsync(record, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         repo.Setup(r => r.AppendExecutionLogAsync(
@@ -259,6 +277,9 @@ public class SafeActionOrchestratorTests
         var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
         repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(record);
+        repo.Setup(r => r.AppendExecutionLogAsync(
+                It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
         repo.Setup(r => r.SaveAsync(record, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         repo.Setup(r => r.AppendExecutionLogAsync(
@@ -304,6 +325,9 @@ public class SafeActionOrchestratorTests
         var repo = new Mock<IActionRecordRepository>(MockBehavior.Strict);
         repo.Setup(r => r.GetByIdAsync(record.ActionRecordId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(record);
+        repo.Setup(r => r.AppendExecutionLogAsync(
+                It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
         repo.Setup(r => r.SaveAsync(record, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -327,6 +351,9 @@ public class SafeActionOrchestratorTests
             .ReturnsAsync(record);
         repo.Setup(r => r.AppendApprovalAsync(
                 It.IsAny<ApprovalRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.AppendExecutionLogAsync(
+                It.IsAny<ExecutionLog>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         repo.Setup(r => r.SaveAsync(record, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -381,7 +408,7 @@ public class SafeActionOrchestratorTests
 
         await Assert.ThrowsAsync<KeyNotFoundException>(
             () => orchestrator.ApproveAsync(
-                Guid.NewGuid(), "admin@ops.com", "test"));
+                Guid.NewGuid(), "admin@ops.com", "approval requested after investigation"));
     }
 
     // ─── Domain invariants ────────────────────────────────────────────

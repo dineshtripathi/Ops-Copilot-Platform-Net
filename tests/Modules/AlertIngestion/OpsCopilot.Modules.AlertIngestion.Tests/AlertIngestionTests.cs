@@ -17,6 +17,7 @@ using OpsCopilot.AlertIngestion.Domain.Models;
 using OpsCopilot.AlertIngestion.Presentation.Contracts;
 using OpsCopilot.AlertIngestion.Presentation.Endpoints;
 using OpsCopilot.BuildingBlocks.Contracts.AgentRuns;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
 
 namespace OpsCopilot.Modules.AlertIngestion.Tests;
 
@@ -359,7 +360,7 @@ public class AlertIngestionTests
     [Fact]
     public async Task Endpoint_HappyPath_Returns200WithRunIdAndFingerprint()
     {
-        var (app, client, runCreator) = await CreateTestHost();
+        var (app, client, runCreator, _) = await CreateTestHost();
         try
         {
             var expectedRunId = Guid.NewGuid();
@@ -368,6 +369,7 @@ public class AlertIngestionTests
                     "tenant-24",
                     It.IsAny<string>(),
                     null,
+                    It.IsAny<AlertRunContext?>(),
                     It.IsAny<CancellationToken>()))
                 .ReturnsAsync(expectedRunId);
 
@@ -391,7 +393,7 @@ public class AlertIngestionTests
     [Fact]
     public async Task Endpoint_MissingTenant_Returns400MissingTenant()
     {
-        var (app, client, _) = await CreateTestHost();
+        var (app, client, _, __) = await CreateTestHost();
         try
         {
             var response = await Post(client, tenantId: null,
@@ -413,7 +415,7 @@ public class AlertIngestionTests
     [Fact]
     public async Task Endpoint_UnsupportedProvider_Returns400UnsupportedProvider()
     {
-        var (app, client, _) = await CreateTestHost();
+        var (app, client, _, __) = await CreateTestHost();
         try
         {
             var response = await Post(client, "tenant-24",
@@ -435,7 +437,7 @@ public class AlertIngestionTests
     [Fact]
     public async Task Endpoint_EmptyPayload_Returns400InvalidAlertPayload()
     {
-        var (app, client, _) = await CreateTestHost();
+        var (app, client, _, __) = await CreateTestHost();
         try
         {
             var response = await Post(client, "tenant-24",
@@ -480,30 +482,313 @@ public class AlertIngestionTests
             RawPayload = "{}"
         };
 
+    // ════════════════════════════════════════════════════════════
+    //  19. Dispatch — NullAlertTriageDispatcher always returns false
+    // ════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task NullAlertTriageDispatcher_AlwaysReturnsFalse()
+    {
+        var sut = new NullAlertTriageDispatcher();
+        var result = await sut.DispatchAsync("tenant-1", Guid.NewGuid(), "fp1234");
+        Assert.False(result);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  20. Dispatch — handler with NullDispatcher → Dispatched = false
+    // ════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Handler_WithNullDispatcher_ReturnsDispatchedFalse()
+    {
+        var router      = BuildRouter();
+        var runCreator  = new Mock<IAgentRunCreator>(MockBehavior.Loose);
+        var expectedId  = Guid.NewGuid();
+        runCreator
+            .Setup(r => r.CreateRunAsync(
+                It.IsAny<string>(), It.IsAny<string>(), null,
+                It.IsAny<AlertRunContext?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedId);
+
+        var sessionPolicy20 = new Mock<ISessionPolicy>(MockBehavior.Loose);
+        var handler = new IngestAlertCommandHandler(
+            runCreator.Object, router,
+            new NullAlertTriageDispatcher(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IngestAlertCommandHandler>.Instance,
+            sessionPolicy20.Object);
+
+        var result = await handler.HandleAsync(
+            new IngestAlertCommand("tenant-99", "azure_monitor", AzureMonitorPayload()));
+
+        Assert.Equal(expectedId, result.RunId);
+        Assert.False(result.Dispatched);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  21. Dispatch — handler with real dispatcher → Dispatched = true
+    // ════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Handler_WithRealDispatcher_ReturnsDispatchedTrue()
+    {
+        var router      = BuildRouter();
+        var runCreator  = new Mock<IAgentRunCreator>(MockBehavior.Loose);
+        var expectedId  = Guid.NewGuid();
+        runCreator
+            .Setup(r => r.CreateRunAsync(
+                It.IsAny<string>(), It.IsAny<string>(), null,
+                It.IsAny<AlertRunContext?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedId);
+
+        var dispatcher = new Mock<IAlertTriageDispatcher>(MockBehavior.Strict);
+        dispatcher
+            .Setup(d => d.DispatchAsync(
+                "tenant-99", expectedId, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var sessionPolicy21 = new Mock<ISessionPolicy>(MockBehavior.Loose);
+        var handler = new IngestAlertCommandHandler(
+            runCreator.Object, router, dispatcher.Object,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IngestAlertCommandHandler>.Instance,
+            sessionPolicy21.Object);
+
+        var result = await handler.HandleAsync(
+            new IngestAlertCommand("tenant-99", "azure_monitor", AzureMonitorPayload()));
+
+        Assert.True(result.Dispatched);
+        dispatcher.Verify(d => d.DispatchAsync(
+            "tenant-99", expectedId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  22. Dispatch — dispatcher throws → graceful degradation
+    // ════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Handler_WhenDispatcherThrows_StillReturnsRunIdAndDispatchedFalse()
+    {
+        var router      = BuildRouter();
+        var runCreator  = new Mock<IAgentRunCreator>(MockBehavior.Loose);
+        var expectedId  = Guid.NewGuid();
+        runCreator
+            .Setup(r => r.CreateRunAsync(
+                It.IsAny<string>(), It.IsAny<string>(), null,
+                It.IsAny<AlertRunContext?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedId);
+
+        var dispatcher = new Mock<IAlertTriageDispatcher>(MockBehavior.Loose);
+        dispatcher
+            .Setup(d => d.DispatchAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("dispatch unavailable"));
+
+        var sessionPolicy22 = new Mock<ISessionPolicy>(MockBehavior.Loose);
+        var handler = new IngestAlertCommandHandler(
+            runCreator.Object, router, dispatcher.Object,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IngestAlertCommandHandler>.Instance,
+            sessionPolicy22.Object);
+
+        // Must NOT throw even though dispatcher throws
+        var result = await handler.HandleAsync(
+            new IngestAlertCommand("tenant-99", "azure_monitor", AzureMonitorPayload()));
+
+        Assert.Equal(expectedId, result.RunId);
+        Assert.False(result.Dispatched);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  24. Session continuity — recent session found → sessionId passed through
+    // ════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Handler_SessionLookupReturnsId_PassesSessionIdToCreateRunAsync()
+    {
+        var router     = BuildRouter();
+        var priorSessionId = Guid.NewGuid();
+        var expectedRunId  = Guid.NewGuid();
+
+        var runCreator = new Mock<IAgentRunCreator>(MockBehavior.Strict);
+        runCreator
+            .Setup(r => r.FindRecentSessionIdAsync(
+                "tenant-24", It.IsAny<string>(), 120, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid?)priorSessionId);
+        runCreator
+            .Setup(r => r.CreateRunAsync(
+                "tenant-24", It.IsAny<string>(), priorSessionId,
+                It.IsAny<AlertRunContext?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedRunId);
+
+        var sessionPolicy = new Mock<ISessionPolicy>(MockBehavior.Strict);
+        sessionPolicy
+            .Setup(p => p.GetSessionTtl("tenant-24"))
+            .Returns(TimeSpan.FromMinutes(120));
+
+        var handler = new IngestAlertCommandHandler(
+            runCreator.Object, router,
+            new NullAlertTriageDispatcher(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IngestAlertCommandHandler>.Instance,
+            sessionPolicy.Object);
+
+        var result = await handler.HandleAsync(
+            new IngestAlertCommand("tenant-24", "azure_monitor", AzureMonitorPayload()));
+
+        Assert.Equal(expectedRunId, result.RunId);
+        runCreator.Verify(r => r.CreateRunAsync(
+            "tenant-24", It.IsAny<string>(), priorSessionId,
+            It.IsAny<AlertRunContext?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  25. Session continuity — no prior run → null sessionId passed
+    // ════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Handler_SessionLookupReturnsNull_PassesNullSessionIdToCreateRunAsync()
+    {
+        var router     = BuildRouter();
+        var expectedRunId = Guid.NewGuid();
+
+        var runCreator = new Mock<IAgentRunCreator>(MockBehavior.Strict);
+        runCreator
+            .Setup(r => r.FindRecentSessionIdAsync(
+                "tenant-25", It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid?)null);
+        runCreator
+            .Setup(r => r.CreateRunAsync(
+                "tenant-25", It.IsAny<string>(), (Guid?)null,
+                It.IsAny<AlertRunContext?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedRunId);
+
+        var sessionPolicy = new Mock<ISessionPolicy>(MockBehavior.Loose);
+        sessionPolicy
+            .Setup(p => p.GetSessionTtl("tenant-25"))
+            .Returns(TimeSpan.FromMinutes(120));
+
+        var handler = new IngestAlertCommandHandler(
+            runCreator.Object, router,
+            new NullAlertTriageDispatcher(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IngestAlertCommandHandler>.Instance,
+            sessionPolicy.Object);
+
+        var result = await handler.HandleAsync(
+            new IngestAlertCommand("tenant-25", "azure_monitor", AzureMonitorPayload()));
+
+        Assert.Equal(expectedRunId, result.RunId);
+        runCreator.Verify(r => r.CreateRunAsync(
+            "tenant-25", It.IsAny<string>(), (Guid?)null,
+            It.IsAny<AlertRunContext?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  26. Session continuity — session TTL maps to correct windowMinutes
+    // ════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Handler_SessionPolicyTtl_MapsToCorrectWindowMinutes()
+    {
+        var router = BuildRouter();
+
+        var runCreator = new Mock<IAgentRunCreator>(MockBehavior.Loose);
+        runCreator
+            .Setup(r => r.FindRecentSessionIdAsync(
+                "tenant-26", It.IsAny<string>(), 180, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid?)null)
+            .Verifiable();
+        runCreator
+            .Setup(r => r.CreateRunAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(),
+                It.IsAny<AlertRunContext?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Guid.NewGuid());
+
+        var sessionPolicy = new Mock<ISessionPolicy>(MockBehavior.Strict);
+        sessionPolicy
+            .Setup(p => p.GetSessionTtl("tenant-26"))
+            .Returns(TimeSpan.FromHours(3)); // 180 minutes
+
+        var handler = new IngestAlertCommandHandler(
+            runCreator.Object, router,
+            new NullAlertTriageDispatcher(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IngestAlertCommandHandler>.Instance,
+            sessionPolicy.Object);
+
+        await handler.HandleAsync(
+            new IngestAlertCommand("tenant-26", "azure_monitor", AzureMonitorPayload()));
+
+        runCreator.Verify(r => r.FindRecentSessionIdAsync(
+            "tenant-26", It.IsAny<string>(), 180, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  23. Endpoint — response body includes Dispatched field (false)
+    // ════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Endpoint_HappyPath_ResponseIncludesDispatchedFalse()
+    {
+        var (app, client, runCreator, _) = await CreateTestHost();
+        try
+        {
+            var expectedRunId = Guid.NewGuid();
+            runCreator
+                .Setup(r => r.CreateRunAsync(
+                    "tenant-25",
+                    It.IsAny<string>(),
+                    null,
+                    It.IsAny<AlertRunContext?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(expectedRunId);
+
+            var response = await Post(client, "tenant-25",
+                new IngestAlertRequest("azure_monitor", AzureMonitorPayload()));
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body   = await response.Content.ReadAsStringAsync();
+            var result = JsonSerializer.Deserialize<IngestAlertResponse>(body, JsonOpts);
+            Assert.NotNull(result);
+            Assert.Equal(expectedRunId, result!.RunId);
+            Assert.False(result.Dispatched); // NullAlertTriageDispatcher wired in test host
+        }
+        finally { await DisposeHost(app); }
+    }
+
     // ── Endpoint test host ──────────────────────────────────────
 
-    private static async Task<(WebApplication App, HttpClient Client, Mock<IAgentRunCreator> RunCreator)>
+    private static async Task<(WebApplication App, HttpClient Client, Mock<IAgentRunCreator> RunCreator, Mock<IAlertTriageDispatcher> Dispatcher)>
         CreateTestHost()
     {
-        var runCreator = new Mock<IAgentRunCreator>(MockBehavior.Strict);
+        var runCreator  = new Mock<IAgentRunCreator>(MockBehavior.Strict);
+        var dispatcher  = new Mock<IAlertTriageDispatcher>(MockBehavior.Loose);
 
         var builder = WebApplication.CreateBuilder(Array.Empty<string>());
         builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();
 
-        // Register normalizers + router + handler
+        // Default session-lookup setup so the Strict mock doesn't throw on existing tests.
+        runCreator
+            .Setup(r => r.FindRecentSessionIdAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid?)null);
+
+        var sessionPolicy = new Mock<ISessionPolicy>(MockBehavior.Loose);
+        sessionPolicy
+            .Setup(p => p.GetSessionTtl(It.IsAny<string>()))
+            .Returns(TimeSpan.FromMinutes(120));
+
+        // Register normalizers + router + dispatcher + handler
         builder.Services.AddSingleton<IAlertNormalizer, AzureMonitorAlertNormalizer>();
         builder.Services.AddSingleton<IAlertNormalizer, DatadogAlertNormalizer>();
         builder.Services.AddSingleton<IAlertNormalizer, GenericAlertNormalizer>();
         builder.Services.AddSingleton<AlertNormalizerRouter>();
         builder.Services.AddSingleton(runCreator.Object);
+        builder.Services.AddSingleton(dispatcher.Object);
+        builder.Services.AddSingleton(sessionPolicy.Object);
         builder.Services.AddScoped<IngestAlertCommandHandler>();
 
         var app = builder.Build();
         app.MapAlertIngestionEndpoints();
         await app.StartAsync();
 
-        return (app, app.GetTestClient(), runCreator);
+        return (app, app.GetTestClient(), runCreator, dispatcher);
     }
 
     private static async Task DisposeHost(WebApplication app)

@@ -1,0 +1,190 @@
+@page "/app/chat"
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+
+<PageTitle>Ops Copilot &mdash; Ask Copilot</PageTitle>
+
+@if (string.IsNullOrWhiteSpace(TenantId))
+{
+    <section class="oc-error-panel" aria-label="Tenant ID required">
+        <h2>Tenant ID Required</h2>
+        <p>Add <code>?tenantId=&lt;your-tenant-id&gt;</code> to the URL to use Ask Copilot.</p>
+    </section>
+}
+else
+{
+    <header class="oc-page-topbar" aria-label="Ask Copilot page top bar">
+        <nav class="oc-breadcrumb" aria-label="Breadcrumb">
+            <span>OpsCopilot</span>
+            <span class="oc-breadcrumb-sep" aria-hidden="true">/</span>
+            <span>Operator Console</span>
+            <span class="oc-breadcrumb-sep" aria-hidden="true">/</span>
+            <a href="@($"/app/dashboard?tenantId={Uri.EscapeDataString(TenantId)}")">Dashboard</a>
+            <span class="oc-breadcrumb-sep" aria-hidden="true">&rsaquo;</span>
+            <span>Ask Copilot</span>
+        </nav>
+        <span class="oc-top-tenant">@TenantId</span>
+    </header>
+
+    <section class="oc-hero" aria-label="Ask Copilot hero">
+        <div class="oc-hero-copy">
+            <span class="oc-eyebrow">AI Assistant</span>
+            <h1>Ask Copilot</h1>
+            <p>Ask questions about incidents, runbooks, and operational history for tenant <strong>@TenantId</strong>.</p>
+        </div>
+        <div class="oc-hero-aside" aria-label="Example questions">
+            <span class="oc-hero-aside-title">Try asking</span>
+            <ul class="oc-hero-examples">
+                <li class="oc-hero-example">What were the common failure patterns in the last 24 hours?</li>
+                <li class="oc-hero-example">Which runbook applies to a Service Bus connection timeout?</li>
+                <li class="oc-hero-example">Summarise the most recent critical incident.</li>
+                <li class="oc-hero-example">What changed just before the last alert fired?</li>
+            </ul>
+        </div>
+    </section>
+
+    <section class="oc-chat-compose" aria-label="Ask a question">
+        <div class="oc-chat-compose-header">
+            <h2>Your Question</h2>
+            <p>Ask about incidents, alerts, runbooks, or any operational topic for this tenant.</p>
+        </div>
+        <form method="post" @formname="chat">
+            <AntiforgeryToken />
+            <div class="oc-form-group">
+                <label for="chat-query" class="oc-form-label">Question</label>
+                <textarea id="chat-query" name="Query" class="oc-textarea" rows="4"
+                          placeholder="e.g. What were the common failure patterns in the last 24 hours?">@Query</textarea>
+            </div>
+            <div class="oc-chat-form-footer">
+                <span class="oc-chat-form-hint">Grounded against your tenant&rsquo;s incident history and runbooks.</span>
+                <button type="submit" class="oc-btn oc-btn--primary">&#10022;&ensp;Ask Copilot</button>
+            </div>
+        </form>
+    </section>
+
+    @if (_sendError)
+    {
+        <section class="oc-error-panel" aria-label="Chat error">
+            <h2>Chat Unavailable</h2>
+            <p>Unable to reach the AI assistant. Please try again later.</p>
+        </section>
+    }
+    else if (_answer is not null)
+    {
+        <section class="oc-chat-answer-panel" aria-label="Copilot answer">
+            <div class="oc-chat-answer-header">
+                <span class="oc-chat-answer-badge" aria-hidden="true">AI</span>
+                <strong>Copilot Answer</strong>
+            </div>
+            <div class="oc-chat-answer" role="region" aria-label="Answer text">@_answer</div>
+        </section>
+
+        @if (_memoryCitations.Count > 0)
+        {
+            <section class="oc-panel" aria-label="Memory citations">
+                <h2 class="oc-section-title">Related Incidents (@_memoryCitations.Count)</h2>
+                <ul class="oc-citation-list" role="list">
+                    @foreach (var c in _memoryCitations)
+                    {
+                        <li class="oc-card oc-citation-card">
+                            <div class="oc-citation-header">
+                                <span class="oc-inline-pill">Run @c.RunId[..Math.Min(8, c.RunId.Length)]</span>
+                                <span class="oc-inline-pill">Score @($"{c.Score:F2}")</span>
+                                <span class="oc-citation-date">@c.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</span>
+                            </div>
+                            <strong class="oc-citation-title">Alert: @c.AlertFingerprint</strong>
+                            <p class="oc-citation-snippet">@c.SummarySnippet</p>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
+        @if (_runbookCitations.Count > 0)
+        {
+            <section class="oc-panel" aria-label="Runbook citations">
+                <h2 class="oc-section-title">Relevant Runbooks (@_runbookCitations.Count)</h2>
+                <ul class="oc-citation-list" role="list">
+                    @foreach (var r in _runbookCitations)
+                    {
+                        <li class="oc-card oc-citation-card">
+                            <div class="oc-citation-header">
+                                <span class="oc-inline-pill">@r.RunbookId</span>
+                                <span class="oc-inline-pill">Score @($"{r.Score:F2}")</span>
+                            </div>
+                            <strong class="oc-citation-title">@r.Title</strong>
+                            <p class="oc-citation-snippet">@r.Snippet</p>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+    }
+}
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "tenantId")]
+    public string? TenantId { get; set; }
+
+    [SupplyParameterFromForm(FormName = "chat")]
+    public string? Query { get; set; }
+
+    private string?                  _answer;
+    private List<MemoryCitationVm>   _memoryCitations = [];
+    private List<RunbookCitationVm>  _runbookCitations = [];
+    private bool                     _sendError;
+
+    private sealed record ChatPayload(string Query);
+
+    private sealed record ChatResultPayload(
+        string?                  Answer,
+        List<MemoryCitationVm>?  MemoryCitations,
+        List<RunbookCitationVm>? RunbookCitations);
+
+    private sealed record MemoryCitationVm(
+        string          RunId,
+        string          AlertFingerprint,
+        string          SummarySnippet,
+        double          Score,
+        DateTimeOffset  CreatedAtUtc);
+
+    private sealed record RunbookCitationVm(
+        string  RunbookId,
+        string  Title,
+        string  Snippet,
+        double  Score);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(TenantId) || string.IsNullOrWhiteSpace(Query)) return;
+
+        try
+        {
+            var baseUri = new Uri(Nav.Uri).GetLeftPart(UriPartial.Authority);
+            var client  = HttpClientFactory.CreateClient();
+            client.BaseAddress = new Uri(baseUri);
+            client.DefaultRequestHeaders.Add("x-tenant-id", TenantId);
+
+            using var resp = await client.PostAsJsonAsync(
+                "/agent/chat", new ChatPayload(Query), CancellationToken.None);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                var result    = await resp.Content.ReadFromJsonAsync<ChatResultPayload>();
+                _answer          = result?.Answer ?? "(No answer returned.)";
+                _memoryCitations  = result?.MemoryCitations  ?? [];
+                _runbookCitations = result?.RunbookCitations ?? [];
+            }
+            else
+            {
+                _sendError = true;
+            }
+        }
+        catch
+        {
+            _sendError = true;
+        }
+    }
+}

@@ -18,6 +18,7 @@ public sealed class AgentRunsDbContext : DbContext
     public DbSet<AgentRun> AgentRuns => Set<AgentRun>();
     public DbSet<ToolCall> ToolCalls => Set<ToolCall>();
     public DbSet<AgentRunPolicyEvent> PolicyEvents => Set<AgentRunPolicyEvent>();
+    public DbSet<AgentRunFeedback> Feedbacks => Set<AgentRunFeedback>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -28,12 +29,21 @@ public sealed class AgentRunsDbContext : DbContext
             e.HasKey(x => x.RunId);
             e.Property(x => x.TenantId).HasMaxLength(128).IsRequired();
             e.Property(x => x.AlertFingerprint).HasMaxLength(64);
+            e.Property(x => x.AlertProvider).HasMaxLength(64);
+            e.Property(x => x.AlertSourceType).HasMaxLength(64);
+            e.Property(x => x.AzureSubscriptionId).HasMaxLength(64);
+            e.Property(x => x.AzureResourceGroup).HasMaxLength(128);
+            e.Property(x => x.AzureResourceId).HasMaxLength(512);
+            e.Property(x => x.AzureApplication).HasMaxLength(128);
+            e.Property(x => x.AzureWorkspaceId).HasMaxLength(64);
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
             e.Property(x => x.SummaryJson).HasColumnType("nvarchar(max)");
             e.Property(x => x.CitationsJson).HasColumnType("nvarchar(max)");
             e.HasIndex(x => x.TenantId);
             e.HasIndex(x => x.AlertFingerprint);
             e.HasIndex(x => new { x.TenantId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.TenantId, x.IsExceptionSignal, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.TenantId, x.AzureResourceGroup, x.CreatedAtUtc });
             e.Property(x => x.SessionId);
             e.HasIndex(x => x.SessionId);
             e.Property(x => x.ModelId).HasMaxLength(128);
@@ -61,6 +71,18 @@ public sealed class AgentRunsDbContext : DbContext
             e.Property(x => x.Message).HasColumnType("nvarchar(max)").IsRequired();
             e.HasIndex(x => x.RunId);
             e.HasIndex(x => x.OccurredAtUtc);
+        });
+
+        // Slice 123 — operator feedback (INSERT-only, never updated)
+        modelBuilder.Entity<AgentRunFeedback>(e =>
+        {
+            e.ToTable("RunFeedback", "agentRuns");
+            e.HasKey(x => x.FeedbackId);
+            e.Property(x => x.TenantId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.Rating).IsRequired();
+            e.Property(x => x.Comment).HasMaxLength(2000);
+            e.HasIndex(x => x.RunId).IsUnique();  // one feedback per run
+            e.HasIndex(x => new { x.TenantId, x.SubmittedAtUtc });
         });
     }
 }

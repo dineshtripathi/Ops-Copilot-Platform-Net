@@ -40,6 +40,25 @@ public static class TenancyInfrastructureExtensions
         services.AddScoped<ITenantConfigResolver, TenantConfigResolver>();
         services.AddScoped<ITenantConfigProvider, TenantConfigProviderAdapter>();
 
+        // §6.19 — Onboarding Orchestration: discovery, connector validation, baseline seeding.
+        // Null implementations are the safe defaults; real implementations can be swapped in
+        // when ARG and connector integrations are configured.
+        services.AddScoped<IResourceDiscoveryService, ArmResourceDiscoveryService>();
+
+        // Slice 199: Live connector health validation uses IConnectorRegistry + IConnectorHealthCheck
+        // from the Connectors module. Default (false) keeps the null-safe validator so Tenancy can
+        // boot without the Connectors module being wired. Set to true in environments where
+        // AddConnectorsModule is also registered (e.g., ApiHost production config).
+        // Config key: Tenancy:Features:LiveConnectorHealthValidation
+        if (configuration.GetValue<bool>("Tenancy:Features:LiveConnectorHealthValidation"))
+            services.AddScoped<IConnectorHealthValidator, LiveConnectorHealthValidator>();
+        else
+            services.AddScoped<IConnectorHealthValidator, NullConnectorHealthValidator>();
+
+        services.AddScoped<IOnboardingBaselineSeeder, GovernanceDefaultsBaselineSeeder>();
+
+        services.AddScoped<IOnboardingOrchestrator, TenantOnboardingOrchestrator>();
+
         return services;
     }
 }

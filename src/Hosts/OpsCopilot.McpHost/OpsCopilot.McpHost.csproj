@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -6,23 +6,26 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <!--
-      McpHost is a stdio-transport MCP server.
-      stdout is owned by the MCP protocol; all application output must go to stderr.
-      This is NOT a web host — no Kestrel, no HTTP endpoints.
+      McpHost is an MCP tool server supporting two transports:
+        HTTP (SSE) — primary transport for Azure Container Apps deployment (port 8081).
+        stdio       — fallback transport when spawned as a child process (local dev only).
+      Application logs always go to stderr; HTTP access logs go to stdout via Kestrel.
     -->
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Official C# MCP SDK — stdio server + attribute-based tool registration -->
-    <PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.1" />
-    <!-- Generic host for DI / logging / lifetime management -->
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.2" />
+    <!-- Official C# MCP SDK — attribute-based tool registration -->
+    <PackageReference Include="Azure.ResourceManager.CostManagement" Version="1.0.2" />
+    <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
+    <!-- ASP.NET Core MCP integration — MapMcp() SSE endpoint -->
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.1.0" />
     <!-- KQL execution against Azure Log Analytics -->
     <PackageReference Include="Azure.Monitor.Query" Version="1.4.0" />
     <!-- DefaultAzureCredential: MI (Container Apps) / az login (local dev) -->
     <PackageReference Include="Azure.Identity" Version="1.13.2" />
     <!-- Resource Graph — queries resourcechanges table for deployment-diff tool -->
     <PackageReference Include="Azure.ResourceManager" Version="1.13.0" />
+    <PackageReference Include="Azure.ResourceManager.Resources" Version="1.7.0" />
     <PackageReference Include="Azure.ResourceManager.ResourceGraph" Version="1.0.0" />
   </ItemGroup>
 

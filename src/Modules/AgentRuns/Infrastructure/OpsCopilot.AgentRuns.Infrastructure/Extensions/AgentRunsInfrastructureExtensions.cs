@@ -1,10 +1,17 @@
+using Azure;
+using Azure.AI.OpenAI;
+using Azure.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpsCopilot.AgentRuns.Application.Abstractions;
 using OpsCopilot.AgentRuns.Domain.Repositories;
+using OpsCopilot.AgentRuns.Infrastructure.AI;
 using OpsCopilot.AgentRuns.Infrastructure.McpClient;
+using OpsCopilot.BuildingBlocks.Contracts.Governance;
+using OpsCopilot.Governance.Application.Services;
 using OpsCopilot.AgentRuns.Infrastructure.Memory;
 using OpsCopilot.AgentRuns.Infrastructure.Persistence;
 using OpsCopilot.AgentRuns.Infrastructure.Routing;
@@ -68,7 +75,13 @@ public static class AgentRunsInfrastructureExtensions
         services.AddScoped<IAgentRunRepository, SqlAgentRunRepository>();
         services.AddScoped<BuildingBlocks.Contracts.AgentRuns.IAgentRunCreator, Adapters.AgentRunCreatorAdapter>();
         services.AddScoped<IModelRoutingPolicy,   TenantConfigModelRoutingPolicy>();
-        services.AddScoped<IPromptVersionService, ConfigPromptVersionService>();
+
+        // SQL-backed token tracking — overrides Governance module's InMemory fallback.
+        // Last registration wins: GovernanceApplicationExtensions (registered first in ApiHost)
+        // registers InMemoryTokenUsageAccumulator; these scoped registrations replace it.
+        services.AddScoped<ISessionTokenQuery, AgentRunSessionTokenQuery>();
+        services.AddScoped<ITokenUsageAccumulator, SqlTokenUsageAccumulator>();
+        // IPromptVersionService is registered by AddPromptingModule (Prompting.Infrastructure)
 
         // ── Session store (config-driven: InMemory or Redis) ──────────────
         // Provider selection: AgentRuns:SessionStore:Provider
@@ -111,11 +124,80 @@ public static class AgentRunsInfrastructureExtensions
                 mcpOptions,
                 sp.GetRequiredService<ILogger<McpStdioRunbookToolClient>>()));
 
-        // ── Incident recall (opt-in) ──────────────────────────────────────────
-        if (bool.TryParse(configuration["AgentRuns:IncidentRecall:Enabled"], out var incidentRecallEnabled) && incidentRecallEnabled)
+        // ── Incident recall ───────────────────────────────────────────────────
+        // Always register the concrete dependencies so both FallbackIncidentMemoryService
+        // and HybridIncidentMemoryService can be resolved regardless of which is the
+        // active IIncidentMemoryService binding.
+        services.AddScoped<SqlIncidentMemoryService>();
+        services.AddScoped<LiveKqlIncidentMemoryService>();
+        services.AddScoped<RagBackedIncidentMemoryService>();
+
+        // AI-primary path (§6.1 Hard Invariant): when a production vector backend is
+        // configured (AzureAISearch or Qdrant), use HybridIncidentMemoryService which
+        // chains SQL → RAG → KQL.  For local / InMemory-vector dev, fall back to the
+        // simpler SQL → KQL FallbackIncidentMemoryService.
+        var ragBackend = configuration["Rag:VectorBackend"] ?? "InMemory";
+        var useHybrid  = !string.Equals(ragBackend, "InMemory", StringComparison.OrdinalIgnoreCase);
+
+        if (useHybrid)
+        {
+            services.AddScoped<IIncidentMemoryService, HybridIncidentMemoryService>();
+            // Enable vector indexing so completed runs feed back into the RAG store.
+            services.AddSingleton<IIncidentMemoryIndexer, RagBackedIncidentMemoryIndexer>();
+        }
+        else
+        {
+            services.AddScoped<IIncidentMemoryService, FallbackIncidentMemoryService>();
+        }
+
+        // Backward-compat: legacy explicit opt-in overrides the automatic selection above
+        // (last-wins DI convention).  Operators who set AgentRuns:IncidentRecall:Enabled=true
+        // on an InMemory vector backend will still get RAG-backed recall as before.
+        if (bool.TryParse(configuration["AgentRuns:IncidentRecall:Enabled"], out var legacyRecallEnabled) && legacyRecallEnabled)
         {
             services.AddSingleton<IIncidentMemoryService, RagBackedIncidentMemoryService>();
+            services.AddSingleton<IIncidentMemoryIndexer, RagBackedIncidentMemoryIndexer>();
         }
+
+        // ── LLM / IChatClient (config-driven, optional) ───────────────────────
+        // AI:Provider = "AzureOpenAI"  → Azure OpenAI / AI Foundry, Managed Identity or API key
+        // AI:Provider = "GitHubModels" → GitHub Models endpoint, GITHUB_TOKEN / User Secret
+        // AI:Provider = "" or absent   → skip; IChatClient stays unregistered → graceful degradation
+        var llmOpts = configuration.GetSection("AI").Get<LlmOptions>() ?? new LlmOptions();
+
+        if (string.Equals(llmOpts.Provider, "AzureOpenAI", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(llmOpts.AzureOpenAI.Endpoint))
+                throw new InvalidOperationException(
+                    "AI:AzureOpenAI:Endpoint is required when AI:Provider is 'AzureOpenAI'. " +
+                    "Set this value in appsettings.json, User Secrets, or Key Vault.");
+
+            AzureOpenAIClient aoaiRaw = string.IsNullOrWhiteSpace(llmOpts.AzureOpenAI.ApiKey)
+                ? new AzureOpenAIClient(new Uri(llmOpts.AzureOpenAI.Endpoint), new DefaultAzureCredential())
+                : new AzureOpenAIClient(new Uri(llmOpts.AzureOpenAI.Endpoint), new AzureKeyCredential(llmOpts.AzureOpenAI.ApiKey));
+
+            services.AddSingleton<IChatClient>(
+                aoaiRaw.GetChatClient(llmOpts.AzureOpenAI.DeploymentName).AsIChatClient());
+        }
+        else if (string.Equals(llmOpts.Provider, "GitHubModels", StringComparison.OrdinalIgnoreCase))
+        {
+            var token = string.IsNullOrWhiteSpace(llmOpts.GitHubModels.Token)
+                ? Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? ""
+                : llmOpts.GitHubModels.Token;
+
+            if (string.IsNullOrWhiteSpace(token))
+                throw new InvalidOperationException(
+                    "GitHub token is not configured for AI:Provider 'GitHubModels'. " +
+                    "Set 'AI:GitHubModels:Token' via User Secrets, or set the 'GITHUB_TOKEN' environment variable.");
+
+            var ghRaw = new AzureOpenAIClient(
+                new Uri(llmOpts.GitHubModels.Endpoint),
+                new AzureKeyCredential(token));
+
+            services.AddSingleton<IChatClient>(
+                ghRaw.GetChatClient(llmOpts.GitHubModels.ModelId).AsIChatClient());
+        }
+        // else: no provider — IChatClient unregistered; orchestrators degrade gracefully
 
         return services;
     }
@@ -151,6 +233,10 @@ public static class AgentRunsInfrastructureExtensions
                       ?? configuration["MCP_KQL_TIMEOUT_SECONDS"];
         var timeout = int.TryParse(timeoutStr, out var t) ? t : 30;
 
+        // ── ServerUrl ───────────────────────────────────────────────────────
+        var serverUrl = configuration["McpKql:ServerUrl"]
+                     ?? configuration["MCP_KQL_SERVER_URL"];
+
         if (!string.IsNullOrWhiteSpace(cmdStr))
         {
             // Parse flat command string: "dotnet /app/McpHost.dll" →
@@ -162,6 +248,7 @@ public static class AgentRunsInfrastructureExtensions
                 Arguments        = tokens[1..],
                 WorkingDirectory = string.IsNullOrWhiteSpace(workDir) ? null : workDir,
                 TimeoutSeconds   = timeout,
+                ServerUrl        = string.IsNullOrWhiteSpace(serverUrl) ? null : serverUrl,
             };
         }
 
@@ -170,6 +257,7 @@ public static class AgentRunsInfrastructureExtensions
         {
             WorkingDirectory = string.IsNullOrWhiteSpace(workDir) ? null : workDir,
             TimeoutSeconds   = timeout,
+            ServerUrl        = string.IsNullOrWhiteSpace(serverUrl) ? null : serverUrl,
         };
     }
 }

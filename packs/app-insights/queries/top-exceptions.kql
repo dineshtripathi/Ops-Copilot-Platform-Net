@@ -1,0 +1,14 @@
+// Top exceptions over the selected time window
+// Workspace schema: AppExceptions
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
+AppExceptions
+| where TimeGenerated between (_startTime .. _endTime)
+| summarize
+    Count = count(),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated),
+    SampleMessage = any(OuterMessage)
+    by exceptionType = tostring(Type)
+| order by Count desc
+| take 20

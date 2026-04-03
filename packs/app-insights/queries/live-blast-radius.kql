@@ -1,0 +1,34 @@
+// Live blast radius from recent activity events (fallback across workspace schemas)
+let _startTime = {FROM_UTC};
+let _endTime   = {TO_UTC};
+let ActivitySignals = union isfuzzy=true
+(
+    AzureActivity
+    | project
+        TimeGenerated,
+        status = tostring(column_ifexists("ActivityStatusValue", "")),
+        subStatus = tostring(column_ifexists("SubStatusValue", "")),
+        subscriptionId = tostring(column_ifexists("SubscriptionId", "")),
+        resourceGroup = tostring(column_ifexists("ResourceGroup", "")),
+        resourceId = tostring(column_ifexists("ResourceId", "")),
+        caller = tostring(column_ifexists("Caller", ""))
+),
+(
+    AzureDiagnostics
+    | project
+        TimeGenerated,
+        status = tostring(column_ifexists("ActivityStatusValue", column_ifexists("activityStatusValue_s", ""))),
+        subStatus = tostring(column_ifexists("SubStatusValue", column_ifexists("resultDescription_s", ""))),
+        subscriptionId = tostring(column_ifexists("SubscriptionId", column_ifexists("subscriptionId_s", ""))),
+        resourceGroup = tostring(column_ifexists("ResourceGroup", column_ifexists("resourceGroup_s", ""))),
+        resourceId = tostring(column_ifexists("ResourceId", column_ifexists("resourceId_s", ""))),
+        caller = tostring(column_ifexists("Caller", column_ifexists("caller_s", "")))
+);
+ActivitySignals
+| where TimeGenerated between (_startTime .. _endTime)
+| where status !in~ ("Succeeded") or subStatus has_cs "deny" or subStatus has_cs "denied"
+| summarize
+    impactedSubscriptions = dcountif(subscriptionId, isnotempty(subscriptionId)),
+    impactedResourceGroups = dcountif(resourceGroup, isnotempty(resourceGroup)),
+    impactedResources = dcountif(resourceId, isnotempty(resourceId)),
+    impactedApplications = dcountif(caller, isnotempty(caller))

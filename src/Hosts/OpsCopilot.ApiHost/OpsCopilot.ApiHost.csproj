@@ -17,10 +17,26 @@
 
   <!-- EF Core tooling (migrations) -->
   <ItemGroup>
+    <PackageReference Include="Azure.Search.Documents" Version="11.7.0" />
+    <!-- Slice 160: Qdrant vector backend -->
+    <PackageReference Include="Qdrant.Client" Version="1.17.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.2">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+  </ItemGroup>
+
+  <!-- Slice 147: Microsoft Agent Framework hosting (CloudAdapter, AddAgent<>, MapAgentEndpoints) -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.5.83-beta" />
+  </ItemGroup>
+
+  <!-- Slice 152: OpenTelemetry distributed tracing & metrics -->
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.11.2" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.11.1" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.11.2" />
+    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.11.2" />
   </ItemGroup>
 
   <!-- Shared configuration helpers (Key Vault, User Secrets bootstrap) -->
@@ -40,6 +56,17 @@
     <ProjectReference Include="..\..\Modules\Evaluation\Presentation\OpsCopilot.Evaluation.Presentation\OpsCopilot.Evaluation.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Tenancy\Presentation\OpsCopilot.Tenancy.Presentation\OpsCopilot.Tenancy.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Packs\Presentation\OpsCopilot.Packs.Presentation\OpsCopilot.Packs.Presentation.csproj" />
+    <ProjectReference Include="..\..\Modules\Reporting\Presentation\OpsCopilot.Reporting.Presentation.Blazor\OpsCopilot.Reporting.Presentation.Blazor.csproj" />
+    <ProjectReference Include="..\..\Modules\Rag\Presentation\OpsCopilot.Rag.Presentation\OpsCopilot.Rag.Presentation.csproj" />
+    <!-- Prompting module: no Presentation layer, ApiHost refs Infrastructure directly for DI wiring -->
+    <ProjectReference Include="..\..\Modules\Prompting\Infrastructure\OpsCopilot.Prompting.Infrastructure\OpsCopilot.Prompting.Infrastructure.csproj" />
+    <!-- Evaluation module: Infrastructure needed for SqlOnlineEvalRecorder and migrations -->
+    <ProjectReference Include="..\..\Modules\Evaluation\Infrastructure\OpsCopilot.Evaluation.Infrastructure\OpsCopilot.Evaluation.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpsCopilot.ApiHost.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
 </Project>

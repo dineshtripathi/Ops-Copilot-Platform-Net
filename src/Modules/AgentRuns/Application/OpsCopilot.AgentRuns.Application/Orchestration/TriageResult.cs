@@ -22,4 +22,6 @@ public sealed record TriageResult(
     int?     InputTokens     = null,
     int?     OutputTokens    = null,
     int?     TotalTokens     = null,
-    decimal? EstimatedCost   = null);
+    decimal? EstimatedCost   = null,
+    string?  LlmNarrative    = null,
+    bool     WasDeduplicated = false);

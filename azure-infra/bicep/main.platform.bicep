@@ -76,6 +76,20 @@ param caeName string = 'cae-opscopilot-platform-${environment}-uks'
 @description('Container image to use when bootstrapping. Overridden during app deployment.')
 param bootstrapImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
+@description('Azure Container Registry name (5–50 chars, alphanumeric, globally unique). Generated from subscription ID by default.')
+param acrName string = 'acropsctpltf${take(uniqueString(subscription().id, environment), 6)}'
+
+@description('Minimum replicas per Container App. 0 = scale-to-zero (safe default). Set to 1 in prod to eliminate cold-start latency during incidents.')
+@minValue(0)
+@maxValue(3)
+param minReplicas int = 0
+
+@description('Microsoft Entra tenant ID. Defaults to the current tenant.')
+param entraTenantId string = tenant().tenantId
+
+@description('Microsoft Entra app audience URI (e.g. api://opscopilot) injected into API apps. Leave empty to skip auth middleware configuration.')
+param entraAudience string = ''
+
 // ── Budget ────────────────────────────────────────────────────────────────────
 @description('Monthly budget amount in GBP.')
 param budgetAmount int = 80
@@ -99,6 +113,24 @@ var baseTags = union({
   subscription: 'platform'
   managedBy: 'bicep'
 }, extraTags)
+
+// ── Shared Container App environment variables ────────────────────────────────
+// Injected into all Container Apps so they can resolve config without baking
+// secrets into images. Bicep evaluates module outputs lazily (DAG-based), so
+// referencing outputs here is safe even though modules appear later in the file.
+var commonEnvVars = [
+  { name: 'KeyVault__VaultUri'                    value: kv.outputs.keyVaultUri }
+  { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING' value: appInsights.outputs.connectionString }
+  { name: 'WORKSPACE_ID'                          value: law.outputs.customerId }
+  { name: 'ASPNETCORE_ENVIRONMENT'                value: environment == 'prod' ? 'Production' : 'Development' }
+  { name: 'Authentication__Entra__TenantId'       value: entraTenantId }
+]
+
+// API-facing apps (ApiHost, McpHost) additionally receive the Entra audience so
+// the authentication middleware knows which app registration to validate against.
+var apiEnvVars = concat(commonEnvVars, [
+  { name: 'Authentication__Entra__Audience'       value: entraAudience }
+])
 
 // ── Resource Group ────────────────────────────────────────────────────────────
 module rg 'modules/rg.bicep' = {
@@ -184,6 +216,23 @@ module sql 'modules/sql.bicep' = {
   }
 }
 
+// ── Container Registry ────────────────────────────────────────────────────────
+// Stores Docker images built by the CD pipeline. All Container App managed
+// identities are granted AcrPull via containerAppRbac.bicep.
+// The CD service principal needs AcrPush — grant it once post-infra:
+//   az role assignment create --role AcrPush --assignee <SP_OBJECT_ID> --scope <ACR_ID>
+module acr 'modules/acr.bicep' = {
+  name: 'deploy-acr-platform'
+  scope: resourceGroup(rgName)
+  dependsOn: [rg]
+  params: {
+    registryName: acrName
+    location: location
+    skuName: environment == 'prod' ? 'Standard' : 'Basic'
+    tags: baseTags
+  }
+}
+
 // ── Container Apps Environment ────────────────────────────────────────────────
 module cae 'modules/containerAppsEnv.bicep' = {
   name: 'deploy-cae-platform'
@@ -209,8 +258,9 @@ module caApiHost 'modules/containerApp.bicep' = {
     enableIngress: true
     isExternalIngress: true
     targetPort: 8080
-    minReplicas: 0
+    minReplicas: minReplicas
     maxReplicas: environment == 'prod' ? 5 : 2
+    envVars: apiEnvVars
     tags: baseTags
   }
 }
@@ -227,8 +277,10 @@ module caWorkerHost 'modules/containerApp.bicep' = {
     enableIngress: false
     isExternalIngress: false
     targetPort: 8080
-    minReplicas: 0
+    minReplicas: minReplicas
     maxReplicas: environment == 'prod' ? 3 : 1
+    enableHealthProbes: false
+    envVars: commonEnvVars
     tags: baseTags
   }
 }
@@ -245,8 +297,9 @@ module caMcpHost 'modules/containerApp.bicep' = {
     enableIngress: true
     isExternalIngress: true
     targetPort: 8081
-    minReplicas: 0
+    minReplicas: minReplicas
     maxReplicas: environment == 'prod' ? 3 : 1
+    envVars: apiEnvVars
     tags: baseTags
   }
 }
@@ -277,6 +330,7 @@ module caRbac 'modules/containerAppRbac.bicep' = {
   params: {
     kvResourceId: kv.outputs.keyVaultId
     lawResourceId: law.outputs.workspaceId
+    acrResourceId: acr.outputs.registryId
     apiHostPrincipalId: caApiHost.outputs.principalId
     workerHostPrincipalId: caWorkerHost.outputs.principalId
     mcpHostPrincipalId: caMcpHost.outputs.principalId
@@ -319,3 +373,4 @@ output qdrantHttpUrl string = enableStorage ? qdrant.outputs.qdrantHttpUrl : ''
 output apiHostPrincipalId string = caApiHost.outputs.principalId
 output workerHostPrincipalId string = caWorkerHost.outputs.principalId
 output mcpHostPrincipalId string = caMcpHost.outputs.principalId
+output acrLoginServer string = acr.outputs.loginServer

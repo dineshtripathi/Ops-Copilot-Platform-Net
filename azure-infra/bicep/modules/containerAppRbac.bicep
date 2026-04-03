@@ -35,6 +35,9 @@ param kvResourceId string
 @description('Resource ID of the Log Analytics Workspace')
 param lawResourceId string
 
+@description('Resource ID of the Azure Container Registry. When provided, AcrPull is granted to all three managed identities.')
+param acrResourceId string = ''
+
 @description('Principal ID of the apihost system-assigned managed identity')
 param apiHostPrincipalId string
 
@@ -47,6 +50,8 @@ param mcpHostPrincipalId string
 // ── Built-in role definition IDs ──────────────────────────────────────────────
 var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e0'
 var lawReaderRoleId     = '73c42c96-874c-492b-b04d-ab87d138a893'
+// AcrPull: allows pulling container images from ACR — needed by all three Container Apps.
+var acrPullRoleId       = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
 // ── Existing resource references (required for resource-scoped assignments) ───
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
@@ -55,6 +60,10 @@ resource kv 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
 
 resource law 'Microsoft.OperationalInsights/workspaces@2022-10-01' existing = {
   name: last(split(lawResourceId, '/'))
+}
+
+resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (!empty(acrResourceId)) {
+  name: last(split(acrResourceId, '/'))
 }
 
 // ── Key Vault Secrets User ────────────────────────────────────────────────────
@@ -115,5 +124,42 @@ resource lawMcpHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     principalId: mcpHostPrincipalId
     principalType: 'ServicePrincipal'
     description: 'Log Analytics Reader — ca-opscopilot-mcphost (system MI)'
+  }
+}
+
+// ── AcrPull — all three Container Apps ────────────────────────────────────────
+// Allows each Container App's managed identity to pull images from the registry.
+// Only created when acrResourceId is provided (skipped during bootstrap phase).
+
+resource acrApiHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(acrResourceId)) {
+  name: guid(acr.id, apiHostPrincipalId, acrPullRoleId)
+  scope: acr
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    principalId: apiHostPrincipalId
+    principalType: 'ServicePrincipal'
+    description: 'AcrPull — ca-opscopilot-apihost (system MI)'
+  }
+}
+
+resource acrWorkerHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(acrResourceId)) {
+  name: guid(acr.id, workerHostPrincipalId, acrPullRoleId)
+  scope: acr
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    principalId: workerHostPrincipalId
+    principalType: 'ServicePrincipal'
+    description: 'AcrPull — ca-opscopilot-workerhost (system MI)'
+  }
+}
+
+resource acrMcpHost 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(acrResourceId)) {
+  name: guid(acr.id, mcpHostPrincipalId, acrPullRoleId)
+  scope: acr
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    principalId: mcpHostPrincipalId
+    principalType: 'ServicePrincipal'
+    description: 'AcrPull — ca-opscopilot-mcphost (system MI)'
   }
 }

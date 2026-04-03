@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write   # required for CodeQL SARIF upload
 
 jobs:
   build-and-test:
@@ -39,4 +40,43 @@ jobs:
         run: dotnet build OpsCopilot.sln --no-restore --configuration Release
 
       - name: Test
+        env:
+          # GitHub PAT with model-inference access — stored as a repo/env secret.
+          # Maps to AI:GitHubModels:Token so the LLM path is active in integration tests.
+          # Secret name: AI_TOKEN  (Settings → Secrets and variables → Actions → New secret)
+          AI__GitHubModels__Token: ${{ secrets.AI_TOKEN }}
         run: dotnet test OpsCopilot.sln --no-build --configuration Release --verbosity normal
+
+      # ── Security scanning ──────────────────────────────────────
+
+      # Trivy: filesystem vulnerability scan (HIGH + CRITICAL CVEs → fail build)
+      - name: Trivy — filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-results.sarif
+
+      - name: Upload Trivy scan results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+      # CodeQL: static analysis for C# (uploads results to GitHub Security tab)
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          # Use the compiled database from the Build step above
+          build-mode: none
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: codeql-csharp

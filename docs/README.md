@@ -8,7 +8,10 @@ Welcome to the OpsCopilot docs folder. This page serves as an index for all proj
 
 | Document | Description |
 |---|---|
-| [Running Locally](running-locally.md) | Set up the solution for local development (Mode A / B / C) |
+| [Getting Started Guide](getting-started.md) | Quick start for Mode A / B / C — builds, secrets, auth |
+| [Configuration Reference](configuration.md) | All `appsettings.json` keys and defaults |
+| [API Reference](api-reference.md) | All endpoints, request shapes, policy denial codes |
+| [Running Locally](running-locally.md) | Full local development setup guide |
 | [Local Dev Auth](local-dev-auth.md) | Authentication configuration for local development |
 | [Local Dev Secrets](local-dev-secrets.md) | Secret management for local development |
 

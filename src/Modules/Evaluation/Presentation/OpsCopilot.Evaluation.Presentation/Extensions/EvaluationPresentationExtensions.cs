@@ -10,4 +10,10 @@ public static class EvaluationPresentationExtensions
         services.AddEvaluationApplication();
         return services;
     }
+
+    public static IServiceCollection AddEvaluationLlmGraded(this IServiceCollection services)
+    {
+        services.AddEvaluationApplicationLlmGraded();
+        return services;
+    }
 }

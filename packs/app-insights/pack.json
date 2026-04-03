@@ -1,0 +1,77 @@
+{
+  "name":          "app-insights",
+  "version":       "1.0.0",
+  "description":   "Application Insights observability evidence for app/runtime diagnosis: exceptions, failed requests, dependencies, error trends, availability signals.",
+  "resourceTypes": ["Microsoft.Insights/components"],
+  "minimumMode":   "B",
+
+  "evidenceCollectors": [
+    {
+      "id":           "top-exceptions",
+      "requiredMode": "B",
+      "queryFile":    "queries/top-exceptions.kql",
+      "description":  "Recent exception types, messages, and counts"
+    },
+    {
+      "id":           "failed-requests",
+      "requiredMode": "B",
+      "queryFile":    "queries/failed-requests.kql",
+      "description":  "Failed HTTP requests with status codes and correlation IDs"
+    },
+    {
+      "id":           "failed-dependencies",
+      "requiredMode": "B",
+      "queryFile":    "queries/failed-dependencies.kql",
+      "description":  "Dependency failures (external services, databases, APIs)"
+    },
+    {
+      "id":           "timeout-patterns",
+      "requiredMode": "B",
+      "queryFile":    "queries/timeout-patterns.kql",
+      "description":  "Slow requests and timeout patterns (>30s response time)"
+    },
+    {
+      "id":           "error-trends",
+      "requiredMode": "B",
+      "queryFile":    "queries/error-trends.kql",
+      "description":  "Error count and rate trends over last 30 minutes"
+    },
+    {
+      "id":           "http-status-distribution",
+      "requiredMode": "B",
+      "queryFile":    "queries/http-status-distribution.kql",
+      "description":  "Distribution of HTTP status codes (4xx, 5xx, etc.)"
+    },
+    {
+      "id":           "availability-signals",
+      "requiredMode": "B",
+      "queryFile":    "queries/availability-signals.kql",
+      "description":  "Availability metrics and SLO impact"
+    },
+    {
+      "id":           "live-blast-radius",
+      "requiredMode": "B",
+      "queryFile":    "queries/live-blast-radius.kql",
+      "description":  "Live tenant estate impact derived from Azure activity signals"
+    },
+    {
+      "id":           "live-policy-activity",
+      "requiredMode": "B",
+      "queryFile":    "queries/live-policy-activity.kql",
+      "description":  "Live governance policy activity and denials from Azure activity"
+    }
+  ],
+
+  "runbooks": [
+    {
+      "id":         "exception-diagnosis",
+      "file":       "runbooks/exception-diagnosis.md",
+      "collectors": ["top-exceptions", "failed-requests"]
+    },
+    {
+      "id":         "dependency-failure-diagnosis",
+      "file":       "runbooks/dependency-failure-diagnosis.md",
+      "collectors": ["failed-dependencies", "timeout-patterns"]
+    }
+  ]
+}

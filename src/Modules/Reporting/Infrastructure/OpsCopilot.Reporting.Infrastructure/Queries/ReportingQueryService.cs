@@ -42,7 +42,11 @@ internal sealed class ReportingQueryService : IReportingQueryService
     {
         var query = ApplyFilters(_db.ActionRecords, fromUtc, toUtc, tenantId);
 
-        return await query
+        var raw = await query
+            .Select(a => new { a.ActionType, a.Status })
+            .ToListAsync(ct);
+
+        return raw
             .GroupBy(a => a.ActionType)
             .Select(g => new ActionTypeBreakdownRow(
                 g.Key,
@@ -50,7 +54,7 @@ internal sealed class ReportingQueryService : IReportingQueryService
                 g.Count(a => a.Status == "Completed"),
                 g.Count(a => a.Status == "Failed")))
             .OrderByDescending(r => r.Count)
-            .ToListAsync(ct);
+            .ToList();
     }
 
     public async Task<IReadOnlyList<TenantBreakdownRow>> GetByTenantAsync(
@@ -58,7 +62,11 @@ internal sealed class ReportingQueryService : IReportingQueryService
     {
         var query = ApplyFilters(_db.ActionRecords, fromUtc, toUtc, tenantId: null);
 
-        return await query
+        var raw = await query
+            .Select(a => new { a.TenantId, a.Status })
+            .ToListAsync(ct);
+
+        return raw
             .GroupBy(a => a.TenantId)
             .Select(g => new TenantBreakdownRow(
                 g.Key,
@@ -66,7 +74,7 @@ internal sealed class ReportingQueryService : IReportingQueryService
                 g.Count(a => a.Status == "Completed"),
                 g.Count(a => a.Status == "Failed")))
             .OrderByDescending(r => r.TotalActions)
-            .ToListAsync(ct);
+            .ToList();
     }
 
     public async Task<IReadOnlyList<RecentActionRow>> GetRecentAsync(

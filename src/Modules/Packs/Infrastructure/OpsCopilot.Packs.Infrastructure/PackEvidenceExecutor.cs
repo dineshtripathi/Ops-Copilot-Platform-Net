@@ -91,7 +91,7 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         }
 
         // ── Gate 3: workspace resolution ─────────────────────────────────
-        var workspaceResult = _workspaceResolver.Resolve(tenantId);
+        var workspaceResult = await _workspaceResolver.ResolveAsync(tenantId, ct);
         if (!workspaceResult.Success)
         {
             _logger.LogWarning(
@@ -110,9 +110,10 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
 
         _telemetry.RecordEvidenceAttempt(request.DeploymentMode, tenantId, correlationId);
 
-        var workspaceId = workspaceResult.WorkspaceId!;
-        var maxRows     = _configuration.GetValue("Packs:EvidenceMaxRows",  DefaultMaxRows);
-        var maxChars    = _configuration.GetValue("Packs:EvidenceMaxChars", DefaultMaxChars);
+        var workspaceId             = workspaceResult.WorkspaceId!;
+        var appInsightsResourcePath = workspaceResult.AppInsightsResourcePath;
+        var maxRows                 = _configuration.GetValue("Packs:EvidenceMaxRows",  DefaultMaxRows);
+        var maxChars                = _configuration.GetValue("Packs:EvidenceMaxChars", DefaultMaxChars);
 
         IReadOnlyList<LoadedPack> packs;
         try
@@ -138,8 +139,8 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         foreach (var pack in eligiblePacks)
         {
             await ExecutePackCollectorsAsync(
-                pack, request.DeploymentMode, workspaceId, maxRows, maxChars,
-                tenantId, correlationId, evidenceItems, errors, ct);
+                pack, request.DeploymentMode, workspaceId, appInsightsResourcePath, maxRows, maxChars,
+                tenantId, correlationId, request.FromUtc, request.ToUtc, evidenceItems, errors, ct);
         }
 
         _logger.LogDebug(
@@ -197,10 +198,13 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         LoadedPack pack,
         string deploymentMode,
         string workspaceId,
+        string? appInsightsResourcePath,
         int maxRows,
         int maxChars,
         string tenantId,
         string? correlationId,
+        DateTime? fromUtc,
+        DateTime? toUtc,
         List<PackEvidenceItem> evidenceItems,
         List<string> errors,
         CancellationToken ct)
@@ -211,8 +215,8 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         foreach (var ec in eligibleCollectors)
         {
             await ExecuteSingleCollectorAsync(
-                pack, ec, workspaceId, maxRows, maxChars,
-                tenantId, correlationId, evidenceItems, errors, ct);
+                pack, ec, workspaceId, appInsightsResourcePath, maxRows, maxChars,
+                tenantId, correlationId, fromUtc, toUtc, evidenceItems, errors, ct);
         }
     }
 
@@ -220,10 +224,13 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
         LoadedPack pack,
         EvidenceCollector ec,
         string workspaceId,
+        string? appInsightsResourcePath,
         int maxRows,
         int maxChars,
         string tenantId,
         string? correlationId,
+        DateTime? fromUtc,
+        DateTime? toUtc,
         List<PackEvidenceItem> evidenceItems,
         List<string> errors,
         CancellationToken ct)
@@ -263,8 +270,23 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
                 return;
             }
 
+            // Substitute user-selected date range tokens; falls back to ago(30d)/now() when absent.
+            queryContent = SubstituteDateTokens(queryContent, fromUtc, toUtc);
+
+            // Apply App Insights resource filter if discovery identified the linked AI component.
+            // Only applied to App Insights table queries; workspace-level tables are unaffected.
+            if (appInsightsResourcePath is not null && IsAppInsightsQuery(queryContent))
+                queryContent = InjectResourceIdFilter(queryContent, appInsightsResourcePath);
+
+            // Compute API-level timespan to match the KQL date range.
+            // Without this the Azure Monitor REST API defaults to PT60M and intersects
+            // with the KQL filter, hiding events older than 60 minutes.
+            var queryTimespan = (fromUtc.HasValue && toUtc.HasValue)
+                ? (TimeSpan?)(toUtc.Value - fromUtc.Value)
+                : TimeSpan.FromDays(30); // matches ago(30d) KQL fallback
+
             // Execute the query — queryContent is passed as parameter, never logged
-            var result = await _queryExecutor.ExecuteQueryAsync(workspaceId, queryContent, null, ct);
+            var result = await _queryExecutor.ExecuteQueryAsync(workspaceId, queryContent, queryTimespan, ct);
 
             // Truncate result if needed
             var resultJson   = result.ResultJson;
@@ -339,6 +361,19 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
     /// Returns <c>true</c> when <paramref name="packMode"/> is at or below
     /// <paramref name="deploymentMode"/> in the A &lt; B &lt; C hierarchy.
     /// </summary>
+    private static string SubstituteDateTokens(string queryContent, DateTime? fromUtc, DateTime? toUtc)
+    {
+        var from = fromUtc.HasValue
+            ? $"datetime({fromUtc.Value.ToUniversalTime():O})"
+            : "ago(30d)";
+        var to = toUtc.HasValue
+            ? $"datetime({toUtc.Value.ToUniversalTime():O})"
+            : "now()";
+        return queryContent
+            .Replace("{FROM_UTC}", from, StringComparison.Ordinal)
+            .Replace("{TO_UTC}", to, StringComparison.Ordinal);
+    }
+
     private static bool IsModeAtOrBelow(string packMode, string deploymentMode) =>
         !string.IsNullOrEmpty(packMode) &&
         !string.IsNullOrEmpty(deploymentMode) &&
@@ -348,6 +383,69 @@ internal sealed class PackEvidenceExecutor : IPackEvidenceExecutor
     {
         var value = _configuration["Packs:EvidenceExecutionEnabled"];
         return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── App Insights query detection and _ResourceId filter injection ─────
+
+    private static readonly HashSet<string> AppInsightsTables =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "AppExceptions", "AppRequests", "AppDependencies", "AppTraces", "AppEvents",
+            "AppMetrics", "AppAvailabilityResults", "AppBrowserTimings", "AppPageViews",
+            "AppPerformanceCounters", "AppSystemEvents",
+        };
+
+    /// <summary>
+    /// Returns <c>true</c> when the query's first non-whitespace line starts with an App Insights table name.
+    /// </summary>
+    private static bool IsAppInsightsQuery(string queryContent)
+    {
+        var trimmed = queryContent.TrimStart();
+        foreach (var table in AppInsightsTables)
+        {
+            if (trimmed.StartsWith(table + "\n", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith(table + "\r", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith(table + " ",  StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith(table + "|",  StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed.Trim(), table, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Injects a <c>| where _ResourceId has "…"</c> line after the first non-comment,
+    /// non-pipe, non-let line (the table name line).
+    /// Example: <c>AppExceptions\n| where TimeGenerated &gt; ago(1h)</c>
+    /// becomes:  <c>AppExceptions\n| where _ResourceId has "/providers/…"\n| where TimeGenerated &gt; ago(1h)</c>
+    /// </summary>
+    private static string InjectResourceIdFilter(string queryContent, string resourcePath)
+    {
+        var lines    = queryContent.Split('\n');
+        var injected = false;
+        var result   = new List<string>(lines.Length + 1);
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.TrimEnd('\r');
+            result.Add(line);
+
+            if (!injected && !string.IsNullOrWhiteSpace(line))
+            {
+                var trimmedLine = line.TrimStart();
+                if (!trimmedLine.StartsWith("//") &&
+                    !trimmedLine.StartsWith("|") &&
+                    !trimmedLine.StartsWith("let ", StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Add($"| where _ResourceId has \"{resourcePath}\"");
+                    injected = true;
+                }
+            }
+        }
+
+        return string.Join('\n', result).TrimEnd();
     }
 
 }

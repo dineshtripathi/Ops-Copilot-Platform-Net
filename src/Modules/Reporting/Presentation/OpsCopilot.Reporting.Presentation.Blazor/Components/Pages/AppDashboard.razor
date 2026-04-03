@@ -1,0 +1,842 @@
+@page "/app/dashboard"
+@inject IDashboardQueryService DashboardSvc
+
+<PageTitle>Ops Copilot &mdash; Dashboard</PageTitle>
+
+@if (string.IsNullOrWhiteSpace(TenantId))
+{
+    <section class="oc-error-panel" aria-label="Tenant ID required">
+        <h2>Tenant ID Required</h2>
+        <p>Add <code>?tenantId=&lt;your-tenant-id&gt;</code> to the URL to view the dashboard.</p>
+    </section>
+}
+else if (_loadError)
+{
+    <section class="oc-error-panel" aria-label="Dashboard load error">
+        <h2>Dashboard Unavailable</h2>
+        <p>An error occurred loading dashboard data. Please try again later.</p>
+    </section>
+}
+else if (_invalidInput)
+{
+    <section class="oc-error-panel" aria-label="Invalid filter">
+        <h2>Invalid Filter Value</h2>
+        <p>One or more filter values are not supported. Supported values &mdash; status: Completed, Failed, Degraded, Pending, Running; sort: newest, oldest, problem-first.</p>
+    </section>
+}
+else if (_overview is null)
+{
+    <p>Loading dashboard data&#8230;</p>
+}
+else
+{
+    var s = _overview.Summary;
+    var trend = _overview.Trend;
+    var topTools = _overview.TopTools;
+    var exceptionTrend = _overview.ExceptionTrend ?? [];
+    var hotResources = _overview.HotResources ?? [];
+    var blast = _overview.BlastRadius;
+    var topDiagnosis = _overview.TopDiagnosis ?? [];
+    var deploymentCorrelation = _overview.DeploymentCorrelation ?? [];
+    var activitySignals = _overview.ActivitySignals;
+    var observabilitySpotlight = _overview.ObservabilitySpotlight;
+    var liveObservabilityEvidence = _overview.LiveObservabilityEvidence;
+    var liveImpactEvidence = _overview.LiveImpactEvidence;
+    var liveBlast = liveImpactEvidence?.BlastRadius;
+    var liveActivitySignals = liveImpactEvidence?.ActivitySignals;
+    var displayBlast = liveBlast ?? blast;
+    var displayActivitySignals = liveActivitySignals ?? activitySignals;
+    var dataFreshness = _overview.DataFreshness;
+    var trendMax = trend.Count > 0 ? trend.Max(x => x.TotalRuns) : 1;
+    var topToolsMax = topTools.Count > 0 ? topTools.Max(x => x.TotalCalls) : 1;
+
+    <section class="oc-dashboard-shell" aria-label="Dashboard operator console">
+        <header class="oc-hero oc-hero-dashboard" aria-label="Dashboard hero">
+            <div class="oc-hero-copy">
+                <span class="oc-eyebrow">Operator Console</span>
+                <h1>Incident Command Dashboard</h1>
+                <p>Unified operational evidence across runs, tools, signal families, and governed diagnostics for tenant <strong>@TenantId</strong>.</p>
+            </div>
+            <div class="oc-hero-metrics" aria-label="Dashboard highlights">
+                <div class="oc-hero-metric">
+                    <span class="oc-hero-metric-label">Health Mix</span>
+                    <strong>@s.Completed completed</strong>
+                    <small>@s.Failed failed, @s.Degraded degraded</small>
+                </div>
+                <div class="oc-hero-metric">
+                    <span class="oc-hero-metric-label">Evidence Coverage</span>
+                    <strong>@($"{s.CitationCoverageRate * 100:F0}%")</strong>
+                    <small>Citations attached to recent runs</small>
+                </div>
+                <div class="oc-hero-metric">
+                    <span class="oc-hero-metric-label">Throughput</span>
+                    <strong>@s.TotalRuns runs</strong>
+                    <small>@(s.AvgDurationMs.HasValue ? $"Avg {(s.AvgDurationMs.Value / 1000.0):F1}s" : "Awaiting duration data")</small>
+                </div>
+            </div>
+        </header>
+
+        @if (dataFreshness is { } freshness)
+        {
+            <section class="oc-panel" aria-label="Live first triage context">
+                <div class="oc-panel-heading">
+                    <div>
+                        <span class="oc-section-kicker">Triage Mode</span>
+                        <h2>Live feed first, historical context second</h2>
+                    </div>
+                </div>
+                <p>
+                    Live observability feed evaluated at @freshness.LiveEvaluatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC.
+                    @if (freshness.LatestHistoricalRunAtUtc.HasValue)
+                    {
+                        <span>Latest historical run in DB: @freshness.LatestHistoricalRunAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC.</span>
+                    }
+                    else
+                    {
+                        <span>No historical runs found for this tenant in the selected window.</span>
+                    }
+                </p>
+                @if (freshness.HistoricalDataIsStale)
+                {
+                    <p class="oc-observability-error">Historical DB projections are stale for incident triage; use live feed details below for active incident analysis.</p>
+                }
+            </section>
+        }
+
+        <form method="get" action="/app/dashboard" class="oc-filter-form oc-toolbar-form">
+            <input type="hidden" name="tenantId" value="@TenantId" />
+
+            <div class="oc-toolbar-field">
+                <label for="oc-from">From:</label>
+                <input id="oc-from" type="date" name="fromUtc" value="@(FromUtc ?? string.Empty)" />
+            </div>
+
+            <div class="oc-toolbar-field">
+                <label for="oc-to">To:</label>
+                <input id="oc-to" type="date" name="toUtc" value="@(ToUtc ?? string.Empty)" />
+            </div>
+
+            <div class="oc-toolbar-field">
+                <label for="oc-sort">Sort</label>
+                <select id="oc-sort" name="sort">
+                    <option value="newest" selected="@(Sort == "newest" || string.IsNullOrEmpty(Sort) ? "selected" : null)">Newest First</option>
+                    <option value="oldest" selected="@(Sort == "oldest" ? "selected" : null)">Oldest First</option>
+                    <option value="problem-first" selected="@(Sort == "problem-first" ? "selected" : null)">Problem First</option>
+                </select>
+            </div>
+
+            <div class="oc-toolbar-field">
+                <label for="oc-status">Status</label>
+                <select id="oc-status" name="status">
+                    <option value="">All</option>
+                    <option value="Completed" selected="@(Status == "Completed" ? "selected" : null)">Completed</option>
+                    <option value="Failed" selected="@(Status == "Failed" ? "selected" : null)">Failed</option>
+                    <option value="Degraded" selected="@(Status == "Degraded" ? "selected" : null)">Degraded</option>
+                    <option value="Pending" selected="@(Status == "Pending" ? "selected" : null)">Pending</option>
+                    <option value="Running" selected="@(Status == "Running" ? "selected" : null)">Running</option>
+                </select>
+            </div>
+
+            <div class="oc-toolbar-field">
+                <label for="oc-limit">Show</label>
+                <input id="oc-limit" type="number" name="limit" value="@(Limit ?? "25")" min="10" max="500" step="5" />
+            </div>
+
+            <button type="submit">Apply</button>
+            <a class="oc-filter-reset" href="@($"/app/dashboard?tenantId={Uri.EscapeDataString(TenantId!)}")">Reset</a>
+        </form>
+
+        @if (!string.IsNullOrEmpty(FromUtc) || !string.IsNullOrEmpty(ToUtc) || !string.IsNullOrEmpty(Status) || !string.IsNullOrEmpty(Sort) || !string.IsNullOrEmpty(Limit))
+        {
+            <div class="oc-filter-active" aria-label="Active filters">
+                <span>Active:</span>
+                @if (!string.IsNullOrEmpty(FromUtc)) { <span class="oc-filter-pill">From: @FromUtc</span> }
+                @if (!string.IsNullOrEmpty(ToUtc))   { <span class="oc-filter-pill">To: @ToUtc</span> }
+                @if (!string.IsNullOrEmpty(Status))  { <span class="oc-filter-pill">Status: @Status</span> }
+                @if (!string.IsNullOrEmpty(Sort))    { <span class="oc-filter-pill">Sort: @Sort</span> }
+                @if (!string.IsNullOrEmpty(Limit))   { <span class="oc-filter-pill">Limit: @Limit</span> }
+                <span>Showing @_overview.RecentRuns.Count of @s.TotalRuns runs</span>
+            </div>
+        }
+
+        <section class="oc-section-intro" aria-label="Dashboard summary intro">
+            <div>
+                <span class="oc-section-kicker">Live Summary</span>
+                <h2>Operational posture at a glance</h2>
+            </div>
+            <p>These cards summarize current run health, evidence density, and processing cost for the selected tenant and filter window.</p>
+        </section>
+
+        <section class="oc-summary-cards oc-summary-cards-primary" aria-label="Run summary">
+            <div class="oc-card"><span class="oc-card-label">Total Runs</span><span class="oc-card-value">@s.TotalRuns</span></div>
+            <div class="oc-card"><span class="oc-card-label">Completed</span><span class="oc-card-value">@s.Completed</span></div>
+            <div class="oc-card"><span class="oc-card-label">Failed</span><span class="oc-card-value">@s.Failed</span></div>
+            <div class="oc-card"><span class="oc-card-label">Degraded</span><span class="oc-card-value">@s.Degraded</span></div>
+            <div class="oc-card"><span class="oc-card-label">Pending</span><span class="oc-card-value">@s.Pending</span></div>
+        </section>
+
+        <section class="oc-summary-cards" aria-label="Extended run summary">
+            <div class="oc-card"><span class="oc-card-label">Running</span><span class="oc-card-value">@s.Running</span></div>
+            <div class="oc-card"><span class="oc-card-label">Citation Coverage</span><span class="oc-card-value">@($"{s.CitationCoverageRate * 100:F0}")%</span></div>
+            @if (s.AvgDurationMs.HasValue)
+            {
+                <div class="oc-card"><span class="oc-card-label">Avg Duration</span><span class="oc-card-value">@((s.AvgDurationMs.Value / 1000.0).ToString("F1"))s</span></div>
+            }
+            @if (s.AvgTotalTokens.HasValue)
+            {
+                <div class="oc-card"><span class="oc-card-label">Avg Tokens</span><span class="oc-card-value">@((int)s.AvgTotalTokens.Value)</span></div>
+            }
+            @if (s.TotalEstimatedCost.HasValue)
+            {
+                <div class="oc-card"><span class="oc-card-label">Est. Cost</span><span class="oc-card-value">$@s.TotalEstimatedCost.Value.ToString("F2")</span></div>
+            }
+        </section>
+
+        <section class="oc-focus-grid" aria-label="Operator focus areas">
+            <article class="oc-focus-card">
+                <span class="oc-section-kicker">Diagnosis</span>
+                <h3>Top hypotheses</h3>
+                <strong class="oc-focus-stat">@topDiagnosis.Count</strong>
+                <p>@(topDiagnosis.Count > 0 ? topDiagnosis[0].Cause : "No deterministic diagnosis hypotheses yet")</p>
+            </article>
+            <article class="oc-focus-card">
+                <span class="oc-section-kicker">Blast Radius</span>
+                <h3>Impacted estate</h3>
+                <strong class="oc-focus-stat">@(displayBlast is null ? "0" : displayBlast.ImpactedResources.ToString())</strong>
+                <p>@(displayBlast is null ? "Blast radius signals not available" : $"{displayBlast.ImpactedApplications} apps across {displayBlast.ImpactedResourceGroups} resource groups")</p>
+            </article>
+            <article class="oc-focus-card">
+                <span class="oc-section-kicker">Governance</span>
+                <h3>Policy activity</h3>
+                <strong class="oc-focus-stat">@(displayActivitySignals?.TotalPolicyEvents.ToString() ?? "0")</strong>
+                <p>@(displayActivitySignals is null ? "No governance activity in current window" : $"{displayActivitySignals.PolicyDenials} denials and {displayActivitySignals.ScopeDenials} scope blocks")</p>
+            </article>
+        </section>
+
+        @if (liveImpactEvidence is { } liveImpact)
+        {
+            var tenantEstate = _overview.TenantEstate;
+            var impactedSubscriptions = liveImpact.BlastRadius?.ImpactedSubscriptions ?? 0;
+
+            <section class="oc-panel" aria-label="Live incident impact">
+                <div class="oc-panel-heading">
+                    <div>
+                        <span class="oc-section-kicker">Live Impact</span>
+                        <h2>Live incident impact feed</h2>
+                    </div>
+                    <small>Source: @liveImpact.Source</small>
+                </div>
+                <section class="oc-summary-cards" aria-label="Live impact source health">
+                    <div class="oc-card"><span class="oc-card-label">Coverage Status</span><span class="oc-card-value">@liveImpact.CoverageStatus</span></div>
+                    <div class="oc-card"><span class="oc-card-label">Actionable</span><span class="oc-card-value">@(liveImpact.IsActionable ? "Yes" : "No")</span></div>
+                    <div class="oc-card"><span class="oc-card-label">Collectors Ready</span><span class="oc-card-value">@liveImpact.SuccessfulCollectors</span></div>
+                    <div class="oc-card"><span class="oc-card-label">Collectors Unavailable</span><span class="oc-card-value">@liveImpact.FailedCollectors</span></div>
+                </section>
+                @if (!string.IsNullOrWhiteSpace(liveImpact.Diagnostic))
+                {
+                    <p class="oc-observability-empty">@liveImpact.Diagnostic</p>
+                }
+                @if (tenantEstate is { } estate)
+                {
+                    <section class="oc-summary-cards" aria-label="Tenant estate summary">
+                        <div class="oc-card"><span class="oc-card-label">Tenant Subscriptions</span><span class="oc-card-value">@estate.AccessibleSubscriptionCount</span></div>
+                        <div class="oc-card"><span class="oc-card-label">Active Subscriptions</span><span class="oc-card-value">@estate.ActiveSubscriptionCount</span></div>
+                        <div class="oc-card"><span class="oc-card-label">Live Impact Scope</span><span class="oc-card-value">@(estate.AccessibleSubscriptionCount > 0 ? $"{impactedSubscriptions} / {estate.AccessibleSubscriptionCount}" : impactedSubscriptions.ToString())</span></div>
+                    </section>
+                    @if (!string.IsNullOrWhiteSpace(estate.Diagnostic))
+                    {
+                        <p class="oc-observability-empty">@estate.Diagnostic</p>
+                    }
+                    @if (estate.Subscriptions.Count > 0)
+                    {
+                        <ul class="oc-observability-highlights">
+                            @foreach (var subscription in estate.Subscriptions.Take(4))
+                            {
+                                <li>@subscription.DisplayName (@subscription.State)</li>
+                            }
+                        </ul>
+                    }
+                }
+                @if (liveImpact.Recommendations is { Count: > 0 } recommendations)
+                {
+                    <ul class="oc-observability-highlights">
+                        @foreach (var step in recommendations.Take(3))
+                        {
+                            <li>@step</li>
+                        }
+                    </ul>
+                }
+                @if (liveImpact.BlastRadius is { } liveBlastSummary)
+                {
+                    <section class="oc-summary-cards" aria-label="Live blast radius summary">
+                        <div class="oc-card"><span class="oc-card-label">Live Impacted Subscriptions</span><span class="oc-card-value">@liveBlastSummary.ImpactedSubscriptions</span></div>
+                        <div class="oc-card"><span class="oc-card-label">Live Impacted Resource Groups</span><span class="oc-card-value">@liveBlastSummary.ImpactedResourceGroups</span></div>
+                        <div class="oc-card"><span class="oc-card-label">Live Impacted Resources</span><span class="oc-card-value">@liveBlastSummary.ImpactedResources</span></div>
+                        <div class="oc-card"><span class="oc-card-label">Live Impacted Applications</span><span class="oc-card-value">@liveBlastSummary.ImpactedApplications</span></div>
+                    </section>
+                }
+                @if (liveImpact.ActivitySignals is { } liveActivity)
+                {
+                    <section class="oc-summary-cards" aria-label="Live policy activity summary">
+                        <div class="oc-card"><span class="oc-card-label">Live Policy Events</span><span class="oc-card-value">@liveActivity.TotalPolicyEvents</span></div>
+                        <div class="oc-card"><span class="oc-card-label">Live Policy Denials</span><span class="oc-card-value">@liveActivity.PolicyDenials</span></div>
+                        <div class="oc-card"><span class="oc-card-label">Live Scope Denials</span><span class="oc-card-value">@liveActivity.ScopeDenials</span></div>
+                        <div class="oc-card"><span class="oc-card-label">Live Budget Denials</span><span class="oc-card-value">@liveActivity.BudgetDenials</span></div>
+                    </section>
+                }
+            </section>
+        }
+
+        @if (_overview.ResourceInventory is { } inventory)
+        {
+            <section class="oc-panel" aria-label="Azure resource inventory">
+                <div class="oc-panel-heading">
+                    <div>
+                        <span class="oc-section-kicker">Azure Estate</span>
+                        <h2>Resource inventory</h2>
+                    </div>
+                    <small>@inventory.ResourceGroups.Count RGs · @inventory.AppInsightsComponents.Count App Insights · @inventory.LogAnalyticsWorkspaces.Count LAW</small>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(inventory.Diagnostic))
+                {
+                    <p class="oc-observability-empty">@inventory.Diagnostic</p>
+                }
+                <section class="oc-summary-cards" aria-label="Resource inventory counts">
+                    <div class="oc-card"><span class="oc-card-label">Resource Groups</span><span class="oc-card-value">@inventory.ResourceGroups.Count</span></div>
+                    <div class="oc-card"><span class="oc-card-label">App Insights</span><span class="oc-card-value">@inventory.AppInsightsComponents.Count</span></div>
+                    <div class="oc-card"><span class="oc-card-label">Log Analytics</span><span class="oc-card-value">@inventory.LogAnalyticsWorkspaces.Count</span></div>
+                </section>
+                @if (inventory.AppInsightsComponents.Count > 0)
+                {
+                    <h3 class="oc-subsection-title">Application Insights</h3>
+                    <ul class="oc-observability-highlights">
+                        @foreach (var ai in inventory.AppInsightsComponents.Take(6))
+                        {
+                            <li>@ai.Name <span class="oc-inline-pill">@ai.ResourceGroup</span>@(string.IsNullOrWhiteSpace(ai.WorkspaceResourceId) ? "" : " · workspace-linked")</li>
+                        }
+                    </ul>
+                }
+                @if (inventory.LogAnalyticsWorkspaces.Count > 0)
+                {
+                    <h3 class="oc-subsection-title">Log Analytics Workspaces</h3>
+                    <ul class="oc-observability-highlights">
+                        @foreach (var law in inventory.LogAnalyticsWorkspaces.Take(6))
+                        {
+                            <li>@law.Name <span class="oc-inline-pill">@law.ResourceGroup</span> · @law.RetentionInDays d@(!string.IsNullOrWhiteSpace(law.Sku) ? $" · {law.Sku}" : "")</li>
+                        }
+                    </ul>
+                }
+                @if (inventory.ResourceGroups.Count > 0)
+                {
+                    <h3 class="oc-subsection-title">Resource Groups (@inventory.ResourceGroups.Count)</h3>
+                    <ul class="oc-observability-highlights">
+                        @foreach (var rg in inventory.ResourceGroups.Take(8))
+                        {
+                            <li>@rg.Name <span class="oc-inline-pill">@rg.Location</span></li>
+                        }
+                    </ul>
+                }
+            </section>
+        }
+
+        @if (observabilitySpotlight is { } spotlight)
+        {
+            var spotlightRunShort = spotlight.RunId.ToString("D").Substring(0, 8);
+            var evidence = spotlight.Evidence;
+
+            <section class="oc-observability-evidence oc-panel" aria-label="App Insights spotlight">
+                <div class="oc-panel-heading">
+                    <div>
+                        <span class="oc-section-kicker">Observability</span>
+                        <h2>App Insights spotlight</h2>
+                    </div>
+                    <small>
+                        <a href="@($"/app/runs/{spotlight.RunId}?tenantId={TenantId}{FilterSuffix}")">run-@spotlightRunShort</a>
+                        · @spotlight.Status · @spotlight.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC
+                    </small>
+                </div>
+                <section class="oc-summary-cards oc-observability-summary" aria-label="App Insights spotlight summary">
+                    <div class="oc-card"><span class="oc-card-label">Collectors</span><span class="oc-card-value">@evidence.CollectorCount</span></div>
+                    <div class="oc-card"><span class="oc-card-label">Ready</span><span class="oc-card-value">@evidence.SuccessfulCollectors</span></div>
+                    <div class="oc-card"><span class="oc-card-label">Unavailable</span><span class="oc-card-value">@evidence.FailedCollectors</span></div>
+                </section>
+                <div class="oc-observability-grid">
+                    @foreach (var collector in evidence.CollectorSummaries)
+                    {
+                        <article class="oc-observability-card">
+                            <div class="oc-observability-card-header">
+                                <div>
+                                    <h3>@collector.Title</h3>
+                                    <span class="oc-inline-pill">@collector.RowCount rows</span>
+                                </div>
+                                <span class="oc-status @(collector.Status == "Ready" ? "oc-status-running" : "oc-status-degraded")">@collector.Status</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(collector.ErrorMessage))
+                            {
+                                <p class="oc-observability-error">@collector.ErrorMessage</p>
+                            }
+                            else if (collector.Highlights.Count > 0)
+                            {
+                                <ul class="oc-observability-highlights">
+                                    @foreach (var highlight in collector.Highlights)
+                                    {
+                                        <li>@highlight</li>
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <p class="oc-observability-empty">No summarised highlights were returned.</p>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(collector.RunbookRef))
+                            {
+                                <a href="@collector.RunbookRef" class="oc-runbook-link" target="_blank" rel="noopener">See runbook →</a>
+                            }
+                        </article>
+                    }
+                </div>
+            </section>
+        }
+        else if (liveObservabilityEvidence is { } evidence)
+        {
+            <section class="oc-observability-evidence oc-panel" aria-label="App Insights live summary">
+                <div class="oc-panel-heading">
+                    <div>
+                        <span class="oc-section-kicker">Observability</span>
+                        <h2>App Insights live summary</h2>
+                    </div>
+                    <small>Live tenant-scoped evidence resolved from the configured workspace</small>
+                </div>
+                <section class="oc-summary-cards oc-observability-summary" aria-label="App Insights live summary metrics">
+                    <div class="oc-card"><span class="oc-card-label">Collectors</span><span class="oc-card-value">@evidence.CollectorCount</span></div>
+                    <div class="oc-card"><span class="oc-card-label">Ready</span><span class="oc-card-value">@evidence.SuccessfulCollectors</span></div>
+                    <div class="oc-card"><span class="oc-card-label">Unavailable</span><span class="oc-card-value">@evidence.FailedCollectors</span></div>
+                </section>
+                <section class="oc-summary-cards" aria-label="App Insights live quality summary">
+                    <div class="oc-card"><span class="oc-card-label">Coverage Status</span><span class="oc-card-value">@evidence.CoverageStatus</span></div>
+                    <div class="oc-card"><span class="oc-card-label">Actionable</span><span class="oc-card-value">@(evidence.IsActionable ? "Yes" : "No")</span></div>
+                </section>
+                @if (!string.IsNullOrWhiteSpace(evidence.Diagnostic))
+                {
+                    <p class="oc-observability-empty">@evidence.Diagnostic</p>
+                }
+                @if (evidence.Recommendations is { Count: > 0 } recommendations)
+                {
+                    <ul class="oc-observability-highlights">
+                        @foreach (var step in recommendations.Take(3))
+                        {
+                            <li>@step</li>
+                        }
+                    </ul>
+                }
+                @if (evidence.CollectorSummaries.All(c => c.RowCount == 0 && string.IsNullOrWhiteSpace(c.ErrorMessage)))
+                {
+                    <p class="oc-observability-empty">Live collectors are healthy but returned no incident rows for the current workspace and time window. Verify tenant workspace mapping or widen incident lookback.</p>
+                }
+                <div class="oc-observability-grid">
+                    @foreach (var collector in evidence.CollectorSummaries)
+                    {
+                        <article class="oc-observability-card">
+                            <div class="oc-observability-card-header">
+                                <div>
+                                    <h3>@collector.Title</h3>
+                                    <span class="oc-inline-pill">@collector.RowCount rows</span>
+                                </div>
+                                <span class="oc-status @(collector.Status == "Ready" ? "oc-status-running" : "oc-status-degraded")">@collector.Status</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(collector.ErrorMessage))
+                            {
+                                <p class="oc-observability-error">@collector.ErrorMessage</p>
+                            }
+                            else if (collector.Highlights.Count > 0)
+                            {
+                                <ul class="oc-observability-highlights">
+                                    @foreach (var highlight in collector.Highlights)
+                                    {
+                                        <li>@highlight</li>
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <p class="oc-observability-empty">No summarised highlights were returned.</p>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(collector.RunbookRef))
+                            {
+                                <a href="@collector.RunbookRef" class="oc-runbook-link" target="_blank" rel="noopener">See runbook →</a>
+                            }
+                        </article>
+                    }
+                </div>
+            </section>
+        }
+
+        <section class="oc-dashboard-charts" aria-label="Analytics snapshot">
+            <article class="oc-chart-card" aria-label="Daily trend chart">
+                <div class="oc-chart-card-header">
+                    <div>
+                        <span class="oc-chart-kicker">Run Velocity</span>
+                        <h2>Daily trend</h2>
+                    </div>
+                    <span class="oc-chart-note">Last @trend.Count buckets</span>
+                </div>
+                @if (trend.Count == 0)
+                {
+                    <p>No trend data available.</p>
+                }
+                else
+                {
+                    <div class="oc-mini-chart oc-mini-line">
+                        @foreach (var point in trend)
+                        {
+                            var heightPct = trendMax <= 0 ? 0 : (point.TotalRuns * 100.0 / trendMax);
+                            <div class="oc-mini-point" title="@($"{point.DateUtc:yyyy-MM-dd}: {point.TotalRuns}")">
+                                <span style="height:@($"{Math.Max(8, heightPct):F0}%")"></span>
+                                <small>@point.DateUtc.ToString("MM/dd")</small>
+                            </div>
+                        }
+                    </div>
+                }
+            </article>
+
+            <article class="oc-chart-card" aria-label="Top tools chart">
+                <div class="oc-chart-card-header">
+                    <div>
+                        <span class="oc-chart-kicker">Execution Profile</span>
+                        <h2>Top tools</h2>
+                    </div>
+                    <span class="oc-chart-note">Most used automation paths</span>
+                </div>
+                @if (topTools.Count == 0)
+                {
+                    <p>No tool usage data available.</p>
+                }
+                else
+                {
+                    <div class="oc-mini-chart oc-mini-bars">
+                        @foreach (var tool in topTools.Take(8))
+                        {
+                            var widthPct = topToolsMax <= 0 ? 0 : (tool.TotalCalls * 100.0 / topToolsMax);
+                            <div class="oc-mini-bar-row" title="@($"{tool.ToolName}: {tool.TotalCalls}")">
+                                <label>@tool.ToolName</label>
+                                <span><i style="width:@($"{Math.Max(6, widthPct):F0}%")"></i></span>
+                            </div>
+                        }
+                    </div>
+                }
+            </article>
+        </section>
+
+        @if (blast is not null)
+        {
+            <section class="oc-summary-cards" aria-label="Historical blast radius summary">
+                <div class="oc-card"><span class="oc-card-label">Impacted Subscriptions</span><span class="oc-card-value">@blast.ImpactedSubscriptions</span></div>
+                <div class="oc-card"><span class="oc-card-label">Impacted Resource Groups</span><span class="oc-card-value">@blast.ImpactedResourceGroups</span></div>
+                <div class="oc-card"><span class="oc-card-label">Impacted Resources</span><span class="oc-card-value">@blast.ImpactedResources</span></div>
+                <div class="oc-card"><span class="oc-card-label">Impacted Applications</span><span class="oc-card-value">@blast.ImpactedApplications</span></div>
+            </section>
+        }
+
+        @if (activitySignals is not null)
+        {
+            <section class="oc-summary-cards" aria-label="Historical activity signal summary">
+                <div class="oc-card"><span class="oc-card-label">Policy Events</span><span class="oc-card-value">@activitySignals.TotalPolicyEvents</span></div>
+                <div class="oc-card"><span class="oc-card-label">Policy Denials</span><span class="oc-card-value">@activitySignals.PolicyDenials</span></div>
+                <div class="oc-card"><span class="oc-card-label">Scope Denials</span><span class="oc-card-value">@activitySignals.ScopeDenials</span></div>
+                <div class="oc-card"><span class="oc-card-label">Budget Denials</span><span class="oc-card-value">@activitySignals.BudgetDenials</span></div>
+            </section>
+        }
+
+        @if (topDiagnosis.Count > 0)
+        {
+            <section class="oc-panel" aria-label="Top diagnosis hypotheses">
+                <div class="oc-panel-heading"><h2>Top Diagnosis</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Cause</th>
+                            <th scope="col">Confidence</th>
+                            <th scope="col">Evidence</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var d in topDiagnosis)
+                    {
+                        <tr>
+                            <td>@d.Cause</td>
+                            <td>@($"{d.Confidence:P0}")</td>
+                            <td>@d.Evidence</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (exceptionTrend.Count > 0)
+        {
+            <section class="oc-panel" aria-label="Exception trend details">
+                <div class="oc-panel-heading"><h2>Exception Trend (Daily)</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Date (UTC)</th>
+                            <th scope="col">Exception Signals</th>
+                            <th scope="col">Failed</th>
+                            <th scope="col">Degraded</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in exceptionTrend)
+                    {
+                        <tr>
+                            <td>@item.DateUtc.ToString("yyyy-MM-dd")</td>
+                            <td>@item.ExceptionSignals</td>
+                            <td>@item.FailedRuns</td>
+                            <td>@item.DegradedRuns</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (deploymentCorrelation.Count > 0)
+        {
+            <section class="oc-panel" aria-label="Deployment correlation details">
+                <div class="oc-panel-heading"><h2>Deployment Correlation (Daily)</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Date (UTC)</th>
+                            <th scope="col">Runs With Changes</th>
+                            <th scope="col">Failed/Degraded</th>
+                            <th scope="col">Failure Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in deploymentCorrelation)
+                    {
+                        <tr>
+                            <td>@item.DateUtc.ToString("yyyy-MM-dd")</td>
+                            <td>@item.RunsWithDeploymentChanges</td>
+                            <td>@item.FailedOrDegradedWithChanges</td>
+                            <td>@($"{item.FailureRate:P0}")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (hotResources.Count > 0)
+        {
+            <section class="oc-panel" aria-label="Hot resources">
+                <div class="oc-panel-heading"><h2>Hot Resources</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Resource</th>
+                            <th scope="col">Resource Group</th>
+                            <th scope="col">Runs</th>
+                            <th scope="col">Exceptions</th>
+                            <th scope="col">Failed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var resource in hotResources)
+                    {
+                        <tr>
+                            <td>@resource.ResourceKey</td>
+                            <td>@(resource.ResourceGroup ?? "—")</td>
+                            <td>@resource.TotalRuns</td>
+                            <td>@resource.ExceptionSignals</td>
+                            <td>@resource.FailedRuns</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        <section class="oc-recent-runs oc-panel" aria-label="Recent runs">
+            <div class="oc-panel-heading">
+                <div>
+                    <span class="oc-section-kicker">Run Ledger</span>
+                    <h2>Recent runs</h2>
+                </div>
+                <small>Showing 1 to @_overview.RecentRuns.Count of @s.TotalRuns runs</small>
+            </div>
+            @if (_overview.RecentRuns.Count == 0)
+            {
+                <p>No runs found for the selected filters.</p>
+            }
+            else
+            {
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Run ID</th>
+                            <th scope="col">Session ID</th>
+                            <th scope="col">Started At</th>
+                            <th scope="col">Duration</th>
+                            <th scope="col">Alert Fingerprint</th>
+                            <th scope="col">View</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var run in _overview.RecentRuns)
+                        {
+                            var runShort = run.RunId.ToString("D").Substring(0, 8);
+                            var duration = run.CompletedAtUtc.HasValue ? $"{(run.CompletedAtUtc.Value - run.CreatedAtUtc).TotalSeconds:F1}s" : "—";
+                            <tr>
+                                <td><a href="@($"/app/runs/{run.RunId}?tenantId={TenantId}{FilterSuffix}")">run-@runShort</a></td>
+                                <td>
+                                    @if (run.SessionId.HasValue)
+                                    {
+                                        <a class="oc-inline-pill" href="@($"/app/sessions/{run.SessionId.Value}?tenantId={TenantId}{FilterSuffix}")">session-@run.SessionId.Value.ToString("D").Substring(0, 8)</a>
+                                    }
+                                    <span class="oc-status oc-status-@(run.Status.ToLowerInvariant())">@run.Status</span>
+                                </td>
+                                <td>@run.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>@duration</td>
+                                <td>@(run.AlertFingerprint ?? "—")</td>
+                                <td><a class="oc-view-btn" href="@($"/app/runs/{run.RunId}?tenantId={TenantId}{FilterSuffix}")">View</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        @if (topTools.Count > 0)
+        {
+            <section class="oc-top-tools oc-panel" aria-label="Top tool usage details">
+                <div class="oc-panel-heading"><h2>Top Tool Usage Details</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Tool</th>
+                            <th scope="col">Total Calls</th>
+                            <th scope="col">Successful</th>
+                            <th scope="col">Failed</th>
+                            <th scope="col">Success Rate</th>
+                            <th scope="col">Avg Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in topTools)
+                        {
+                            <tr>
+                                <td>@t.ToolName</td>
+                                <td>@t.TotalCalls</td>
+                                <td>@t.SuccessfulCalls</td>
+                                <td>@t.FailedCalls</td>
+                                <td>@(t.TotalCalls > 0 ? $"{(double)t.SuccessfulCalls / t.TotalCalls:P0}" : "—")</td>
+                                <td>@(t.AvgDurationMs.ToString("F0")) ms</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (trend.Count > 0)
+        {
+            <section class="oc-trend oc-panel" aria-label="Daily run trend details">
+                <div class="oc-panel-heading"><h2>Daily Trend Details</h2></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Date (UTC)</th>
+                            <th scope="col">Total</th>
+                            <th scope="col">Completed</th>
+                            <th scope="col">Failed</th>
+                            <th scope="col">Degraded</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var tp in trend)
+                        {
+                            <tr>
+                                <td>@tp.DateUtc.ToString("yyyy-MM-dd")</td>
+                                <td>@tp.TotalRuns</td>
+                                <td>@tp.CompletedRuns</td>
+                                <td>@tp.FailedRuns</td>
+                                <td>@tp.DegradedRuns</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "tenantId")]
+    public string? TenantId { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "fromUtc")]
+    public string? FromUtc { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "toUtc")]
+    public string? ToUtc { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "status")]
+    public string? Status { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "sort")]
+    public string? Sort { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "limit")]
+    public string? Limit { get; set; }
+
+    private string FilterSuffix =>
+        (string.IsNullOrEmpty(FromUtc) ? "" : $"&fromUtc={Uri.EscapeDataString(FromUtc)}") +
+        (string.IsNullOrEmpty(ToUtc)   ? "" : $"&toUtc={Uri.EscapeDataString(ToUtc)}")   +
+        (string.IsNullOrEmpty(Status)  ? "" : $"&status={Uri.EscapeDataString(Status)}")  +
+        (string.IsNullOrEmpty(Sort)    ? "" : $"&sort={Uri.EscapeDataString(Sort)}")      +
+        (string.IsNullOrEmpty(Limit)   ? "" : $"&limit={Uri.EscapeDataString(Limit)}");
+
+    private static readonly HashSet<string> ValidStatuses = new(StringComparer.Ordinal)
+        { "Completed", "Failed", "Degraded", "Pending", "Running" };
+
+    private static readonly HashSet<string> ValidSortOrders = new(StringComparer.Ordinal)
+        { "newest", "oldest", "problem-first" };
+
+    private DashboardOverviewResponse? _overview;
+    private bool _loadError;
+    private bool _invalidInput;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(TenantId)) return;
+
+        if ((!string.IsNullOrWhiteSpace(Status) && !ValidStatuses.Contains(Status)) ||
+            (!string.IsNullOrWhiteSpace(Sort) && !ValidSortOrders.Contains(Sort)))
+        {
+            _invalidInput = true;
+            return;
+        }
+
+        try
+        {
+            DateTime? from = null;
+            DateTime? to = null;
+
+            if (!string.IsNullOrWhiteSpace(FromUtc) && DateTime.TryParse(FromUtc, out var f))
+                from = DateTime.SpecifyKind(f, DateTimeKind.Utc);
+            if (!string.IsNullOrWhiteSpace(ToUtc) && DateTime.TryParse(ToUtc, out var t))
+                to = DateTime.SpecifyKind(t, DateTimeKind.Utc);
+
+            int? limitInt = int.TryParse(Limit, out var lv) ? lv : null;
+            _overview = await DashboardSvc.GetOverviewAsync(
+                from, to, TenantId, Status, Sort, limitInt, CancellationToken.None);
+        }
+        catch
+        {
+            _loadError = true;
+        }
+    }
+}

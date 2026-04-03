@@ -1,4 +1,5 @@
 using OpsCopilot.AgentRuns.Domain.Enums;
+using OpsCopilot.AgentRuns.Domain.Models;
 
 namespace OpsCopilot.AgentRuns.Domain.Entities;
 
@@ -12,7 +13,11 @@ public sealed class AgentRun
     // EF Core constructor
     private AgentRun() { }
 
-    public static AgentRun Create(string tenantId, string alertFingerprint, Guid? sessionId = null)
+    public static AgentRun Create(
+        string tenantId,
+        string alertFingerprint,
+        Guid? sessionId = null,
+        RunContext? context = null)
         => new()
         {
             RunId            = Guid.NewGuid(),
@@ -21,6 +26,14 @@ public sealed class AgentRun
             Status           = AgentRunStatus.Pending,
             CreatedAtUtc     = DateTimeOffset.UtcNow,
             SessionId        = sessionId,
+            AlertProvider    = context?.AlertProvider,
+            AlertSourceType  = context?.AlertSourceType,
+            IsExceptionSignal = context?.IsExceptionSignal ?? false,
+            AzureSubscriptionId = context?.AzureSubscriptionId,
+            AzureResourceGroup  = context?.AzureResourceGroup,
+            AzureResourceId     = context?.AzureResourceId,
+            AzureApplication    = context?.AzureApplication,
+            AzureWorkspaceId    = context?.AzureWorkspaceId,
         };
 
     public Guid            RunId            { get; private set; }
@@ -32,6 +45,14 @@ public sealed class AgentRun
     public string?         SummaryJson      { get; private set; }
     public string?         CitationsJson    { get; private set; }
     public Guid?            SessionId        { get; private set; }
+    public string?          AlertProvider    { get; private set; }
+    public string?          AlertSourceType  { get; private set; }
+    public bool             IsExceptionSignal { get; private set; }
+    public string?          AzureSubscriptionId { get; private set; }
+    public string?          AzureResourceGroup  { get; private set; }
+    public string?          AzureResourceId     { get; private set; }
+    public string?          AzureApplication    { get; private set; }
+    public string?          AzureWorkspaceId    { get; private set; }
 
     // Populated by UpdateTokenUsageAsync (set post-completion)
     public string?          RunType      { get; private set; }

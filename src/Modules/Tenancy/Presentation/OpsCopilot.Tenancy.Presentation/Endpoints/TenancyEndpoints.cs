@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using OpsCopilot.Tenancy.Application.Abstractions;
+using OpsCopilot.Tenancy.Application.DTOs;
 
 namespace OpsCopilot.Tenancy.Presentation.Endpoints;
 
@@ -128,6 +129,35 @@ public static class TenancyEndpoints
         .WithName("GetTenantResolvedSettings")
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status404NotFound);
+
+        // POST /tenants/{id}/onboard — run onboarding steps for a tenant
+        group.MapPost("/{id:guid}/onboard", async (
+            Guid id,
+            HttpContext ctx,
+            IOnboardingOrchestrator orchestrator,
+            ITenantRegistry registry,
+            CancellationToken ct) =>
+        {
+            var tenant = await registry.GetByIdAsync(id, ct);
+            if (tenant is null) return Results.NotFound();
+
+            var identity = ctx.Request.Headers["x-identity"].FirstOrDefault();
+            var result = await orchestrator.OnboardAsync(new OnboardingRequest(id, identity), ct);
+
+            return result.IsSuccess
+                ? Results.Accepted(
+                    $"/tenants/{id}",
+                    new OnboardingResponse(result.TenantId, result.Status.ToString(), result.CompletedSteps))
+                : Results.UnprocessableEntity(new
+                {
+                    error = result.ErrorMessage,
+                    failedStep = result.FailedStep
+                });
+        })
+        .WithName("OnboardTenant")
+        .Produces<OnboardingResponse>(StatusCodes.Status202Accepted)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status422UnprocessableEntity);
     }
 
     // ── Request / Response DTOs ──────────────────────────────────────────────
@@ -148,4 +178,9 @@ public static class TenancyEndpoints
         string Value,
         DateTimeOffset UpdatedAtUtc,
         string? UpdatedBy);
+
+    public sealed record OnboardingResponse(
+        Guid TenantId,
+        string Status,
+        IReadOnlyList<string> CompletedSteps);
 }

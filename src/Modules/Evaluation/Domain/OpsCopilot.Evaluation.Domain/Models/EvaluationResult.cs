@@ -9,4 +9,5 @@ public sealed record EvaluationResult(
     bool   Passed,
     string Expected,
     string Actual,
-    string? Reason = null);
+    string? Reason = null,
+    float?  Score  = null);

@@ -26,6 +26,9 @@ public sealed class SafeActionsTelemetry : ISafeActionsTelemetry, IDisposable
     private readonly Counter<long> _queryRequests;
     private readonly Counter<long> _queryValidationFailures;
     private readonly Counter<long> _executionThrottled;
+    private readonly Counter<long> _proposalRecorded;
+    private readonly Counter<long> _rollbackRequested;
+    private readonly Counter<long> _approvalReasonRejected;
 
     public SafeActionsTelemetry()
     {
@@ -74,6 +77,18 @@ public sealed class SafeActionsTelemetry : ISafeActionsTelemetry, IDisposable
         _executionThrottled      = _meter.CreateCounter<long>(
             "safe_actions.execution.throttled",
             description: "Execution attempts denied by throttle policy");
+
+        _proposalRecorded        = _meter.CreateCounter<long>(
+            "safeactions.proposal.recorded",
+            description: "Proposals persisted successfully");
+
+        _rollbackRequested       = _meter.CreateCounter<long>(
+            "safeactions.rollback.requested",
+            description: "Rollback requests initiated");
+
+        _approvalReasonRejected  = _meter.CreateCounter<long>(
+            "safeactions.approval.reason_rejected",
+            description: "Approval decisions blocked by reason validation");
     }
 
     // ── Counter recording methods ────────────────────────────────
@@ -125,6 +140,20 @@ public sealed class SafeActionsTelemetry : ISafeActionsTelemetry, IDisposable
         => _executionThrottled.Add(1,
             new KeyValuePair<string, object?>("action_type", actionType),
             new KeyValuePair<string, object?>("tenant_id", tenantId),
+            new KeyValuePair<string, object?>("operation_kind", operationKind));
+
+    public void RecordProposed(string actionType, string tenantId)
+        => _proposalRecorded.Add(1,
+            new KeyValuePair<string, object?>("action_type", actionType),
+            new KeyValuePair<string, object?>("tenant_id", tenantId));
+
+    public void RecordRollbackRequested(string actionType, string tenantId)
+        => _rollbackRequested.Add(1,
+            new KeyValuePair<string, object?>("action_type", actionType),
+            new KeyValuePair<string, object?>("tenant_id", tenantId));
+
+    public void RecordApprovalReasonRejected(string operationKind)
+        => _approvalReasonRejected.Add(1,
             new KeyValuePair<string, object?>("operation_kind", operationKind));
 
     public void Dispose() => _meter.Dispose();

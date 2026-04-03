@@ -43,7 +43,7 @@ public static class AlertIngestionEndpoints
             var command = new IngestAlertCommand(tenantId, request.Provider, request.Payload);
             var result  = await handler.HandleAsync(command, ct);
 
-            return Results.Ok(new IngestAlertResponse(result.RunId, result.Fingerprint));
+            return Results.Ok(new IngestAlertResponse(result.RunId, result.Fingerprint, result.Dispatched));
         })
         .WithName("PostIngestAlert")
         .WithTags("AlertIngestion")

@@ -240,6 +240,10 @@ public static class SafeActionEndpoints
             {
                 return Results.NotFound();
             }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.Conflict(ex.Message);
@@ -280,6 +284,10 @@ public static class SafeActionEndpoints
             catch (KeyNotFoundException)
             {
                 return Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
             }
             catch (InvalidOperationException ex)
             {
@@ -344,6 +352,10 @@ public static class SafeActionEndpoints
             catch (KeyNotFoundException)
             {
                 return Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
             }
             catch (InvalidOperationException ex)
             {
@@ -412,6 +424,10 @@ public static class SafeActionEndpoints
             {
                 return Results.NotFound();
             }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.Conflict(ex.Message);
@@ -421,6 +437,7 @@ public static class SafeActionEndpoints
         .Accepts<ApproveActionRequest>("application/json")
         .Produces<ActionRecordResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status409Conflict);
 

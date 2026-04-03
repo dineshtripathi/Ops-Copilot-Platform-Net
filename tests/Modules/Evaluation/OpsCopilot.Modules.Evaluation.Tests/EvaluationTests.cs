@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -311,5 +312,144 @@ public class EvaluationTests
             Assert.False(string.IsNullOrWhiteSpace(m.Category));
             Assert.False(string.IsNullOrWhiteSpace(m.Description));
         }
+    }
+
+    // ── Slice 157: AI Quality Evaluation Pipeline ───────────────
+
+    // ── 16. CosineSimilarity with identical vectors → 1.0 ───────
+
+    [Fact]
+    public void CosineSimilarity_IdenticalVectors_ReturnsOne()
+    {
+        var vec = new float[] { 1f, 2f, 3f };
+        var result = GroundednessScorer.CosineSimilarity(vec, vec);
+        Assert.InRange(result, 0.99f, 1.01f);
+    }
+
+    // ── 17. CosineSimilarity with zero vectors → 0.5 (neutral) ─
+
+    [Fact]
+    public void CosineSimilarity_ZeroVectors_ReturnsNeutral()
+    {
+        var zero = new float[] { 0f, 0f, 0f };
+        var result = GroundednessScorer.CosineSimilarity(zero, zero);
+        Assert.Equal(0.5f, result);
+    }
+
+    // ── 18. CosineSimilarity with orthogonal vectors → 0.0 ─────
+
+    [Fact]
+    public void CosineSimilarity_OrthogonalVectors_ReturnsZero()
+    {
+        var a = new float[] { 1f, 0f };
+        var b = new float[] { 0f, 1f };
+        var result = GroundednessScorer.CosineSimilarity(a, b);
+        Assert.InRange(result, -0.01f, 0.01f);
+    }
+
+    // ── 19. GroundednessScorer with NullEmbeddingGenerator → 0.5
+
+    [Fact]
+    public async Task GroundednessScorer_NullEmbeddings_ReturnsNeutralScore()
+    {
+        var scorer = new GroundednessScorer(new TestNullEmbeddingGenerator());
+        var score = await scorer.ScoreAsync("reference text", "candidate text");
+        Assert.Equal(0.5f, score);
+    }
+
+    // ── 20. GetAllScenarios includes LLM-graded when registered ─
+
+    [Fact]
+    public void Catalog_GetAllScenarios_IncludesBothTypes()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(new TestNullEmbeddingGenerator());
+        services.AddEvaluationModule();
+        services.AddEvaluationLlmGraded();
+        using var sp = services.BuildServiceProvider();
+
+        var catalog = sp.GetRequiredService<EvaluationScenarioCatalog>();
+        var all = catalog.GetAllScenarios();
+
+        Assert.True(all.Count > catalog.Scenarios.Count,
+            $"Expected GetAllScenarios ({all.Count}) > deterministic only ({catalog.Scenarios.Count})");
+        Assert.True(catalog.LlmGradedScenarios.Count >= 2,
+            $"Expected ≥2 LLM-graded scenarios, got {catalog.LlmGradedScenarios.Count}");
+    }
+
+    // ── 21. EvaluationRunStore basic lifecycle ──────────────────
+
+    [Fact]
+    public void RunStore_BasicLifecycle()
+    {
+        var store = new EvaluationRunStore();
+        var runId = Guid.NewGuid();
+
+        store.StartRun(runId);
+        var running = store.GetRun(runId);
+        Assert.NotNull(running);
+        Assert.Equal(EvaluationRunStatus.Running, running!.Status);
+
+        var summary = new EvaluationRunSummary(runId, DateTime.UtcNow, 1, 1, 0,
+            new List<EvaluationResult>
+            {
+                new("TEST-001", "Test", true, "x", "x")
+            }.AsReadOnly());
+        store.CompleteRun(runId, summary);
+
+        var completed = store.GetRun(runId);
+        Assert.NotNull(completed);
+        Assert.Equal(EvaluationRunStatus.Completed, completed!.Status);
+        Assert.NotNull(completed.Summary);
+    }
+
+    // ── 22. RunAsync includes both deterministic + LLM-graded ──
+
+    [Fact]
+    public async Task RunAsync_IncludesBothScenarioTypes()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(new TestNullEmbeddingGenerator());
+        services.AddEvaluationModule();
+        services.AddEvaluationLlmGraded();
+        using var sp = services.BuildServiceProvider();
+
+        var runner = sp.GetRequiredService<EvaluationRunner>();
+        var summary = await runner.RunAsync();
+
+        Assert.True(summary.TotalScenarios >= 13,
+            $"Expected ≥13 total scenarios (11 deterministic + 2 LLM-graded), got {summary.TotalScenarios}");
+    }
+
+    // ── 23. EvaluationResult Score field is additive/optional ───
+
+    [Fact]
+    public void EvaluationResult_Score_IsOptional()
+    {
+        var withoutScore = new EvaluationResult("S-1", "Mod", true, "a", "a");
+        Assert.Null(withoutScore.Score);
+
+        var withScore = new EvaluationResult("S-2", "Mod", true, "a", "a", Score: 0.85f);
+        Assert.Equal(0.85f, withScore.Score);
+    }
+
+    // ── Test helpers ────────────────────────────────────────────
+
+    private sealed class TestNullEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
+    {
+        public EmbeddingGeneratorMetadata Metadata { get; } = new("test-null");
+
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values,
+            EmbeddingGenerationOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            var results = new GeneratedEmbeddings<Embedding<float>>(
+                values.Select(_ => new Embedding<float>(new float[1536])).ToList());
+            return Task.FromResult(results);
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public void Dispose() { }
     }
 }

@@ -1,4 +1,5 @@
 using OpsCopilot.AgentRuns.Domain.Repositories;
+using OpsCopilot.AgentRuns.Domain.Models;
 using OpsCopilot.BuildingBlocks.Contracts.AgentRuns;
 
 namespace OpsCopilot.AgentRuns.Infrastructure.Adapters;
@@ -22,5 +23,38 @@ internal sealed class AgentRunCreatorAdapter : IAgentRunCreator
     {
         var run = await _repository.CreateRunAsync(tenantId, alertFingerprint, sessionId, ct);
         return run.RunId;
+    }
+
+    public async Task<Guid> CreateRunAsync(
+        string tenantId,
+        string alertFingerprint,
+        Guid? sessionId = null,
+        AlertRunContext? context = null,
+        CancellationToken ct = default)
+    {
+        var runContext = context is null
+            ? null
+            : new RunContext(
+                AlertProvider: context.AlertProvider,
+                AlertSourceType: context.AlertSourceType,
+                IsExceptionSignal: context.IsExceptionSignal,
+                AzureSubscriptionId: context.AzureSubscriptionId,
+                AzureResourceGroup: context.AzureResourceGroup,
+                AzureResourceId: context.AzureResourceId,
+                AzureApplication: context.AzureApplication,
+                AzureWorkspaceId: context.AzureWorkspaceId);
+
+        var run = await _repository.CreateRunAsync(tenantId, alertFingerprint, sessionId, runContext, ct);
+        return run.RunId;
+    }
+
+    public async Task<Guid?> FindRecentSessionIdAsync(
+        string tenantId,
+        string alertFingerprint,
+        int windowMinutes,
+        CancellationToken ct = default)
+    {
+        var run = await _repository.FindRecentRunAsync(tenantId, alertFingerprint, windowMinutes, ct);
+        return run?.SessionId;
     }
 }
