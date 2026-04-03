@@ -15,6 +15,9 @@
     "sqlAdminLogin": { "value": "opsadmin" },
     "caeName": { "value": "cae-opscopilot-platform-prod-uks" },
     "bootstrapImage": { "value": "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest" },
+    "acrName": { "value": "acropsctpltfprod" },
+    "minReplicas": { "value": 1 },
+    "entraAudience": { "value": "" },
     "budgetAmount": { "value": 100 },
     "budgetEmails": { "value": [] }
   }

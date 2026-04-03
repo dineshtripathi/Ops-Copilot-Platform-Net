@@ -47,6 +47,15 @@ param maxReplicas int = 3
 @description('Environment variables to inject into the container.')
 param envVars array = []
 
+@description('Enable liveness and readiness HTTP probes. Should be true for all ingress-enabled apps.')
+param enableHealthProbes bool = true
+
+@description('HTTP path for the liveness probe. App is restarted after failureThreshold consecutive failures.')
+param livenessProbePath string = '/healthz/live'
+
+@description('HTTP path for the readiness probe. App is removed from LB rotation until it returns 200.')
+param readinessProbePath string = '/healthz/ready'
+
 @description('Tags to apply')
 param tags object
 
@@ -88,6 +97,32 @@ resource containerApp 'Microsoft.App/containerApps@2023-11-02-preview' = {
             memory: memory
           }
           env: envVars
+          // Health probes are only meaningful for ingress-enabled containers.
+          // Workers that have no HTTP endpoint should set enableHealthProbes=false.
+          probes: (enableIngress && enableHealthProbes) ? [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: livenessProbePath
+                port: targetPort
+                scheme: 'HTTP'
+              }
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              failureThreshold: 3
+            }
+            {
+              type: 'Readiness'
+              httpGet: {
+                path: readinessProbePath
+                port: targetPort
+                scheme: 'HTTP'
+              }
+              initialDelaySeconds: 5
+              periodSeconds: 5
+              failureThreshold: 3
+            }
+          ] : []
         }
       ]
       scale: {
