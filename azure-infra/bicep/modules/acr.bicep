@@ -40,8 +40,6 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
     adminUserEnabled: false
     publicNetworkAccess: 'Enabled'
     zoneRedundancy: 'Disabled'
-    // Anonymous pull disabled — images are private.
-    anonymousPullEnabled: false
     // Quarantine policy (off by default, enable on Standard/Premium if content trust needed)
     policies: {
       retentionPolicy: {

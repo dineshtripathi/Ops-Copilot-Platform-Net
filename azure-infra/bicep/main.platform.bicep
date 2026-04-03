@@ -119,17 +119,17 @@ var baseTags = union({
 // secrets into images. Bicep evaluates module outputs lazily (DAG-based), so
 // referencing outputs here is safe even though modules appear later in the file.
 var commonEnvVars = [
-  { name: 'KeyVault__VaultUri'                    value: kv.outputs.keyVaultUri }
-  { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING' value: appInsights.outputs.connectionString }
-  { name: 'WORKSPACE_ID'                          value: law.outputs.customerId }
-  { name: 'ASPNETCORE_ENVIRONMENT'                value: environment == 'prod' ? 'Production' : 'Development' }
-  { name: 'Authentication__Entra__TenantId'       value: entraTenantId }
+  { name: 'KeyVault__VaultUri',                    value: kv.outputs.keyVaultUri }
+  { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
+  { name: 'WORKSPACE_ID',                          value: law.outputs.customerId }
+  { name: 'ASPNETCORE_ENVIRONMENT',                value: environment == 'prod' ? 'Production' : 'Development' }
+  { name: 'Authentication__Entra__TenantId',       value: entraTenantId }
 ]
 
 // API-facing apps (ApiHost, McpHost) additionally receive the Entra audience so
 // the authentication middleware knows which app registration to validate against.
 var apiEnvVars = concat(commonEnvVars, [
-  { name: 'Authentication__Entra__Audience'       value: entraAudience }
+  { name: 'Authentication__Entra__Audience', value: entraAudience }
 ])
 
 // ── Resource Group ────────────────────────────────────────────────────────────
