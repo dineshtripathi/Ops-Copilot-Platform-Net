@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.40.2.10011",
-      "templateHash": "17394772022572449318"
+      "version": "0.42.1.51946",
+      "templateHash": "6226786037362687659"
     }
   },
   "parameters": {
@@ -111,6 +111,36 @@
         "description": "Container image to use when bootstrapping. Overridden during app deployment."
       }
     },
+    "acrName": {
+      "type": "string",
+      "defaultValue": "[format('acropsctpltf{0}', take(uniqueString(subscription().id, parameters('environment')), 6))]",
+      "metadata": {
+        "description": "Azure Container Registry name (5–50 chars, alphanumeric, globally unique). Generated from subscription ID by default."
+      }
+    },
+    "minReplicas": {
+      "type": "int",
+      "defaultValue": 0,
+      "minValue": 0,
+      "maxValue": 3,
+      "metadata": {
+        "description": "Minimum replicas per Container App. 0 = scale-to-zero (safe default). Set to 1 in prod to eliminate cold-start latency during incidents."
+      }
+    },
+    "entraTenantId": {
+      "type": "string",
+      "defaultValue": "[tenant().tenantId]",
+      "metadata": {
+        "description": "Microsoft Entra tenant ID. Defaults to the current tenant."
+      }
+    },
+    "entraAudience": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Microsoft Entra app audience URI (e.g. api://opscopilot) injected into API apps. Leave empty to skip auth middleware configuration."
+      }
+    },
     "budgetAmount": {
       "type": "int",
       "defaultValue": 80,
@@ -171,8 +201,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "10632931293748932311"
+              "version": "0.42.1.51946",
+              "templateHash": "13084292993399901997"
             }
           },
           "parameters": {
@@ -246,8 +276,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "5305769064257336489"
+              "version": "0.42.1.51946",
+              "templateHash": "9512965966047712323"
             }
           },
           "parameters": {
@@ -359,8 +389,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "6439975535222652856"
+              "version": "0.42.1.51946",
+              "templateHash": "10350937918798430201"
             }
           },
           "parameters": {
@@ -457,8 +487,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "16463900608320542855"
+              "version": "0.42.1.51946",
+              "templateHash": "5471497465293038672"
             }
           },
           "parameters": {
@@ -582,8 +612,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "7244387456901793459"
+              "version": "0.42.1.51946",
+              "templateHash": "4029795677302112305"
             }
           },
           "parameters": {
@@ -709,8 +739,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "9014145473352755696"
+              "version": "0.42.1.51946",
+              "templateHash": "219440545746921590"
             }
           },
           "parameters": {
@@ -878,6 +908,112 @@
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
+      "name": "deploy-acr-platform",
+      "resourceGroup": "[parameters('rgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "registryName": {
+            "value": "[parameters('acrName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "skuName": "[if(equals(parameters('environment'), 'prod'), createObject('value', 'Standard'), createObject('value', 'Basic'))]",
+          "tags": {
+            "value": "[variables('baseTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "5700114199123705106"
+            }
+          },
+          "parameters": {
+            "registryName": {
+              "type": "string",
+              "metadata": {
+                "description": "Container Registry name (5–50 chars, alphanumeric only, globally unique)."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply."
+              }
+            },
+            "skuName": {
+              "type": "string",
+              "defaultValue": "Basic",
+              "allowedValues": [
+                "Basic",
+                "Standard"
+              ],
+              "metadata": {
+                "description": "ACR SKU tier. Basic = dev/sandbox. Standard = prod. Premium is not used."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-07-01",
+              "name": "[parameters('registryName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "[parameters('skuName')]"
+              },
+              "properties": {
+                "adminUserEnabled": false,
+                "publicNetworkAccess": "Enabled",
+                "zoneRedundancy": "Disabled",
+                "policies": {
+                  "retentionPolicy": {
+                    "status": "[if(equals(parameters('skuName'), 'Standard'), 'enabled', 'disabled')]",
+                    "days": 7
+                  }
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "registryId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]"
+            },
+            "registryName": {
+              "type": "string",
+              "value": "[parameters('registryName')]"
+            },
+            "loginServer": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/deployments', 'deploy-rg-platform')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
       "name": "deploy-cae-platform",
       "resourceGroup": "[parameters('rgName')]",
       "properties": {
@@ -908,8 +1044,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "15326947864560955836"
+              "version": "0.42.1.51946",
+              "templateHash": "11199583703992611988"
             }
           },
           "parameters": {
@@ -1027,9 +1163,12 @@
             "value": 8080
           },
           "minReplicas": {
-            "value": 0
+            "value": "[parameters('minReplicas')]"
           },
           "maxReplicas": "[if(equals(parameters('environment'), 'prod'), createObject('value', 5), createObject('value', 2))]",
+          "envVars": {
+            "value": "[concat(createArray(createObject('name', 'KeyVault__VaultUri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform'), '2025-04-01').outputs.keyVaultUri.value), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform'), '2025-04-01').outputs.connectionString.value), createObject('name', 'WORKSPACE_ID', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', if(equals(parameters('environment'), 'prod'), 'Production', 'Development')), createObject('name', 'Authentication__Entra__TenantId', 'value', parameters('entraTenantId'))), createArray(createObject('name', 'Authentication__Entra__Audience', 'value', parameters('entraAudience'))))]"
+          },
           "tags": {
             "value": "[variables('baseTags')]"
           }
@@ -1040,8 +1179,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "621242482164562231"
+              "version": "0.42.1.51946",
+              "templateHash": "14384493021510449501"
             }
           },
           "parameters": {
@@ -1128,6 +1267,27 @@
                 "description": "Environment variables to inject into the container."
               }
             },
+            "enableHealthProbes": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable liveness and readiness HTTP probes. Should be true for all ingress-enabled apps."
+              }
+            },
+            "livenessProbePath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP path for the liveness probe. App is restarted after failureThreshold consecutive failures."
+              }
+            },
+            "readinessProbePath": {
+              "type": "string",
+              "defaultValue": "/healthz/ready",
+              "metadata": {
+                "description": "HTTP path for the readiness probe. App is removed from LB rotation until it returns 200."
+              }
+            },
             "tags": {
               "type": "object",
               "metadata": {
@@ -1159,7 +1319,8 @@
                         "cpu": "[json(parameters('cpu'))]",
                         "memory": "[parameters('memory')]"
                       },
-                      "env": "[parameters('envVars')]"
+                      "env": "[parameters('envVars')]",
+                      "probes": "[if(and(parameters('enableIngress'), parameters('enableHealthProbes')), createArray(createObject('type', 'Liveness', 'httpGet', createObject('path', parameters('livenessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 10, 'periodSeconds', 10, 'failureThreshold', 3), createObject('type', 'Readiness', 'httpGet', createObject('path', parameters('readinessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 5, 'periodSeconds', 5, 'failureThreshold', 3)), createArray())]"
                     }
                   ],
                   "scale": {
@@ -1195,7 +1356,10 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-cae-platform')]"
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-cae-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform')]"
       ]
     },
     {
@@ -1231,9 +1395,36 @@
             "value": 8080
           },
           "minReplicas": {
-            "value": 0
+            "value": "[parameters('minReplicas')]"
           },
           "maxReplicas": "[if(equals(parameters('environment'), 'prod'), createObject('value', 3), createObject('value', 1))]",
+          "enableHealthProbes": {
+            "value": false
+          },
+          "envVars": {
+            "value": [
+              {
+                "name": "KeyVault__VaultUri",
+                "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform'), '2025-04-01').outputs.keyVaultUri.value]"
+              },
+              {
+                "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform'), '2025-04-01').outputs.connectionString.value]"
+              },
+              {
+                "name": "WORKSPACE_ID",
+                "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value]"
+              },
+              {
+                "name": "ASPNETCORE_ENVIRONMENT",
+                "value": "[if(equals(parameters('environment'), 'prod'), 'Production', 'Development')]"
+              },
+              {
+                "name": "Authentication__Entra__TenantId",
+                "value": "[parameters('entraTenantId')]"
+              }
+            ]
+          },
           "tags": {
             "value": "[variables('baseTags')]"
           }
@@ -1244,8 +1435,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "621242482164562231"
+              "version": "0.42.1.51946",
+              "templateHash": "14384493021510449501"
             }
           },
           "parameters": {
@@ -1332,6 +1523,27 @@
                 "description": "Environment variables to inject into the container."
               }
             },
+            "enableHealthProbes": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable liveness and readiness HTTP probes. Should be true for all ingress-enabled apps."
+              }
+            },
+            "livenessProbePath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP path for the liveness probe. App is restarted after failureThreshold consecutive failures."
+              }
+            },
+            "readinessProbePath": {
+              "type": "string",
+              "defaultValue": "/healthz/ready",
+              "metadata": {
+                "description": "HTTP path for the readiness probe. App is removed from LB rotation until it returns 200."
+              }
+            },
             "tags": {
               "type": "object",
               "metadata": {
@@ -1363,7 +1575,8 @@
                         "cpu": "[json(parameters('cpu'))]",
                         "memory": "[parameters('memory')]"
                       },
-                      "env": "[parameters('envVars')]"
+                      "env": "[parameters('envVars')]",
+                      "probes": "[if(and(parameters('enableIngress'), parameters('enableHealthProbes')), createArray(createObject('type', 'Liveness', 'httpGet', createObject('path', parameters('livenessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 10, 'periodSeconds', 10, 'failureThreshold', 3), createObject('type', 'Readiness', 'httpGet', createObject('path', parameters('readinessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 5, 'periodSeconds', 5, 'failureThreshold', 3)), createArray())]"
                     }
                   ],
                   "scale": {
@@ -1399,7 +1612,10 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-cae-platform')]"
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-cae-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform')]"
       ]
     },
     {
@@ -1435,9 +1651,12 @@
             "value": 8081
           },
           "minReplicas": {
-            "value": 0
+            "value": "[parameters('minReplicas')]"
           },
           "maxReplicas": "[if(equals(parameters('environment'), 'prod'), createObject('value', 3), createObject('value', 1))]",
+          "envVars": {
+            "value": "[concat(createArray(createObject('name', 'KeyVault__VaultUri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform'), '2025-04-01').outputs.keyVaultUri.value), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform'), '2025-04-01').outputs.connectionString.value), createObject('name', 'WORKSPACE_ID', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', if(equals(parameters('environment'), 'prod'), 'Production', 'Development')), createObject('name', 'Authentication__Entra__TenantId', 'value', parameters('entraTenantId'))), createArray(createObject('name', 'Authentication__Entra__Audience', 'value', parameters('entraAudience'))))]"
+          },
           "tags": {
             "value": "[variables('baseTags')]"
           }
@@ -1448,8 +1667,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "621242482164562231"
+              "version": "0.42.1.51946",
+              "templateHash": "14384493021510449501"
             }
           },
           "parameters": {
@@ -1536,6 +1755,27 @@
                 "description": "Environment variables to inject into the container."
               }
             },
+            "enableHealthProbes": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable liveness and readiness HTTP probes. Should be true for all ingress-enabled apps."
+              }
+            },
+            "livenessProbePath": {
+              "type": "string",
+              "defaultValue": "/healthz/live",
+              "metadata": {
+                "description": "HTTP path for the liveness probe. App is restarted after failureThreshold consecutive failures."
+              }
+            },
+            "readinessProbePath": {
+              "type": "string",
+              "defaultValue": "/healthz/ready",
+              "metadata": {
+                "description": "HTTP path for the readiness probe. App is removed from LB rotation until it returns 200."
+              }
+            },
             "tags": {
               "type": "object",
               "metadata": {
@@ -1567,7 +1807,8 @@
                         "cpu": "[json(parameters('cpu'))]",
                         "memory": "[parameters('memory')]"
                       },
-                      "env": "[parameters('envVars')]"
+                      "env": "[parameters('envVars')]",
+                      "probes": "[if(and(parameters('enableIngress'), parameters('enableHealthProbes')), createArray(createObject('type', 'Liveness', 'httpGet', createObject('path', parameters('livenessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 10, 'periodSeconds', 10, 'failureThreshold', 3), createObject('type', 'Readiness', 'httpGet', createObject('path', parameters('readinessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 5, 'periodSeconds', 5, 'failureThreshold', 3)), createArray())]"
                     }
                   ],
                   "scale": {
@@ -1603,7 +1844,10 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-cae-platform')]"
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-cae-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform')]"
       ]
     },
     {
@@ -1637,8 +1881,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "130334710109447923"
+              "version": "0.42.1.51946",
+              "templateHash": "7441552622959960377"
             }
           },
           "parameters": {
@@ -1860,6 +2104,9 @@
           "lawResourceId": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.workspaceId.value]"
           },
+          "acrResourceId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-acr-platform'), '2025-04-01').outputs.registryId.value]"
+          },
           "apiHostPrincipalId": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-ca-apihost'), '2025-04-01').outputs.principalId.value]"
           },
@@ -1876,8 +2123,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "9702263216073500247"
+              "version": "0.42.1.51946",
+              "templateHash": "8371293705384033700"
             }
           },
           "parameters": {
@@ -1891,6 +2138,13 @@
               "type": "string",
               "metadata": {
                 "description": "Resource ID of the Log Analytics Workspace"
+              }
+            },
+            "acrResourceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Resource ID of the Azure Container Registry. When provided, AcrPull is granted to all three managed identities."
               }
             },
             "apiHostPrincipalId": {
@@ -1913,8 +2167,12 @@
             }
           },
           "variables": {
-            "kvSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e0",
-            "lawReaderRoleId": "73c42c96-874c-492b-b04d-ab87d138a893"
+            "kvSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6",
+            "lawReaderRoleId": "73c42c96-874c-492b-b04d-ab87d138a893",
+            "acrPullRoleId": "7f951dda-4ed3-4680-a7ca-43fe172d538d",
+            "kvSecretsUserRoleDefId": "[format('/providers/Microsoft.Authorization/roleDefinitions/{0}', variables('kvSecretsUserRoleId'))]",
+            "lawReaderRoleDefId": "[format('/providers/Microsoft.Authorization/roleDefinitions/{0}', variables('lawReaderRoleId'))]",
+            "acrPullRoleDefId": "[format('/providers/Microsoft.Authorization/roleDefinitions/{0}', variables('acrPullRoleId'))]"
           },
           "resources": [
             {
@@ -1923,7 +2181,7 @@
               "scope": "[resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/')))]",
               "name": "[guid(resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/'))), parameters('apiHostPrincipalId'), variables('kvSecretsUserRoleId'))]",
               "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('kvSecretsUserRoleId'))]",
+                "roleDefinitionId": "[variables('kvSecretsUserRoleDefId')]",
                 "principalId": "[parameters('apiHostPrincipalId')]",
                 "principalType": "ServicePrincipal",
                 "description": "Key Vault Secrets User — ca-opscopilot-apihost (system MI)"
@@ -1935,7 +2193,7 @@
               "scope": "[resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/')))]",
               "name": "[guid(resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/'))), parameters('workerHostPrincipalId'), variables('kvSecretsUserRoleId'))]",
               "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('kvSecretsUserRoleId'))]",
+                "roleDefinitionId": "[variables('kvSecretsUserRoleDefId')]",
                 "principalId": "[parameters('workerHostPrincipalId')]",
                 "principalType": "ServicePrincipal",
                 "description": "Key Vault Secrets User — ca-opscopilot-workerhost (system MI)"
@@ -1947,7 +2205,7 @@
               "scope": "[resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/')))]",
               "name": "[guid(resourceId('Microsoft.KeyVault/vaults', last(split(parameters('kvResourceId'), '/'))), parameters('mcpHostPrincipalId'), variables('kvSecretsUserRoleId'))]",
               "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('kvSecretsUserRoleId'))]",
+                "roleDefinitionId": "[variables('kvSecretsUserRoleDefId')]",
                 "principalId": "[parameters('mcpHostPrincipalId')]",
                 "principalType": "ServicePrincipal",
                 "description": "Key Vault Secrets User — ca-opscopilot-mcphost (system MI)"
@@ -1959,7 +2217,7 @@
               "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', last(split(parameters('lawResourceId'), '/')))]",
               "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', last(split(parameters('lawResourceId'), '/'))), parameters('apiHostPrincipalId'), variables('lawReaderRoleId'))]",
               "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('lawReaderRoleId'))]",
+                "roleDefinitionId": "[variables('lawReaderRoleDefId')]",
                 "principalId": "[parameters('apiHostPrincipalId')]",
                 "principalType": "ServicePrincipal",
                 "description": "Log Analytics Reader — ca-opscopilot-apihost (system MI)"
@@ -1971,16 +2229,56 @@
               "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', last(split(parameters('lawResourceId'), '/')))]",
               "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', last(split(parameters('lawResourceId'), '/'))), parameters('mcpHostPrincipalId'), variables('lawReaderRoleId'))]",
               "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('lawReaderRoleId'))]",
+                "roleDefinitionId": "[variables('lawReaderRoleDefId')]",
                 "principalId": "[parameters('mcpHostPrincipalId')]",
                 "principalType": "ServicePrincipal",
                 "description": "Log Analytics Reader — ca-opscopilot-mcphost (system MI)"
+              }
+            },
+            {
+              "condition": "[not(empty(parameters('acrResourceId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', last(split(parameters('acrResourceId'), '/')))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', last(split(parameters('acrResourceId'), '/'))), parameters('apiHostPrincipalId'), variables('acrPullRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[variables('acrPullRoleDefId')]",
+                "principalId": "[parameters('apiHostPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "description": "AcrPull — ca-opscopilot-apihost (system MI)"
+              }
+            },
+            {
+              "condition": "[not(empty(parameters('acrResourceId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', last(split(parameters('acrResourceId'), '/')))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', last(split(parameters('acrResourceId'), '/'))), parameters('workerHostPrincipalId'), variables('acrPullRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[variables('acrPullRoleDefId')]",
+                "principalId": "[parameters('workerHostPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "description": "AcrPull — ca-opscopilot-workerhost (system MI)"
+              }
+            },
+            {
+              "condition": "[not(empty(parameters('acrResourceId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', last(split(parameters('acrResourceId'), '/')))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', last(split(parameters('acrResourceId'), '/'))), parameters('mcpHostPrincipalId'), variables('acrPullRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[variables('acrPullRoleDefId')]",
+                "principalId": "[parameters('mcpHostPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "description": "AcrPull — ca-opscopilot-mcphost (system MI)"
               }
             }
           ]
         }
       },
       "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-acr-platform')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-ca-apihost')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-ca-mcphost')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-ca-workerhost')]",
@@ -2015,8 +2313,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "2918745872335246573"
+              "version": "0.42.1.51946",
+              "templateHash": "9595762098810872520"
             }
           },
           "parameters": {
@@ -2187,6 +2485,10 @@
     "mcpHostPrincipalId": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-ca-mcphost'), '2025-04-01').outputs.principalId.value]"
+    },
+    "acrLoginServer": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-acr-platform'), '2025-04-01').outputs.loginServer.value]"
     }
   }
 }

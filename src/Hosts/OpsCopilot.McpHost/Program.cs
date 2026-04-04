@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
+using OpsCopilot.BuildingBlocks.Infrastructure.Configuration;
 using OpsCopilot.McpHost;
 using OpsCopilot.Rag.Presentation.Extensions;
 
@@ -79,6 +80,10 @@ using var bootstrapLoggerFactory = LoggerFactory.Create(lb =>
 var startupLogger = bootstrapLoggerFactory.CreateLogger("Startup");
 
 bool isDevelopment = builder.Environment.IsDevelopment();
+
+builder.Configuration.AddOpsCopilotKeyVault(
+    builder.Configuration["KeyVault:VaultUri"],
+    startupLogger);
 
 // ── Azure credential configuration ──────────────────────────────────────────
 // AzureAuth:Mode selects the strategy:

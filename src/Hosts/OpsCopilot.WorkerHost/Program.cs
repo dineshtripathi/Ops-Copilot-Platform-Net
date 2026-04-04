@@ -1,6 +1,8 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using OpsCopilot.AlertIngestion.Presentation.Extensions;
+using OpsCopilot.BuildingBlocks.Infrastructure.Configuration;
 using OpsCopilot.Connectors.Infrastructure.Extensions;
 using OpsCopilot.Packs.Presentation.Extensions;
 using OpsCopilot.WorkerHost.Workers;
@@ -11,6 +13,14 @@ using OpsCopilot.WorkerHost.Workers;
 // ─────────────────────────────────────────────────────────────────────────────
 
 var builder = Host.CreateApplicationBuilder(args);
+
+using var bootstrapLoggerFactory = LoggerFactory.Create(lb =>
+    lb.AddConsole().SetMinimumLevel(LogLevel.Information));
+var startupLogger = bootstrapLoggerFactory.CreateLogger("Startup");
+startupLogger.LogInformation("[Startup] Environment: {Env}", builder.Environment.EnvironmentName);
+builder.Configuration.AddOpsCopilotKeyVault(
+    builder.Configuration["KeyVault:VaultUri"],
+    startupLogger);
 
 builder.Services.AddConnectorsModule(builder.Configuration);
 builder.Services.AddPacksModule(builder.Configuration);

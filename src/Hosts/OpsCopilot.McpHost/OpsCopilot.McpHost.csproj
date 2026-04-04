@@ -31,6 +31,7 @@
 
   <ItemGroup>
     <!-- RAG module — single Presentation facade hides inner layers -->
+    <ProjectReference Include="..\..\BuildingBlocks\Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Rag\Presentation\OpsCopilot.Rag.Presentation\OpsCopilot.Rag.Presentation.csproj" />
   </ItemGroup>
 

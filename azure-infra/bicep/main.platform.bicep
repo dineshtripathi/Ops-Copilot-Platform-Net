@@ -128,9 +128,15 @@ var commonEnvVars = [
 
 // API-facing apps (ApiHost, McpHost) additionally receive the Entra audience so
 // the authentication middleware knows which app registration to validate against.
-var apiEnvVars = concat(commonEnvVars, [
-  { name: 'Authentication__Entra__Audience', value: entraAudience }
-])
+// When no audience is provided (e.g. dev environments without an app registration),
+// DevBypass mode is enabled so the app starts without Entra JWT validation.
+var apiEnvVars = empty(entraAudience)
+  ? concat(commonEnvVars, [
+      { name: 'Authentication__DevBypass', value: 'true' }
+    ])
+  : concat(commonEnvVars, [
+      { name: 'Authentication__Entra__Audience', value: entraAudience }
+    ])
 
 // ── Resource Group ────────────────────────────────────────────────────────────
 module rg 'modules/rg.bicep' = {

@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\BuildingBlocks\Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure\OpsCopilot.BuildingBlocks.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\AlertIngestion\Presentation\OpsCopilot.AlertIngestion.Presentation\OpsCopilot.AlertIngestion.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Packs\Infrastructure\OpsCopilot.Packs.Infrastructure\OpsCopilot.Packs.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Packs\Presentation\OpsCopilot.Packs.Presentation\OpsCopilot.Packs.Presentation.csproj" />
