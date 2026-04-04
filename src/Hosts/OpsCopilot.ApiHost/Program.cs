@@ -165,11 +165,27 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 // ── Database bootstrap ────────────────────────────────────────────────────────
-await app.UseAgentRunsMigrations();
-await app.UseSafeActionsMigrations();
-await app.UseTenancyMigrations();
-await app.UsePromptingMigrations();
-await app.UseEvaluationMigrations();
+app.Logger.LogInformation("[Startup] Running EF Core migrations...");
+try
+{
+    await app.UseAgentRunsMigrations();
+    app.Logger.LogInformation("[Startup] AgentRuns migrations OK");
+    await app.UseSafeActionsMigrations();
+    app.Logger.LogInformation("[Startup] SafeActions migrations OK");
+    await app.UseTenancyMigrations();
+    app.Logger.LogInformation("[Startup] Tenancy migrations OK");
+    await app.UsePromptingMigrations();
+    app.Logger.LogInformation("[Startup] Prompting migrations OK");
+    await app.UseEvaluationMigrations();
+    app.Logger.LogInformation("[Startup] Evaluation migrations OK — all migrations complete");
+}
+catch (Exception ex)
+{
+    app.Logger.LogCritical(ex,
+        "[Startup] MIGRATION FAILED — {ExceptionType}: {Message}",
+        ex.GetType().Name, ex.Message);
+    throw;
+}
 
 // ── Health probes (Slice 140) — /healthz/live, /healthz/ready, /healthz ─────────
 app.MapOpsCopilotHealthChecks();

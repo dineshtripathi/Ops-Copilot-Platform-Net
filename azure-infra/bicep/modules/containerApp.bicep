@@ -56,6 +56,9 @@ param livenessProbePath string = '/healthz/live'
 @description('HTTP path for the readiness probe. App is removed from LB rotation until it returns 200.')
 param readinessProbePath string = '/healthz/ready'
 
+@description('Seconds to wait before the first liveness probe fires. Increase for apps with slow startup (e.g. DB migrations).')
+param livenessInitialDelaySeconds int = 10
+
 @description('Tags to apply')
 param tags object
 
@@ -107,7 +110,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-11-02-preview' = {
                 port: targetPort
                 scheme: 'HTTP'
               }
-              initialDelaySeconds: 10
+              initialDelaySeconds: livenessInitialDelaySeconds
               periodSeconds: 10
               failureThreshold: 3
             }
