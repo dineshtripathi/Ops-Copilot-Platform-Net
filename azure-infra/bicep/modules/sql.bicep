@@ -100,4 +100,4 @@ output sqlServerId string = sqlServer.id
 output sqlDbId string = sqlDb.id
 output sqlDbName string = sqlDb.name
 // Connection string template — substitute password in pipeline/KV secret
-output connectionStringTemplate string = 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDb.name};User ID=${sqlAdminLogin};Password=<from-keyvault>;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;'
+output connectionStringTemplate string = 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDb.name};User ID=${sqlAdminLogin};Password=<password>;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;'
