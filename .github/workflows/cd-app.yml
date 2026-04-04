@@ -117,6 +117,15 @@ jobs:
             ${{ env.ACR_NAME }}.azurecr.io/opscopilot/workerhost:${{ env.IMAGE_TAG }}
             ${{ env.ACR_NAME }}.azurecr.io/opscopilot/workerhost:latest
 
+      # Re-authenticate: Docker builds can take 15+ minutes, expiring the original
+      # 5-minute OIDC assertion before the Container Apps deployment steps run.
+      - name: Azure Re-Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID_PLATFORM }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PLATFORM }}
+
       # ── Attach ACR to Container Apps (idempotent, RBAC already in place from infra) ──
       - name: Configure ACR registry on Container Apps
         run: |

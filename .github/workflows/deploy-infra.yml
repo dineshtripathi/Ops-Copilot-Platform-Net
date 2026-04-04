@@ -151,6 +151,15 @@ jobs:
             --output json > /tmp/platform-outputs.json
           cat /tmp/platform-outputs.json
 
+      # Re-authenticate: the Bicep deployment can take 15+ minutes, expiring
+      # the original 5-minute OIDC assertion before the KV step runs.
+      - name: Azure Re-Login (Platform SubA)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_PLATFORM }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PLATFORM }}
+
       - name: Store SQL connection string in Key Vault
         run: |
           KV_NAME=$(jq -r '.keyVaultId.value' /tmp/platform-outputs.json | awk -F'/' '{print $NF}')
