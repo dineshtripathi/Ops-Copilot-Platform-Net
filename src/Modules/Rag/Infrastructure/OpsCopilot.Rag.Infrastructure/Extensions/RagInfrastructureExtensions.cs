@@ -119,10 +119,13 @@ public static class RagInfrastructureExtensions
         // Walk up from AppContext.BaseDirectory to find the .sln file,
         // which works regardless of which host (ApiHost or McpHost) loaded
         // this assembly.
-        var solutionRoot = DiscoverSolutionRoot()
-                           ?? throw new InvalidOperationException(
-                               "Cannot find solution root (*.sln) from " + AppContext.BaseDirectory);
-        return Path.Combine(solutionRoot, "docs", "runbooks", "dev-seed");
+        var solutionRoot = DiscoverSolutionRoot();
+        if (solutionRoot is not null)
+            return Path.Combine(solutionRoot, "docs", "runbooks", "dev-seed");
+
+        // Container / cloud environments: no solution root on disk.
+        // LoadFromDirectory handles non-existent paths gracefully (returns []).
+        return Path.Combine(AppContext.BaseDirectory, "runbooks");
     }
 
     /// <summary>
