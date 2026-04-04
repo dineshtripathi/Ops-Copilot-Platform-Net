@@ -270,7 +270,7 @@ module caApiHost 'modules/containerApp.bicep' = {
     tags: baseTags
     // ApiHost runs EF Core migrations synchronously before app.Run(). Give the
     // liveness probe enough time for all migrations to complete (~60s on Basic SQL).
-    livenessInitialDelaySeconds: 90
+    livenessInitialDelaySeconds: 60
   }
 }
 
