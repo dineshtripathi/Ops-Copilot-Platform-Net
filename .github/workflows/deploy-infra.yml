@@ -167,9 +167,9 @@ jobs:
           CONN="${CONN_TMPL//<password>/${{ secrets.SQL_ADMIN_PASSWORD_PLATFORM }}}"
           az keyvault secret set \
             --vault-name "$KV_NAME" \
-            --name "SqlConnectionString" \
+            --name "ConnectionStrings--Sql" \
             --value "$CONN"
-          echo "SQL connection string stored in KV: $KV_NAME"
+          echo "SQL connection string stored in KV as 'ConnectionStrings--Sql': $KV_NAME"
 
       - name: Deployment summary (Platform)
         if: always()
