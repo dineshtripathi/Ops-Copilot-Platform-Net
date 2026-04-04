@@ -40,7 +40,13 @@ using OpsCopilot.Rag.Presentation.Extensions;
 // When clients spawn McpHost as a child process they redirect stdin; that is
 // the reliable signal that we are in stdio-pipe mode.  All other invocations
 // (Azure Container Apps, manual dotnet run) use HTTP transport on port 8081.
-bool isStdioPipeMode = Console.IsInputRedirected;
+//
+// IMPORTANT: Azure Container Apps also redirects stdin (for log capture), so
+// Console.IsInputRedirected returns true in the container — a false positive.
+// Guard against this by checking the Container Apps identity env var.
+bool isInContainerApp = !string.IsNullOrEmpty(
+    Environment.GetEnvironmentVariable("CONTAINER_APP_NAME"));
+bool isStdioPipeMode = Console.IsInputRedirected && !isInContainerApp;
 
 // ── Win32 stdin handle non-inheritance guard ──────────────────────────────────
 // Azure.Identity's AzureCliCredential (and AzurePowerShellCredential) spawn child
