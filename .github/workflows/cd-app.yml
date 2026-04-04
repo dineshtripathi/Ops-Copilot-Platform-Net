@@ -139,11 +139,22 @@ jobs:
             "ca-opscopilot-apihost-${{ env.TARGET_ENV }}" \
             "ca-opscopilot-mcphost-${{ env.TARGET_ENV }}" \
             "ca-opscopilot-workerhost-${{ env.TARGET_ENV }}"; do
-            az containerapp registry set \
-              --name "$APP" \
-              --resource-group "$RG" \
-              --server "${{ env.ACR_NAME }}.azurecr.io" \
-              --identity system
+            for attempt in 1 2 3; do
+              if az containerapp registry set \
+                  --name "$APP" \
+                  --resource-group "$RG" \
+                  --server "${{ env.ACR_NAME }}.azurecr.io" \
+                  --identity system 2>&1; then
+                break
+              fi
+              if [ "$attempt" -lt 3 ]; then
+                echo "Attempt $attempt failed for $APP (may be ContainerAppOperationInProgress). Retrying in 30s..."
+                sleep 30
+              else
+                echo "All attempts failed for $APP — failing step."
+                exit 1
+              fi
+            done
           done
 
       # ── Deploy to Container Apps ───────────────────────────────
