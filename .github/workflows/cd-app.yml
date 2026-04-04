@@ -134,11 +134,11 @@ jobs:
             "ca-opscopilot-apihost-${{ env.TARGET_ENV }}" \
             "ca-opscopilot-mcphost-${{ env.TARGET_ENV }}" \
             "ca-opscopilot-workerhost-${{ env.TARGET_ENV }}"; do
-            az containerapp registry add \
+            az containerapp update \
               --name "$APP" \
               --resource-group "$RG" \
-              --server "${{ env.ACR_NAME }}.azurecr.io" \
-              --identity system
+              --registry-server "${{ env.ACR_NAME }}.azurecr.io" \
+              --registry-identity system
           done
 
       # ── Deploy to Container Apps ───────────────────────────────
