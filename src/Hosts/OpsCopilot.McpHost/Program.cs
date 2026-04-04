@@ -4,6 +4,7 @@ using Azure.Identity;
 using Azure.Monitor.Query;
 using Azure.ResourceManager;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
@@ -246,6 +247,10 @@ builder.Services.AddRagModule(builder.Configuration);
 // ── HTTP client factory (for safe-actions and future REST tool calls) ────────
 builder.Services.AddHttpClient();
 
+// ── Health probes — /healthz/live and /healthz/ready for Container Apps ───────
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy("McpHost is responsive"));
+
 // ── RAG diagnostics — log base path so runbook resolution issues are obvious ──
 {
     var ragBasePath = builder.Configuration["Rag:RunbookBasePath"] ?? "(default — embedded)";
@@ -347,11 +352,16 @@ if (!isStdioPipeMode)
     app.UseMiddleware<McpApiKeyMiddleware>();
 }
 
-// Register the MCP SSE endpoint in HTTP mode only.
+// Register the MCP SSE endpoint and health probes in HTTP mode only.
 // In stdio-pipe mode the server communicates over stdin/stdout; MapMcp requires
 // HTTP transport services and must not be called in stdio mode.
 if (!isStdioPipeMode)
+{
+    app.MapHealthChecks("/healthz/live").AllowAnonymous();
+    app.MapHealthChecks("/healthz/ready").AllowAnonymous();
+    app.MapHealthChecks("/healthz").AllowAnonymous();
     app.MapMcp("/mcp");
+}
 
 await app.RunAsync();
 
