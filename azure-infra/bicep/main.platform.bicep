@@ -255,6 +255,7 @@ module caApiHost 'modules/containerApp.bicep' = {
     location: location
     caeId: cae.outputs.caeId
     image: bootstrapImage
+    acrLoginServer: acr.outputs.loginServer
     enableIngress: true
     isExternalIngress: true
     targetPort: 8080
@@ -274,6 +275,7 @@ module caWorkerHost 'modules/containerApp.bicep' = {
     location: location
     caeId: cae.outputs.caeId
     image: bootstrapImage
+    acrLoginServer: acr.outputs.loginServer
     enableIngress: false
     isExternalIngress: false
     targetPort: 8080
@@ -294,6 +296,7 @@ module caMcpHost 'modules/containerApp.bicep' = {
     location: location
     caeId: cae.outputs.caeId
     image: bootstrapImage
+    acrLoginServer: acr.outputs.loginServer
     enableIngress: true
     isExternalIngress: true
     targetPort: 8081
