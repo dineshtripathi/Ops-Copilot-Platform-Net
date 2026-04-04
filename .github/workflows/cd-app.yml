@@ -127,6 +127,11 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PLATFORM }}
 
       # ── Attach ACR to Container Apps (idempotent, RBAC already in place from infra) ──
+      # 'az containerapp registry set --identity system' is in the containerapp extension
+      # but the pinned version on ubuntu-latest runners may be older — upgrade first.
+      - name: Upgrade Container Apps CLI extension
+        run: az extension add --name containerapp --upgrade --yes
+
       - name: Configure ACR registry on Container Apps
         run: |
           RG="rg-opscopilot-platform-${{ env.TARGET_ENV }}-uks"
@@ -134,11 +139,11 @@ jobs:
             "ca-opscopilot-apihost-${{ env.TARGET_ENV }}" \
             "ca-opscopilot-mcphost-${{ env.TARGET_ENV }}" \
             "ca-opscopilot-workerhost-${{ env.TARGET_ENV }}"; do
-            az containerapp update \
+            az containerapp registry set \
               --name "$APP" \
               --resource-group "$RG" \
-              --registry-server "${{ env.ACR_NAME }}.azurecr.io" \
-              --registry-identity system
+              --server "${{ env.ACR_NAME }}.azurecr.io" \
+              --identity system
           done
 
       # ── Deploy to Container Apps ───────────────────────────────
