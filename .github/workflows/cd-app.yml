@@ -117,6 +117,21 @@ jobs:
             ${{ env.ACR_NAME }}.azurecr.io/opscopilot/workerhost:${{ env.IMAGE_TAG }}
             ${{ env.ACR_NAME }}.azurecr.io/opscopilot/workerhost:latest
 
+      # ── Attach ACR to Container Apps (idempotent, RBAC already in place from infra) ──
+      - name: Configure ACR registry on Container Apps
+        run: |
+          RG="rg-opscopilot-platform-${{ env.TARGET_ENV }}-uks"
+          for APP in \
+            "ca-opscopilot-apihost-${{ env.TARGET_ENV }}" \
+            "ca-opscopilot-mcphost-${{ env.TARGET_ENV }}" \
+            "ca-opscopilot-workerhost-${{ env.TARGET_ENV }}"; do
+            az containerapp registry add \
+              --name "$APP" \
+              --resource-group "$RG" \
+              --server "${{ env.ACR_NAME }}.azurecr.io" \
+              --identity system
+          done
+
       # ── Deploy to Container Apps ───────────────────────────────
       - name: Deploy ApiHost
         run: |

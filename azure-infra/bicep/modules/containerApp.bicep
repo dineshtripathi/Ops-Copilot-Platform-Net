@@ -59,9 +59,6 @@ param readinessProbePath string = '/healthz/ready'
 @description('Tags to apply')
 param tags object
 
-@description('ACR login server (e.g. myacr.azurecr.io). When provided the app pulls images via its system-assigned identity. Leave empty for the public bootstrap placeholder.')
-param acrLoginServer string = ''
-
 // ── Container App resource ──────────────────────────────────
 resource containerApp 'Microsoft.App/containerApps@2023-11-02-preview' = {
   name: appName
@@ -76,14 +73,6 @@ resource containerApp 'Microsoft.App/containerApps@2023-11-02-preview' = {
   properties: {
     managedEnvironmentId: caeId
     configuration: {
-      // Allow the system-assigned managed identity to pull images from ACR
-      // without storing any credential in the app configuration.
-      registries: acrLoginServer != '' ? [
-        {
-          server: acrLoginServer
-          identity: 'system'
-        }
-      ] : []
       ingress: enableIngress
         ? {
             external: isExternalIngress
