@@ -65,10 +65,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Azure Login (Platform SubA)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID_PLATFORM }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -168,7 +168,7 @@ jobs:
       # Re-authenticate: the Bicep deployment can take 15+ minutes, expiring
       # the original 5-minute OIDC assertion before the KV step runs.
       - name: Azure Re-Login (Platform SubA)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID_PLATFORM }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -215,10 +215,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Azure Login (AI SubB)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID_AI }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -352,10 +352,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Azure Login (AI SubB)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID_AI }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}

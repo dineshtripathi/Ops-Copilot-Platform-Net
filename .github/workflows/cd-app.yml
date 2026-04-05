@@ -57,11 +57,11 @@ jobs:
     steps:
       # ── Checkout ──────────────────────────────────────────────
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # ── Azure OIDC login ───────────────────────────────────────
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id:       ${{ secrets.AZURE_CLIENT_ID_PLATFORM }}
           tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
@@ -120,7 +120,7 @@ jobs:
       # Re-authenticate: Docker builds can take 15+ minutes, expiring the original
       # 5-minute OIDC assertion before the Container Apps deployment steps run.
       - name: Azure Re-Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id:       ${{ secrets.AZURE_CLIENT_ID_PLATFORM }}
           tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
