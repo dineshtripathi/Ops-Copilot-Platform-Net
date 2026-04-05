@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "6226786037362687659"
+      "templateHash": "18089222693946151438"
     }
   },
   "parameters": {
@@ -168,10 +168,65 @@
       "metadata": {
         "description": "Extra tags to merge onto all resources."
       }
+    },
+    "aoaiEndpoint": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Azure OpenAI endpoint from the AI subscription (e.g. https://aoai-opscopilot-ai-dev-uks.openai.azure.com/). Leave empty to disable LLM and RAG embedding."
+      }
+    },
+    "aoaiChatDeploymentName": {
+      "type": "string",
+      "defaultValue": "gpt-4o-mini",
+      "metadata": {
+        "description": "Azure OpenAI chat model deployment name."
+      }
+    },
+    "aoaiEmbeddingDeploymentName": {
+      "type": "string",
+      "defaultValue": "text-embedding-3-small",
+      "metadata": {
+        "description": "Azure OpenAI embedding model deployment name."
+      }
+    },
+    "ragVectorBackend": {
+      "type": "string",
+      "defaultValue": "Qdrant",
+      "allowedValues": [
+        "InMemory",
+        "Qdrant",
+        "AzureAISearch"
+      ],
+      "metadata": {
+        "description": "Vector store backend: \"Qdrant\" routes to the deployed Qdrant Container App; \"AzureAISearch\" routes to an external search instance; \"InMemory\" persists nothing and is for dev/test only."
+      }
+    },
+    "ragUseVectorRunbooks": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable vector-backed runbook retrieval (requires a working embedding deployment)."
+      }
+    },
+    "ragUseVectorMemory": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable vector-backed incident memory (requires a working embedding deployment)."
+      }
+    },
+    "aiSearchEndpoint": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Azure AI Search endpoint. Required only when ragVectorBackend is \"AzureAISearch\"."
+      }
     }
   },
   "variables": {
-    "baseTags": "[union(createObject('environment', parameters('environment'), 'platform', 'opscopilot', 'subscription', 'platform', 'managedBy', 'bicep'), parameters('extraTags'))]"
+    "baseTags": "[union(createObject('environment', parameters('environment'), 'platform', 'opscopilot', 'subscription', 'platform', 'managedBy', 'bicep'), parameters('extraTags'))]",
+    "aiLlmEnvVars": "[if(not(empty(parameters('aoaiEndpoint'))), createArray(createObject('name', 'AI__Provider', 'value', 'AzureOpenAI'), createObject('name', 'AI__AzureOpenAI__Endpoint', 'value', parameters('aoaiEndpoint')), createObject('name', 'AI__AzureOpenAI__DeploymentName', 'value', parameters('aoaiChatDeploymentName')), createObject('name', 'AI__AzureOpenAI__EmbeddingDeploymentName', 'value', parameters('aoaiEmbeddingDeploymentName'))), createArray())]"
   },
   "resources": [
     {
@@ -740,7 +795,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "219440545746921590"
+              "templateHash": "7649846000812122776"
             }
           },
           "parameters": {
@@ -896,7 +951,7 @@
             },
             "connectionStringTemplate": {
               "type": "string",
-              "value": "[format('Server=tcp:{0},1433;Database={1};User ID={2};Password=<from-keyvault>;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;', reference(resourceId('Microsoft.Sql/servers', parameters('sqlServerName')), '2023-05-01-preview').fullyQualifiedDomainName, parameters('sqlDbName'), parameters('sqlAdminLogin'))]"
+              "value": "[format('Server=tcp:{0},1433;Database={1};User ID={2};Password=<password>;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;', reference(resourceId('Microsoft.Sql/servers', parameters('sqlServerName')), '2023-05-01-preview').fullyQualifiedDomainName, parameters('sqlDbName'), parameters('sqlAdminLogin'))]"
             }
           }
         }
@@ -1166,11 +1221,12 @@
             "value": "[parameters('minReplicas')]"
           },
           "maxReplicas": "[if(equals(parameters('environment'), 'prod'), createObject('value', 5), createObject('value', 2))]",
-          "envVars": {
-            "value": "[concat(createArray(createObject('name', 'KeyVault__VaultUri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform'), '2025-04-01').outputs.keyVaultUri.value), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform'), '2025-04-01').outputs.connectionString.value), createObject('name', 'WORKSPACE_ID', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', if(equals(parameters('environment'), 'prod'), 'Production', 'Development')), createObject('name', 'Authentication__Entra__TenantId', 'value', parameters('entraTenantId'))), createArray(createObject('name', 'Authentication__Entra__Audience', 'value', parameters('entraAudience'))))]"
-          },
+          "envVars": "[if(empty(parameters('entraAudience')), createObject('value', concat(concat(createArray(createObject('name', 'KeyVault__VaultUri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform'), '2025-04-01').outputs.keyVaultUri.value), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform'), '2025-04-01').outputs.connectionString.value), createObject('name', 'WORKSPACE_ID', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', if(equals(parameters('environment'), 'prod'), 'Production', 'Development')), createObject('name', 'Authentication__Entra__TenantId', 'value', parameters('entraTenantId')), createObject('name', 'SafeActions__AllowedLogAnalyticsWorkspaceIds__0', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value)), variables('aiLlmEnvVars'), createArray(createObject('name', 'Rag__VectorBackend', 'value', parameters('ragVectorBackend')), createObject('name', 'Rag__UseVectorRunbooks', 'value', string(parameters('ragUseVectorRunbooks'))), createObject('name', 'Rag__UseVectorMemory', 'value', string(parameters('ragUseVectorMemory'))), createObject('name', 'Rag__Qdrant__Host', 'value', if(parameters('enableStorage'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-qdrant'), '2025-04-01').outputs.qdrantFqdn.value, '')), createObject('name', 'Rag__Qdrant__Port', 'value', '6334'), createObject('name', 'Rag__AzureAISearch__Endpoint', 'value', parameters('aiSearchEndpoint')))), createArray(createObject('name', 'Authentication__DevBypass', 'value', 'true')))), createObject('value', concat(concat(createArray(createObject('name', 'KeyVault__VaultUri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform'), '2025-04-01').outputs.keyVaultUri.value), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform'), '2025-04-01').outputs.connectionString.value), createObject('name', 'WORKSPACE_ID', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', if(equals(parameters('environment'), 'prod'), 'Production', 'Development')), createObject('name', 'Authentication__Entra__TenantId', 'value', parameters('entraTenantId')), createObject('name', 'SafeActions__AllowedLogAnalyticsWorkspaceIds__0', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value)), variables('aiLlmEnvVars'), createArray(createObject('name', 'Rag__VectorBackend', 'value', parameters('ragVectorBackend')), createObject('name', 'Rag__UseVectorRunbooks', 'value', string(parameters('ragUseVectorRunbooks'))), createObject('name', 'Rag__UseVectorMemory', 'value', string(parameters('ragUseVectorMemory'))), createObject('name', 'Rag__Qdrant__Host', 'value', if(parameters('enableStorage'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-qdrant'), '2025-04-01').outputs.qdrantFqdn.value, '')), createObject('name', 'Rag__Qdrant__Port', 'value', '6334'), createObject('name', 'Rag__AzureAISearch__Endpoint', 'value', parameters('aiSearchEndpoint')))), createArray(createObject('name', 'Authentication__Entra__Audience', 'value', parameters('entraAudience'))))))]",
           "tags": {
             "value": "[variables('baseTags')]"
+          },
+          "livenessInitialDelaySeconds": {
+            "value": 60
           }
         },
         "template": {
@@ -1180,7 +1236,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "14384493021510449501"
+              "templateHash": "685058200540481600"
             }
           },
           "parameters": {
@@ -1288,6 +1344,13 @@
                 "description": "HTTP path for the readiness probe. App is removed from LB rotation until it returns 200."
               }
             },
+            "livenessInitialDelaySeconds": {
+              "type": "int",
+              "defaultValue": 10,
+              "metadata": {
+                "description": "Seconds to wait before the first liveness probe fires. Increase for apps with slow startup (e.g. DB migrations)."
+              }
+            },
             "tags": {
               "type": "object",
               "metadata": {
@@ -1320,7 +1383,7 @@
                         "memory": "[parameters('memory')]"
                       },
                       "env": "[parameters('envVars')]",
-                      "probes": "[if(and(parameters('enableIngress'), parameters('enableHealthProbes')), createArray(createObject('type', 'Liveness', 'httpGet', createObject('path', parameters('livenessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 10, 'periodSeconds', 10, 'failureThreshold', 3), createObject('type', 'Readiness', 'httpGet', createObject('path', parameters('readinessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 5, 'periodSeconds', 5, 'failureThreshold', 3)), createArray())]"
+                      "probes": "[if(and(parameters('enableIngress'), parameters('enableHealthProbes')), createArray(createObject('type', 'Liveness', 'httpGet', createObject('path', parameters('livenessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', parameters('livenessInitialDelaySeconds'), 'periodSeconds', 10, 'failureThreshold', 3), createObject('type', 'Readiness', 'httpGet', createObject('path', parameters('readinessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 5, 'periodSeconds', 5, 'failureThreshold', 3)), createArray())]"
                     }
                   ],
                   "scale": {
@@ -1359,7 +1422,8 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-cae-platform')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform')]"
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-qdrant')]"
       ]
     },
     {
@@ -1402,28 +1466,7 @@
             "value": false
           },
           "envVars": {
-            "value": [
-              {
-                "name": "KeyVault__VaultUri",
-                "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform'), '2025-04-01').outputs.keyVaultUri.value]"
-              },
-              {
-                "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
-                "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform'), '2025-04-01').outputs.connectionString.value]"
-              },
-              {
-                "name": "WORKSPACE_ID",
-                "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value]"
-              },
-              {
-                "name": "ASPNETCORE_ENVIRONMENT",
-                "value": "[if(equals(parameters('environment'), 'prod'), 'Production', 'Development')]"
-              },
-              {
-                "name": "Authentication__Entra__TenantId",
-                "value": "[parameters('entraTenantId')]"
-              }
-            ]
+            "value": "[concat(createArray(createObject('name', 'KeyVault__VaultUri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform'), '2025-04-01').outputs.keyVaultUri.value), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform'), '2025-04-01').outputs.connectionString.value), createObject('name', 'WORKSPACE_ID', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', if(equals(parameters('environment'), 'prod'), 'Production', 'Development')), createObject('name', 'Authentication__Entra__TenantId', 'value', parameters('entraTenantId')), createObject('name', 'SafeActions__AllowedLogAnalyticsWorkspaceIds__0', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value)), variables('aiLlmEnvVars'), createArray(createObject('name', 'Rag__VectorBackend', 'value', parameters('ragVectorBackend')), createObject('name', 'Rag__UseVectorRunbooks', 'value', string(parameters('ragUseVectorRunbooks'))), createObject('name', 'Rag__UseVectorMemory', 'value', string(parameters('ragUseVectorMemory'))), createObject('name', 'Rag__Qdrant__Host', 'value', if(parameters('enableStorage'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-qdrant'), '2025-04-01').outputs.qdrantFqdn.value, '')), createObject('name', 'Rag__Qdrant__Port', 'value', '6334'), createObject('name', 'Rag__AzureAISearch__Endpoint', 'value', parameters('aiSearchEndpoint'))))]"
           },
           "tags": {
             "value": "[variables('baseTags')]"
@@ -1436,7 +1479,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "14384493021510449501"
+              "templateHash": "685058200540481600"
             }
           },
           "parameters": {
@@ -1544,6 +1587,13 @@
                 "description": "HTTP path for the readiness probe. App is removed from LB rotation until it returns 200."
               }
             },
+            "livenessInitialDelaySeconds": {
+              "type": "int",
+              "defaultValue": 10,
+              "metadata": {
+                "description": "Seconds to wait before the first liveness probe fires. Increase for apps with slow startup (e.g. DB migrations)."
+              }
+            },
             "tags": {
               "type": "object",
               "metadata": {
@@ -1576,7 +1626,7 @@
                         "memory": "[parameters('memory')]"
                       },
                       "env": "[parameters('envVars')]",
-                      "probes": "[if(and(parameters('enableIngress'), parameters('enableHealthProbes')), createArray(createObject('type', 'Liveness', 'httpGet', createObject('path', parameters('livenessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 10, 'periodSeconds', 10, 'failureThreshold', 3), createObject('type', 'Readiness', 'httpGet', createObject('path', parameters('readinessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 5, 'periodSeconds', 5, 'failureThreshold', 3)), createArray())]"
+                      "probes": "[if(and(parameters('enableIngress'), parameters('enableHealthProbes')), createArray(createObject('type', 'Liveness', 'httpGet', createObject('path', parameters('livenessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', parameters('livenessInitialDelaySeconds'), 'periodSeconds', 10, 'failureThreshold', 3), createObject('type', 'Readiness', 'httpGet', createObject('path', parameters('readinessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 5, 'periodSeconds', 5, 'failureThreshold', 3)), createArray())]"
                     }
                   ],
                   "scale": {
@@ -1615,7 +1665,8 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-cae-platform')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform')]"
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-qdrant')]"
       ]
     },
     {
@@ -1654,9 +1705,7 @@
             "value": "[parameters('minReplicas')]"
           },
           "maxReplicas": "[if(equals(parameters('environment'), 'prod'), createObject('value', 3), createObject('value', 1))]",
-          "envVars": {
-            "value": "[concat(createArray(createObject('name', 'KeyVault__VaultUri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform'), '2025-04-01').outputs.keyVaultUri.value), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform'), '2025-04-01').outputs.connectionString.value), createObject('name', 'WORKSPACE_ID', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', if(equals(parameters('environment'), 'prod'), 'Production', 'Development')), createObject('name', 'Authentication__Entra__TenantId', 'value', parameters('entraTenantId'))), createArray(createObject('name', 'Authentication__Entra__Audience', 'value', parameters('entraAudience'))))]"
-          },
+          "envVars": "[if(empty(parameters('entraAudience')), createObject('value', concat(concat(createArray(createObject('name', 'KeyVault__VaultUri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform'), '2025-04-01').outputs.keyVaultUri.value), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform'), '2025-04-01').outputs.connectionString.value), createObject('name', 'WORKSPACE_ID', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', if(equals(parameters('environment'), 'prod'), 'Production', 'Development')), createObject('name', 'Authentication__Entra__TenantId', 'value', parameters('entraTenantId')), createObject('name', 'SafeActions__AllowedLogAnalyticsWorkspaceIds__0', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value)), variables('aiLlmEnvVars'), createArray(createObject('name', 'Rag__VectorBackend', 'value', parameters('ragVectorBackend')), createObject('name', 'Rag__UseVectorRunbooks', 'value', string(parameters('ragUseVectorRunbooks'))), createObject('name', 'Rag__UseVectorMemory', 'value', string(parameters('ragUseVectorMemory'))), createObject('name', 'Rag__Qdrant__Host', 'value', if(parameters('enableStorage'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-qdrant'), '2025-04-01').outputs.qdrantFqdn.value, '')), createObject('name', 'Rag__Qdrant__Port', 'value', '6334'), createObject('name', 'Rag__AzureAISearch__Endpoint', 'value', parameters('aiSearchEndpoint')))), createArray(createObject('name', 'Authentication__DevBypass', 'value', 'true')))), createObject('value', concat(concat(createArray(createObject('name', 'KeyVault__VaultUri', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform'), '2025-04-01').outputs.keyVaultUri.value), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform'), '2025-04-01').outputs.connectionString.value), createObject('name', 'WORKSPACE_ID', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value), createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', if(equals(parameters('environment'), 'prod'), 'Production', 'Development')), createObject('name', 'Authentication__Entra__TenantId', 'value', parameters('entraTenantId')), createObject('name', 'SafeActions__AllowedLogAnalyticsWorkspaceIds__0', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform'), '2025-04-01').outputs.customerId.value)), variables('aiLlmEnvVars'), createArray(createObject('name', 'Rag__VectorBackend', 'value', parameters('ragVectorBackend')), createObject('name', 'Rag__UseVectorRunbooks', 'value', string(parameters('ragUseVectorRunbooks'))), createObject('name', 'Rag__UseVectorMemory', 'value', string(parameters('ragUseVectorMemory'))), createObject('name', 'Rag__Qdrant__Host', 'value', if(parameters('enableStorage'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-qdrant'), '2025-04-01').outputs.qdrantFqdn.value, '')), createObject('name', 'Rag__Qdrant__Port', 'value', '6334'), createObject('name', 'Rag__AzureAISearch__Endpoint', 'value', parameters('aiSearchEndpoint')))), createArray(createObject('name', 'Authentication__Entra__Audience', 'value', parameters('entraAudience'))))))]",
           "tags": {
             "value": "[variables('baseTags')]"
           }
@@ -1668,7 +1717,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "14384493021510449501"
+              "templateHash": "685058200540481600"
             }
           },
           "parameters": {
@@ -1776,6 +1825,13 @@
                 "description": "HTTP path for the readiness probe. App is removed from LB rotation until it returns 200."
               }
             },
+            "livenessInitialDelaySeconds": {
+              "type": "int",
+              "defaultValue": 10,
+              "metadata": {
+                "description": "Seconds to wait before the first liveness probe fires. Increase for apps with slow startup (e.g. DB migrations)."
+              }
+            },
             "tags": {
               "type": "object",
               "metadata": {
@@ -1808,7 +1864,7 @@
                         "memory": "[parameters('memory')]"
                       },
                       "env": "[parameters('envVars')]",
-                      "probes": "[if(and(parameters('enableIngress'), parameters('enableHealthProbes')), createArray(createObject('type', 'Liveness', 'httpGet', createObject('path', parameters('livenessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 10, 'periodSeconds', 10, 'failureThreshold', 3), createObject('type', 'Readiness', 'httpGet', createObject('path', parameters('readinessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 5, 'periodSeconds', 5, 'failureThreshold', 3)), createArray())]"
+                      "probes": "[if(and(parameters('enableIngress'), parameters('enableHealthProbes')), createArray(createObject('type', 'Liveness', 'httpGet', createObject('path', parameters('livenessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', parameters('livenessInitialDelaySeconds'), 'periodSeconds', 10, 'failureThreshold', 3), createObject('type', 'Readiness', 'httpGet', createObject('path', parameters('readinessProbePath'), 'port', parameters('targetPort'), 'scheme', 'HTTP'), 'initialDelaySeconds', 5, 'periodSeconds', 5, 'failureThreshold', 3)), createArray())]"
                     }
                   ],
                   "scale": {
@@ -1847,7 +1903,8 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-appi-platform')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-cae-platform')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-kv-platform')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform')]"
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-law-platform')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-qdrant')]"
       ]
     },
     {

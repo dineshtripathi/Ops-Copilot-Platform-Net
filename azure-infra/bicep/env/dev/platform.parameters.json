@@ -16,6 +16,12 @@
     "caeName": { "value": "cae-opscopilot-platform-dev-uks" },
     "bootstrapImage": { "value": "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest" },
     "budgetAmount": { "value": 115 },
-    "budgetEmails": { "value": [] }
+    "budgetEmails": { "value": [] },
+    "aoaiEndpoint":              { "value": "" },
+    "aoaiChatDeploymentName":    { "value": "gpt-4o-mini" },
+    "aoaiEmbeddingDeploymentName": { "value": "text-embedding-3-small" },
+    "ragVectorBackend":          { "value": "Qdrant" },
+    "ragUseVectorRunbooks":      { "value": true },
+    "ragUseVectorMemory":        { "value": true }
   }
 }

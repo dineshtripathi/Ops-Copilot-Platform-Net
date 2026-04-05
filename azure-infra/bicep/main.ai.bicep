@@ -97,6 +97,21 @@ param deployerObjectId string = ''
 @description('Extra tags to merge onto all resources.')
 param extraTags object = {}
 
+// ── Cross-subscription RBAC ───────────────────────────────────────────────────
+// Platform Container Apps (SubA) need 'Cognitive Services OpenAI User' on the AOAI
+// account (SubB) to authenticate via Managed Identity (DefaultAzureCredential).
+// Populate these after the platform subscription has been deployed once so the
+// Container App system-assigned managed identities exist.
+// Defaults to '' which skips RBAC (use pipeline CLI or manual az role assignment).
+@description('Principal ID of the platform apihost Container App system-assigned managed identity.')
+param platformApiHostPrincipalId string = ''
+
+@description('Principal ID of the platform workerhost Container App system-assigned managed identity.')
+param platformWorkerHostPrincipalId string = ''
+
+@description('Principal ID of the platform mcphost Container App system-assigned managed identity.')
+param platformMcpHostPrincipalId string = ''
+
 var baseTags = union({
   environment: environment
   platform: 'opscopilot'
@@ -163,6 +178,22 @@ module aoai 'modules/aoai.bicep' = {
     aoaiName: aoaiName
     location: location
     tags: baseTags
+  }
+}
+
+// ── Azure OpenAI RBAC — platform Container Apps ───────────────────────────────
+// Grants 'Cognitive Services OpenAI User' to the platform Container App managed
+// identities so they can call Azure OpenAI via DefaultAzureCredential with no
+// API key. Only deployed when at least one principal ID is supplied.
+module aoaiRbac 'modules/aoaiRbac.bicep' = if (!empty(platformApiHostPrincipalId) || !empty(platformWorkerHostPrincipalId) || !empty(platformMcpHostPrincipalId)) {
+  name: 'deploy-aoai-rbac'
+  scope: resourceGroup(rgName)
+  dependsOn: [aoai]
+  params: {
+    aoaiAccountName: aoaiName
+    apiHostPrincipalId: platformApiHostPrincipalId
+    workerHostPrincipalId: platformWorkerHostPrincipalId
+    mcpHostPrincipalId: platformMcpHostPrincipalId
   }
 }
 

@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.40.2.10011",
-      "templateHash": "10093768500322818719"
+      "version": "0.42.1.51946",
+      "templateHash": "9487471374292827940"
     }
   },
   "parameters": {
@@ -139,6 +139,27 @@
       "metadata": {
         "description": "Extra tags to merge onto all resources."
       }
+    },
+    "platformApiHostPrincipalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Principal ID of the platform apihost Container App system-assigned managed identity."
+      }
+    },
+    "platformWorkerHostPrincipalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Principal ID of the platform workerhost Container App system-assigned managed identity."
+      }
+    },
+    "platformMcpHostPrincipalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Principal ID of the platform mcphost Container App system-assigned managed identity."
+      }
     }
   },
   "variables": {
@@ -172,8 +193,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "10632931293748932311"
+              "version": "0.42.1.51946",
+              "templateHash": "13084292993399901997"
             }
           },
           "parameters": {
@@ -248,8 +269,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "5305769064257336489"
+              "version": "0.42.1.51946",
+              "templateHash": "9512965966047712323"
             }
           },
           "parameters": {
@@ -360,8 +381,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "6439975535222652856"
+              "version": "0.42.1.51946",
+              "templateHash": "10350937918798430201"
             }
           },
           "parameters": {
@@ -458,8 +479,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "16463900608320542855"
+              "version": "0.42.1.51946",
+              "templateHash": "5471497465293038672"
             }
           },
           "parameters": {
@@ -582,8 +603,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "13719708015132962946"
+              "version": "0.42.1.51946",
+              "templateHash": "698594229600764841"
             }
           },
           "parameters": {
@@ -656,6 +677,121 @@
       ]
     },
     {
+      "condition": "[or(or(not(empty(parameters('platformApiHostPrincipalId'))), not(empty(parameters('platformWorkerHostPrincipalId')))), not(empty(parameters('platformMcpHostPrincipalId'))))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-aoai-rbac",
+      "resourceGroup": "[parameters('rgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "aoaiAccountName": {
+            "value": "[parameters('aoaiName')]"
+          },
+          "apiHostPrincipalId": {
+            "value": "[parameters('platformApiHostPrincipalId')]"
+          },
+          "workerHostPrincipalId": {
+            "value": "[parameters('platformWorkerHostPrincipalId')]"
+          },
+          "mcpHostPrincipalId": {
+            "value": "[parameters('platformMcpHostPrincipalId')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "2773701632038671374"
+            }
+          },
+          "parameters": {
+            "aoaiAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Azure OpenAI account in this resource group."
+              }
+            },
+            "apiHostPrincipalId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Principal ID of the platform apihost Container App system-assigned managed identity. Leave empty to skip."
+              }
+            },
+            "workerHostPrincipalId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Principal ID of the platform workerhost Container App system-assigned managed identity. Leave empty to skip."
+              }
+            },
+            "mcpHostPrincipalId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Principal ID of the platform mcphost Container App system-assigned managed identity. Leave empty to skip."
+              }
+            }
+          },
+          "variables": {
+            "cogServicesOpenAiUserRoleId": "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd",
+            "cogServicesOpenAiUserRoleDefId": "[format('/providers/Microsoft.Authorization/roleDefinitions/{0}', variables('cogServicesOpenAiUserRoleId'))]"
+          },
+          "resources": [
+            {
+              "condition": "[not(empty(parameters('apiHostPrincipalId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName')), parameters('apiHostPrincipalId'), variables('cogServicesOpenAiUserRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[variables('cogServicesOpenAiUserRoleDefId')]",
+                "principalId": "[parameters('apiHostPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "description": "Cognitive Services OpenAI User — ca-opscopilot-apihost (system MI)"
+              }
+            },
+            {
+              "condition": "[not(empty(parameters('workerHostPrincipalId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName')), parameters('workerHostPrincipalId'), variables('cogServicesOpenAiUserRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[variables('cogServicesOpenAiUserRoleDefId')]",
+                "principalId": "[parameters('workerHostPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "description": "Cognitive Services OpenAI User — ca-opscopilot-workerhost (system MI)"
+              }
+            },
+            {
+              "condition": "[not(empty(parameters('mcpHostPrincipalId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName')), parameters('mcpHostPrincipalId'), variables('cogServicesOpenAiUserRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[variables('cogServicesOpenAiUserRoleDefId')]",
+                "principalId": "[parameters('mcpHostPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "description": "Cognitive Services OpenAI User — ca-opscopilot-mcphost (system MI)"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('rgName')), 'Microsoft.Resources/deployments', 'deploy-aoai')]"
+      ]
+    },
+    {
       "condition": "[parameters('searchProvision')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -686,8 +822,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "13650032323580769513"
+              "version": "0.42.1.51946",
+              "templateHash": "10724525922659448560"
             }
           },
           "parameters": {
@@ -812,8 +948,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "2918745872335246573"
+              "version": "0.42.1.51946",
+              "templateHash": "9595762098810872520"
             }
           },
           "parameters": {

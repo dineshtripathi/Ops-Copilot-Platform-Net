@@ -107,6 +107,34 @@ param deployerObjectId string = ''
 @description('Extra tags to merge onto all resources.')
 param extraTags object = {}
 
+// ── AI / LLM ──────────────────────────────────────────────────────────────────
+@description('Azure OpenAI endpoint from the AI subscription (e.g. https://aoai-opscopilot-ai-dev-uks.openai.azure.com/). Leave empty to disable LLM and RAG embedding.')
+param aoaiEndpoint string = ''
+
+@description('Azure OpenAI chat model deployment name.')
+param aoaiChatDeploymentName string = 'gpt-4o-mini'
+
+@description('Azure OpenAI embedding model deployment name.')
+param aoaiEmbeddingDeploymentName string = 'text-embedding-3-small'
+
+// ── RAG / Vector Store ────────────────────────────────────────────────────────
+@description('Vector store backend: "Qdrant" routes to the deployed Qdrant Container App; "AzureAISearch" routes to an external search instance; "InMemory" persists nothing and is for dev/test only.')
+@allowed([
+  'InMemory'
+  'Qdrant'
+  'AzureAISearch'
+])
+param ragVectorBackend string = 'Qdrant'
+
+@description('Enable vector-backed runbook retrieval (requires a working embedding deployment).')
+param ragUseVectorRunbooks bool = true
+
+@description('Enable vector-backed incident memory (requires a working embedding deployment).')
+param ragUseVectorMemory bool = true
+
+@description('Azure AI Search endpoint. Required only when ragVectorBackend is "AzureAISearch".')
+param aiSearchEndpoint string = ''
+
 var baseTags = union({
   environment: environment
   platform: 'opscopilot'
@@ -114,11 +142,40 @@ var baseTags = union({
   managedBy: 'bicep'
 }, extraTags)
 
+// ── AI / LLM env vars ─────────────────────────────────────────────────────────
+// Only injected when an AOAI endpoint is provided. Enables the IChatClient pipeline
+// (Azure OpenAI provider + text embedding generator). API key is intentionally
+// omitted — DefaultAzureCredential uses the Container App system-assigned managed
+// identity (requires 'Cognitive Services OpenAI User' RBAC on the AOAI account).
+var aiLlmEnvVars = !empty(aoaiEndpoint) ? [
+  { name: 'AI__Provider',                             value: 'AzureOpenAI' }
+  { name: 'AI__AzureOpenAI__Endpoint',                value: aoaiEndpoint }
+  { name: 'AI__AzureOpenAI__DeploymentName',          value: aoaiChatDeploymentName }
+  { name: 'AI__AzureOpenAI__EmbeddingDeploymentName', value: aoaiEmbeddingDeploymentName }
+] : []
+
+// ── RAG / Vector Store env vars ───────────────────────────────────────────────
+// Qdrant host is the internal ingress FQDN of the Qdrant Container App (within the CAE).
+// gRPC port 6334 is used by the Qdrant .NET client for all vector operations.
+// BCP318: conditional module output reference — safe; ARM if() short-circuits to '' when
+// enableStorage is false so the qdrant module output is never dereferenced.
+#disable-next-line BCP318
+var qdrantInternalHost = enableStorage ? qdrant.outputs.qdrantFqdn : ''
+
+var ragEnvVars = [
+  { name: 'Rag__VectorBackend',               value: ragVectorBackend }
+  { name: 'Rag__UseVectorRunbooks',            value: string(ragUseVectorRunbooks) }
+  { name: 'Rag__UseVectorMemory',              value: string(ragUseVectorMemory) }
+  { name: 'Rag__Qdrant__Host',                value: qdrantInternalHost }
+  { name: 'Rag__Qdrant__Port',                value: '6334' }
+  { name: 'Rag__AzureAISearch__Endpoint',     value: aiSearchEndpoint }
+]
+
 // ── Shared Container App environment variables ────────────────────────────────
 // Injected into all Container Apps so they can resolve config without baking
 // secrets into images. Bicep evaluates module outputs lazily (DAG-based), so
 // referencing outputs here is safe even though modules appear later in the file.
-var commonEnvVars = [
+var commonEnvVars = concat([
   { name: 'KeyVault__VaultUri',                                    value: kv.outputs.keyVaultUri }
   { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING',                 value: appInsights.outputs.connectionString }
   { name: 'WORKSPACE_ID',                                          value: law.outputs.customerId }
@@ -128,7 +185,7 @@ var commonEnvVars = [
   // The deployed workspace must be explicitly allowlisted via env var so the
   // ConfigTargetScopeEvaluator permits triage KQL queries against it.
   { name: 'SafeActions__AllowedLogAnalyticsWorkspaceIds__0',       value: law.outputs.customerId }
-]
+], aiLlmEnvVars, ragEnvVars)
 
 // API-facing apps (ApiHost, McpHost) additionally receive the Entra audience so
 // the authentication middleware knows which app registration to validate against.

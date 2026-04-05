@@ -1,0 +1,85 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.42.1.51946",
+      "templateHash": "2773701632038671374"
+    }
+  },
+  "parameters": {
+    "aoaiAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Azure OpenAI account in this resource group."
+      }
+    },
+    "apiHostPrincipalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Principal ID of the platform apihost Container App system-assigned managed identity. Leave empty to skip."
+      }
+    },
+    "workerHostPrincipalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Principal ID of the platform workerhost Container App system-assigned managed identity. Leave empty to skip."
+      }
+    },
+    "mcpHostPrincipalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Principal ID of the platform mcphost Container App system-assigned managed identity. Leave empty to skip."
+      }
+    }
+  },
+  "variables": {
+    "cogServicesOpenAiUserRoleId": "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd",
+    "cogServicesOpenAiUserRoleDefId": "[format('/providers/Microsoft.Authorization/roleDefinitions/{0}', variables('cogServicesOpenAiUserRoleId'))]"
+  },
+  "resources": [
+    {
+      "condition": "[not(empty(parameters('apiHostPrincipalId')))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName')), parameters('apiHostPrincipalId'), variables('cogServicesOpenAiUserRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[variables('cogServicesOpenAiUserRoleDefId')]",
+        "principalId": "[parameters('apiHostPrincipalId')]",
+        "principalType": "ServicePrincipal",
+        "description": "Cognitive Services OpenAI User — ca-opscopilot-apihost (system MI)"
+      }
+    },
+    {
+      "condition": "[not(empty(parameters('workerHostPrincipalId')))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName')), parameters('workerHostPrincipalId'), variables('cogServicesOpenAiUserRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[variables('cogServicesOpenAiUserRoleDefId')]",
+        "principalId": "[parameters('workerHostPrincipalId')]",
+        "principalType": "ServicePrincipal",
+        "description": "Cognitive Services OpenAI User — ca-opscopilot-workerhost (system MI)"
+      }
+    },
+    {
+      "condition": "[not(empty(parameters('mcpHostPrincipalId')))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', parameters('aoaiAccountName')), parameters('mcpHostPrincipalId'), variables('cogServicesOpenAiUserRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[variables('cogServicesOpenAiUserRoleDefId')]",
+        "principalId": "[parameters('mcpHostPrincipalId')]",
+        "principalType": "ServicePrincipal",
+        "description": "Cognitive Services OpenAI User — ca-opscopilot-mcphost (system MI)"
+      }
+    }
+  ]
+}

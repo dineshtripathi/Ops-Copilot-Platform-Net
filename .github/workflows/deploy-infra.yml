@@ -1,9 +1,10 @@
 name: Deploy Infrastructure
 
 # ================================================================
-# Hard-reset layout (Platform/AI subscription split):
-#   Job 1 - deploy-platform  →  SubA (rg-opscopilot-platform-*)
-#   Job 2 - deploy-ai        →  SubB (rg-opscopilot-ai-*)
+# Sequential 3-job layout (Platform/AI subscription split):
+#   Job 1 - deploy-ai-resources  →  SubB (rg-opscopilot-ai-*)        deploy AOAI/KV/Search + model deployments; output aoaiEndpoint
+#   Job 2 - deploy-platform      →  SubA (rg-opscopilot-platform-*)   deploy CAs with aoaiEndpoint; output CA principal IDs
+#   Job 3 - deploy-ai-rbac       →  SubB re-deploy main.ai.bicep with platform principal IDs to grant Cognitive Services RBAC
 #
 # Required GitHub secrets:
 #   AZURE_TENANT_ID
@@ -48,11 +49,16 @@ env:
   BICEP_ROOT: azure-infra/bicep
 
 jobs:
-  # ── Job 1: Cleanup + deploy Platform subscription (SubA) ─────────────────
+  # ── Job 2: Cleanup + deploy Platform subscription (SubA) ─────────────────
   deploy-platform:
     name: 'Platform (SubA) — cleanup + deploy'
+    needs: [deploy-ai-resources]
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment == 'prod' && 'prod' || '' }}
+    outputs:
+      api_host_principal_id:    ${{ steps.deploy_platform.outputs.api_host_principal_id }}
+      worker_host_principal_id: ${{ steps.deploy_platform.outputs.worker_host_principal_id }}
+      mcp_host_principal_id:    ${{ steps.deploy_platform.outputs.mcp_host_principal_id }}
     permissions:
       id-token: write
       contents: read
@@ -134,7 +140,8 @@ jobs:
             --template-file "${{ env.BICEP_ROOT }}/main.platform.bicep" \
             --parameters "${{ env.BICEP_ROOT }}/env/${{ inputs.environment }}/platform.parameters.json" \
             --parameters sqlAdminPassword="${{ secrets.SQL_ADMIN_PASSWORD_PLATFORM }}" \
-            --parameters deployerObjectId="$DEPLOYER_OID"
+            --parameters deployerObjectId="$DEPLOYER_OID" \
+            --parameters aoaiEndpoint="${{ needs.deploy-ai-resources.outputs.aoai_endpoint }}"
 
       - name: Deploy Platform
         id: deploy_platform
@@ -146,10 +153,17 @@ jobs:
             --parameters "${{ env.BICEP_ROOT }}/env/${{ inputs.environment }}/platform.parameters.json" \
             --parameters sqlAdminPassword="${{ secrets.SQL_ADMIN_PASSWORD_PLATFORM }}" \
             --parameters deployerObjectId="$DEPLOYER_OID" \
+            --parameters aoaiEndpoint="${{ needs.deploy-ai-resources.outputs.aoai_endpoint }}" \
             --name "platform-${{ inputs.environment }}-${{ github.run_id }}" \
             --query "properties.outputs" \
             --output json > /tmp/platform-outputs.json
           cat /tmp/platform-outputs.json
+          API_PID=$(jq -r '.apiHostPrincipalId.value // ""' /tmp/platform-outputs.json)
+          WORKER_PID=$(jq -r '.workerHostPrincipalId.value // ""' /tmp/platform-outputs.json)
+          MCP_PID=$(jq -r '.mcpHostPrincipalId.value // ""' /tmp/platform-outputs.json)
+          echo "api_host_principal_id=$API_PID" >> $GITHUB_OUTPUT
+          echo "worker_host_principal_id=$WORKER_PID" >> $GITHUB_OUTPUT
+          echo "mcp_host_principal_id=$MCP_PID" >> $GITHUB_OUTPUT
 
       # Re-authenticate: the Bicep deployment can take 15+ minutes, expiring
       # the original 5-minute OIDC assertion before the KV step runs.
@@ -184,13 +198,17 @@ jobs:
             echo "| MCP Host FQDN | $(jq -r '.mcpHostFqdn.value // "n/a"' /tmp/platform-outputs.json) |" >> $GITHUB_STEP_SUMMARY
             echo "| SQL Server | $(jq -r '.sqlServerFqdn.value // "n/a"' /tmp/platform-outputs.json) |" >> $GITHUB_STEP_SUMMARY
             echo "| Qdrant FQDN | $(jq -r '.qdrantFqdn.value // "n/a"' /tmp/platform-outputs.json) |" >> $GITHUB_STEP_SUMMARY
+            echo "| AOAI Endpoint | ${{ needs.deploy-ai-resources.outputs.aoai_endpoint }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| API Host Principal | $(jq -r '.apiHostPrincipalId.value // "n/a"' /tmp/platform-outputs.json) |" >> $GITHUB_STEP_SUMMARY
           fi
 
-  # ── Job 2: Cleanup + deploy AI subscription (SubB) ───────────────────────
-  deploy-ai:
+  # ── Job 1: Cleanup + deploy AI subscription (SubB) ───────────────────────
+  deploy-ai-resources:
     name: 'AI (SubB) — cleanup + deploy'
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment == 'prod' && 'prod' || '' }}
+    outputs:
+      aoai_endpoint: ${{ steps.deploy_ai.outputs.aoai_endpoint }}
     permissions:
       id-token: write
       contents: read
@@ -257,6 +275,8 @@ jobs:
             --query "properties.outputs" \
             --output json > /tmp/ai-outputs.json
           cat /tmp/ai-outputs.json
+          AOAI_ENDPOINT=$(jq -r '.aoaiEndpoint.value // ""' /tmp/ai-outputs.json)
+          echo "aoai_endpoint=$AOAI_ENDPOINT" >> $GITHUB_OUTPUT
 
       - name: Deploy AOAI models (conditional — deploymentsEnabled=true)
         run: |
@@ -319,3 +339,58 @@ jobs:
             echo "| Model Deployments | $(jq -r '.deploymentsEnabled.value // "false"' /tmp/ai-outputs.json) |" >> $GITHUB_STEP_SUMMARY
             echo "| AI Search | $(jq -r '.searchEndpoint.value // "n/a"' /tmp/ai-outputs.json) |" >> $GITHUB_STEP_SUMMARY
           fi
+
+  # ── Job 3: Grant Cognitive Services RBAC to platform CA identities (SubB) ─
+  deploy-ai-rbac:
+    name: 'AI RBAC (SubB) — grant Cognitive Services OpenAI User to platform identities'
+    needs: [deploy-ai-resources, deploy-platform]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'prod' && 'prod' || '' }}
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (AI SubB)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_AI }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_AI }}
+
+      - name: Resolve AI SP Object ID
+        run: |
+          SP_OID=$(az ad sp show --id "${{ secrets.AZURE_CLIENT_ID_AI }}" --query id -o tsv)
+          echo "DEPLOYER_OID=$SP_OID" >> $GITHUB_ENV
+
+      - name: Grant Cognitive Services OpenAI User RBAC
+        # Re-deploys main.ai.bicep (idempotent) with platform CA principal IDs so
+        # aoaiRbac.bicep can assign 'Cognitive Services OpenAI User' to each CA
+        # managed identity, enabling passwordless MI-based access to AOAI.
+        run: |
+          az deployment sub create \
+            --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID_AI }}" \
+            --location "${{ inputs.region }}" \
+            --template-file "${{ env.BICEP_ROOT }}/main.ai.bicep" \
+            --parameters "${{ env.BICEP_ROOT }}/env/${{ inputs.environment }}/ai.parameters.json" \
+            --parameters deployerObjectId="$DEPLOYER_OID" \
+            --parameters platformApiHostPrincipalId="${{ needs.deploy-platform.outputs.api_host_principal_id }}" \
+            --parameters platformWorkerHostPrincipalId="${{ needs.deploy-platform.outputs.worker_host_principal_id }}" \
+            --parameters platformMcpHostPrincipalId="${{ needs.deploy-platform.outputs.mcp_host_principal_id }}" \
+            --name "ai-rbac-${{ inputs.environment }}-${{ github.run_id }}" \
+            --query "properties.outputs" \
+            --output json > /tmp/ai-rbac-outputs.json
+          echo "AOAI RBAC assignments complete."
+
+      - name: Deployment summary (AI RBAC)
+        if: always()
+        run: |
+          echo "## AI RBAC Deployment — ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Role | Principal |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Cognitive Services OpenAI User | API Host: ${{ needs.deploy-platform.outputs.api_host_principal_id }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cognitive Services OpenAI User | Worker Host: ${{ needs.deploy-platform.outputs.worker_host_principal_id }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cognitive Services OpenAI User | MCP Host: ${{ needs.deploy-platform.outputs.mcp_host_principal_id }} |" >> $GITHUB_STEP_SUMMARY
