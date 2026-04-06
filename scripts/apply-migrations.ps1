@@ -1,6 +1,13 @@
-param()
+param(
+    [string]$ConnectionString = $env:SQL_CONNECTION_STRING
+)
 
-$cs = "Server=tcp:sql-opscopilot-platform-dev-uks.database.windows.net,1433;Database=sqldb-opscopilot-platform-dev;User ID=opsadmin;Password=Transview@73AITest;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;"
+if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+    Write-Error "Connection string not provided. Set the SQL_CONNECTION_STRING environment variable or pass -ConnectionString."
+    exit 1
+}
+
+$cs = $ConnectionString
 
 Set-Location G:\ops-copilot-platform
 
