@@ -145,38 +145,52 @@ public sealed class McpStdioKqlToolClient : IKqlToolClient, IAsyncDisposable
             if (_mcpClient is not null)
                 return _mcpClient;
 
-            var workDir = _options.WorkingDirectory ?? DiscoverSolutionRoot();
-
-            _logger.LogInformation(
-                "Starting McpHost child process | executable={Exe} args={Args} workdir={WorkDir}",
-                _options.Executable,
-                string.Join(' ', _options.Arguments),
-                workDir ?? "(inherited)");
-
-            // ── Environment variable inheritance ──────────────────────────────
-            // StdioClientTransport does NOT inherit the parent's environment by
-            // default.  We must explicitly forward the variables that McpHost
-            // needs — in particular, PATH (so `az` / `pwsh` are discoverable),
-            // Azure identity token-cache directories, and the hosting-env flag
-            // so the child picks up appsettings.Development.json.
-            var envVars = BuildChildEnvironment();
-
-            _logger.LogDebug(
-                "Child process environment: {Keys}",
-                string.Join(", ", envVars.Keys.OrderBy(k => k)));
-
-            var transport = new StdioTransport(new StdioTransportOptions
+            if (!string.IsNullOrWhiteSpace(_options.ServerUrl))
             {
-                Name                 = "OpsCopilotMcpHost",
-                Command              = _options.Executable,
-                Arguments            = _options.Arguments.ToList(),
-                WorkingDirectory     = workDir,
-                EnvironmentVariables = envVars,
-            });
+                _logger.LogInformation(
+                    "Connecting to McpHost (kql) via HTTP | url={Url}", _options.ServerUrl);
+                var httpTransport = new HttpTransport(new HttpTransportOptions
+                {
+                    Endpoint = new Uri(_options.ServerUrl),
+                });
+                _mcpClient = await SdkMcpClient.CreateAsync(httpTransport, cancellationToken: ct);
+                _logger.LogInformation("McpHost HTTP connection (kql) established.");
+            }
+            else
+            {
+                var workDir = _options.WorkingDirectory ?? DiscoverSolutionRoot();
 
-            _mcpClient = await SdkMcpClient.CreateAsync(transport, cancellationToken: ct);
+                _logger.LogInformation(
+                    "Starting McpHost child process | executable={Exe} args={Args} workdir={WorkDir}",
+                    _options.Executable,
+                    string.Join(' ', _options.Arguments),
+                    workDir ?? "(inherited)");
 
-            _logger.LogInformation("McpHost child process started and connected.");
+                // ── Environment variable inheritance ──────────────────────────────
+                // StdioClientTransport does NOT inherit the parent's environment by
+                // default.  We must explicitly forward the variables that McpHost
+                // needs — in particular, PATH (so `az` / `pwsh` are discoverable),
+                // Azure identity token-cache directories, and the hosting-env flag
+                // so the child picks up appsettings.Development.json.
+                var envVars = BuildChildEnvironment();
+
+                _logger.LogDebug(
+                    "Child process environment: {Keys}",
+                    string.Join(", ", envVars.Keys.OrderBy(k => k)));
+
+                var transport = new StdioTransport(new StdioTransportOptions
+                {
+                    Name                 = "OpsCopilotMcpHost",
+                    Command              = _options.Executable,
+                    Arguments            = _options.Arguments.ToList(),
+                    WorkingDirectory     = workDir,
+                    EnvironmentVariables = envVars,
+                });
+
+                _mcpClient = await SdkMcpClient.CreateAsync(transport, cancellationToken: ct);
+
+                _logger.LogInformation("McpHost child process started and connected.");
+            }
             return _mcpClient;
         }
         finally

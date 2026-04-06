@@ -162,9 +162,8 @@ else
 
         try
         {
-            var baseUri = new Uri(Nav.Uri).GetLeftPart(UriPartial.Authority);
-            var client  = HttpClientFactory.CreateClient();
-            client.BaseAddress = new Uri(baseUri);
+            var client = HttpClientFactory.CreateClient();
+            client.BaseAddress = new Uri("http://localhost:8080");
             client.DefaultRequestHeaders.Add("x-tenant-id", TenantId);
 
             using var resp = await client.PostAsJsonAsync(
