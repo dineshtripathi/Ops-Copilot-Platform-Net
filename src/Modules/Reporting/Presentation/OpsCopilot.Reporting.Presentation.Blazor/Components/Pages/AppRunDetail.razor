@@ -71,17 +71,17 @@ else
         </div>
         <div class="oc-hero-metrics" aria-label="Run highlights">
             <div class="oc-hero-metric">
-                <span class="oc-hero-metric-label">Duration</span>
+                <span class="oc-hero-metric-label">⏱️ Duration</span>
                 <strong>@(duration.HasValue ? $"{duration.Value:F1}s" : "Running")</strong>
                 <small>Created @d.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</small>
             </div>
             <div class="oc-hero-metric">
-                <span class="oc-hero-metric-label">Tooling</span>
+                <span class="oc-hero-metric-label">🛠️ Tooling</span>
                 <strong>@(d.ToolCallCount?.ToString() ?? "0") calls</strong>
                 <small>@(d.ToolCallSuccessCount?.ToString() ?? "0") successful</small>
             </div>
             <div class="oc-hero-metric">
-                <span class="oc-hero-metric-label">Evidence</span>
+                <span class="oc-hero-metric-label">🔬 Evidence</span>
                 <strong>@(d.HasCitations == true ? "Citations present" : "Citations pending")</strong>
                 <small>@(d.ActionCount?.ToString() ?? "0") proposed actions</small>
             </div>
@@ -172,7 +172,7 @@ else
             <div class="oc-panel-heading">
                 <div>
                     <span class="oc-section-kicker">Observability</span>
-                    <h2>App Insights evidence</h2>
+                    <h2>📊 App Insights evidence</h2>
                 </div>
                 <small>@observability.SuccessfulCollectors ready · @observability.FailedCollectors unavailable</small>
             </div>
@@ -238,7 +238,7 @@ else
                 @if (d.Briefing is { } briefing)
                 {
                     <section class="oc-triage-briefing" aria-label="Triage briefing">
-                        <h2>Triage Briefing</h2>
+                        <h2>🔍 Triage Briefing</h2>
                         <table>
                             <tbody>
                                 <tr><th scope="row">Severity</th><td class="oc-severity-@briefing.StatusSeverity">@briefing.StatusSeverity.ToUpperInvariant()</td></tr>
@@ -341,7 +341,7 @@ else
                 @if (d.ConnectivitySignals is { TotalSignals: > 0 } conn)
                 {
                     <section class="oc-connectivity-signals" aria-label="Connectivity signals">
-                        <h3>Connectivity Signals</h3>
+                        <h3>🔌 Connectivity Signals</h3>
                         <table>
                             <thead><tr><th scope="col">Category</th><th scope="col">Summary</th></tr></thead>
                             <tbody>
@@ -357,7 +357,7 @@ else
                 @if (d.AuthSignals is { TotalSignals: > 0 } auth)
                 {
                     <section class="oc-auth-signals" aria-label="Auth signals">
-                        <h3>Auth Signals</h3>
+                        <h3>🔐 Auth Signals</h3>
                         <table>
                             <thead><tr><th scope="col">Category</th><th scope="col">Summary</th></tr></thead>
                             <tbody>

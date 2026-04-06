@@ -37,10 +37,10 @@ else
         <div class="oc-hero-aside" aria-label="Example questions">
             <span class="oc-hero-aside-title">Try asking</span>
             <ul class="oc-hero-examples">
-                <li class="oc-hero-example">What were the common failure patterns in the last 24 hours?</li>
-                <li class="oc-hero-example">Which runbook applies to a Service Bus connection timeout?</li>
-                <li class="oc-hero-example">Summarise the most recent critical incident.</li>
-                <li class="oc-hero-example">What changed just before the last alert fired?</li>
+                <li class="oc-hero-example">❓ What were the common failure patterns in the last 24 hours?</li>
+                <li class="oc-hero-example">📖 Which runbook applies to a Service Bus connection timeout?</li>
+                <li class="oc-hero-example">🔍 Summarise the most recent critical incident.</li>
+                <li class="oc-hero-example">🔔 What changed just before the last alert fired?</li>
             </ul>
         </div>
     </section>
@@ -75,8 +75,8 @@ else
     {
         <section class="oc-chat-answer-panel" aria-label="Copilot answer">
             <div class="oc-chat-answer-header">
-                <span class="oc-chat-answer-badge" aria-hidden="true">AI</span>
-                <strong>Copilot Answer</strong>
+                <span class="oc-chat-answer-badge" aria-hidden="true">🤖</span>
+                <strong>🤖 Copilot Answer</strong>
             </div>
             <div class="oc-chat-answer" role="region" aria-label="Answer text">@_answer</div>
         </section>
@@ -84,7 +84,7 @@ else
         @if (_memoryCitations.Count > 0)
         {
             <section class="oc-panel" aria-label="Memory citations">
-                <h2 class="oc-section-title">Related Incidents (@_memoryCitations.Count)</h2>
+                <h2 class="oc-section-title">🕵️ Related Incidents (@_memoryCitations.Count)</h2>
                 <ul class="oc-citation-list" role="list">
                     @foreach (var c in _memoryCitations)
                     {
@@ -105,7 +105,7 @@ else
         @if (_runbookCitations.Count > 0)
         {
             <section class="oc-panel" aria-label="Runbook citations">
-                <h2 class="oc-section-title">Relevant Runbooks (@_runbookCitations.Count)</h2>
+                <h2 class="oc-section-title">📚 Relevant Runbooks (@_runbookCitations.Count)</h2>
                 <ul class="oc-citation-list" role="list">
                     @foreach (var r in _runbookCitations)
                     {

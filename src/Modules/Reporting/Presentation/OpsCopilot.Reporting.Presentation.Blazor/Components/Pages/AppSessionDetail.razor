@@ -69,17 +69,17 @@ else
         </div>
         <div class="oc-hero-metrics" aria-label="Session highlights">
             <div class="oc-hero-metric">
-                <span class="oc-hero-metric-label">Run count</span>
+                <span class="oc-hero-metric-label">🔢 Run count</span>
                 <strong>@s.Runs.Count</strong>
                 <small>@(s.Runs.Count > 0 ? $"Started {s.Runs[0].CreatedAtUtc:yyyy-MM-dd HH:mm} UTC" : "No runs yet")</small>
             </div>
             <div class="oc-hero-metric">
-                <span class="oc-hero-metric-label">Sequence</span>
+                <span class="oc-hero-metric-label">📍 Sequence</span>
                 <strong>@(s.Briefing?.StatusPattern ?? "Unknown")</strong>
                 <small>@(s.Briefing?.SequenceConclusion ?? "Awaiting session synthesis")</small>
             </div>
             <div class="oc-hero-metric">
-                <span class="oc-hero-metric-label">Fingerprint</span>
+                <span class="oc-hero-metric-label">🔑 Fingerprint</span>
                 <strong>@(s.Briefing?.DominantFingerprint ?? "Mixed")</strong>
                 <small>@(s.Briefing?.FingerprintPattern ?? "No dominant fingerprint yet")</small>
             </div>
@@ -88,7 +88,7 @@ else
 
     <section class="oc-detail-grid" aria-label="Session summary cards">
         <section class="oc-session-metadata oc-panel" aria-label="Session metadata">
-            <h2>Session metadata</h2>
+            <h2>📝 Session metadata</h2>
             <table>
                 <tbody>
                     <tr><th scope="row">Session ID</th><td>@s.SessionId</td></tr>
@@ -106,7 +106,7 @@ else
     @if (s.Briefing is { } b)
     {
         <section class="oc-session-briefing oc-panel" aria-label="Session triage briefing">
-            <h2>Session triage briefing</h2>
+            <h2>🔍 Session triage briefing</h2>
             <table>
                 <tbody>
                     <tr><th scope="row">Run Count</th><td>@b.RunCount</td></tr>
@@ -130,25 +130,25 @@ else
     <section class="oc-signal-overview" aria-label="Session snapshot tiles">
         <article class="oc-signal-tile">
             <span class="oc-section-kicker">Sequence</span>
-            <h3>Run progression</h3>
+            <h3>📈 Run progression</h3>
             <strong>@(s.Briefing?.StatusPattern ?? "Unknown")</strong>
             <p>@(s.Briefing?.SequenceConclusion ?? "Awaiting deterministic sequence analysis")</p>
         </article>
         <article class="oc-signal-tile">
             <span class="oc-section-kicker">Fingerprint</span>
-            <h3>Dominant pattern</h3>
+            <h3>🧩 Dominant pattern</h3>
             <strong>@(s.Briefing?.DominantFingerprint ?? "Mixed")</strong>
             <p>@(s.Briefing?.FingerprintPattern ?? "No dominant fingerprint detected")</p>
         </article>
         <article class="oc-signal-tile">
             <span class="oc-section-kicker">Guidance</span>
-            <h3>Next inspections</h3>
+            <h3>🔭 Next inspections</h3>
             <strong>@recommendationCount</strong>
             <p>@(recommendationCount > 0 ? "Deterministic next-step guidance is available" : "No session-level follow-up guidance yet")</p>
         </article>
         <article class="oc-signal-tile">
             <span class="oc-section-kicker">Observability</span>
-            <h3>App Insights</h3>
+            <h3>📊 App Insights</h3>
             <strong>@(observabilitySpotlight?.Evidence.CollectorCount.ToString() ?? "0")</strong>
             <p>@(observabilitySpotlight is null ? "No governed App Insights evidence captured for this session" : $"Latest evidence from run {observabilitySpotlight.RunId.ToString("D").Substring(0, 8)}")</p>
         </article>
@@ -157,7 +157,7 @@ else
     <section class="oc-section-intro" aria-label="Session workspace intro">
         <div>
             <span class="oc-section-kicker">Session Workspace</span>
-            <h2>Repeated incident context</h2>
+            <h2>🔁 Repeated incident context</h2>
         </div>
         <p>Track whether this incident pattern is isolated, recurring, or improving across the full session timeline.</p>
     </section>
@@ -168,7 +168,7 @@ else
             <div class="oc-panel-heading">
                 <div>
                     <span class="oc-section-kicker">Observability</span>
-                    <h2>Session App Insights evidence</h2>
+                    <h2>📊 Session App Insights evidence</h2>
                 </div>
                 <small>
                     <a href="@($"/app/runs/{spotlight.RunId}?tenantId={TenantId}{FilterSuffix}")">Source run</a>
