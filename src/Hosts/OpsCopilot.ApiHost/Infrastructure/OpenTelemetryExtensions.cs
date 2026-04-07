@@ -48,6 +48,7 @@ internal static class OpenTelemetryExtensions
         otel.WithTracing(tracing =>
         {
             tracing.AddAspNetCoreInstrumentation();
+            tracing.AddHttpClientInstrumentation(); // Slice 163: trace outbound HTTP calls (Azure, MCP, downstream APIs)
 
             foreach (var source in TraceSources)
                 tracing.AddSource(source);

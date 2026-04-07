@@ -155,7 +155,60 @@ builder.Logging.AddConsole();
 // Slice 147: MAF bootstrap — registers CloudAdapter + IAgent → TriageAgentActivityHandler
 builder.AddAgent<TriageAgentActivityHandler>();
 
+// ── Error handling & ProblemDetails (Slice 163) ───────────────────────────────
+// Registers IProblemDetailsService so unhandled exceptions return RFC 7807 JSON.
+// In Development, exception type and message are surfaced in the response body.
+builder.Services.AddOpsCopilotErrorHandling(builder.Environment.IsDevelopment());
+
+// ── DI container validation (Slice 163) ───────────────────────────────────────
+// Validates all DI registrations at host-build time (not at first use) in
+// non-Production environments, surfacing missing dependencies before any request
+// is served.  Scope validation is limited to Development where it adds the most
+// value without risking false positives from optional service configurations.
+builder.Host.UseDefaultServiceProvider((ctx, opts) =>
+{
+    opts.ValidateOnBuild = !ctx.HostingEnvironment.IsProduction();
+    opts.ValidateScopes  = ctx.HostingEnvironment.IsDevelopment();
+});
+
+// ── Graceful shutdown (Slice 163) ─────────────────────────────────────────────
+// Allows 30 s for in-flight requests to drain before the container is terminated.
+// Azure Container Apps sends SIGTERM then waits up to the revision\'s grace period.
+builder.Services.Configure<HostOptions>(o =>
+    o.ShutdownTimeout = TimeSpan.FromSeconds(30));
+
+// ── Request body size limit (Slice 163) ───────────────────────────────────────
+// Triage payloads are a few KB at most.  A 1 MB cap prevents body-bomb DoS
+// against the LLM + MCP call chain without impacting normal usage.
+builder.WebHost.ConfigureKestrel(kestrel =>
+    kestrel.Limits.MaxRequestBodySize = 1 * 1024 * 1024);
+
 var app = builder.Build();
+
+// ── Exception handler (Slice 163) — outermost middleware; catches all unhandled ──
+// exceptions and returns 500 ProblemDetails JSON instead of bare HTTP 500 / HTML.
+// Requires AddProblemDetails() registered above.  Must be the first middleware.
+app.UseExceptionHandler();
+
+// ── Status code pages (Slice 163) — 401/403/404 → ProblemDetails JSON ─────────
+// Without this, bare 401/403 responses have no body; clients cannot distinguish
+// an authentication failure from a missing resource.
+app.UseStatusCodePages();
+
+// ── Security response headers (Slice 163) ─────────────────────────────────────
+// Applied to every response.  TLS/HSTS is enforced at the Container Apps ingress
+// level; these headers provide defence-in-depth for the application layer.
+app.Use((context, next) =>
+{
+    var h = context.Response.Headers;
+    h["X-Content-Type-Options"]              = "nosniff";
+    h["X-Frame-Options"]                     = "DENY";
+    h["Referrer-Policy"]                     = "strict-origin-when-cross-origin";
+    h["X-Permitted-Cross-Domain-Policies"]   = "none";
+    h["Permissions-Policy"] =
+        "camera=(), microphone=(), geolocation=(), payment=()";
+    return next(context);
+});
 
 // ── Auth middleware (Slice 149) — must precede endpoint mapping ─────────────────
 app.UseAuthentication();
