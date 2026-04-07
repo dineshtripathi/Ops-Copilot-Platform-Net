@@ -2039,3 +2039,36 @@ tr.oc-proposed-briefing .oc-source-badge      { background: rgba(106, 27, 154, 0
 
 /* Filter form labels inside dark toolbar panel */
 .oc-filter-form label { color: var(--oc-ink-soft); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Slice 164 — RAG status dot indicators
+   Red / Amber / Green dot prefix on all status pills and health signals
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Base dot geometry — prepended to every .oc-status pill */
+.oc-status::before {
+    content: "●";
+    margin-right: 0.35em;
+    font-size: 0.6em;
+    vertical-align: 0.1em;
+}
+
+/* RAG colours for status pills */
+.oc-status-completed::before { color: #4ade80; }  /* ● Green  — success      */
+.oc-status-running::before   { color: #4ade80; }  /* ● Green  — active/ready  */
+.oc-status-failed::before    { color: #f87171; }  /* ● Red    — failure       */
+.oc-status-degraded::before  { color: #fbbf24; }  /* ● Amber  — degraded      */
+.oc-status-pending::before   { color: #94a3b8; }  /* ● Grey   — not started   */
+
+/* Health signal RAG dots */
+.oc-health-healthy::before,
+.oc-health-warning::before,
+.oc-health-critical::before {
+    content: "●";
+    margin-right: 0.3em;
+    font-size: 0.7em;
+    vertical-align: 0.1em;
+}
+.oc-health-healthy::before  { color: #4ade80; }  /* ● Green */
+.oc-health-warning::before  { color: #fbbf24; }  /* ● Amber */
+.oc-health-critical::before { color: #f87171; }  /* ● Red   */
