@@ -185,6 +185,7 @@ var commonEnvVars = concat([
   // The deployed workspace must be explicitly allowlisted via env var so the
   // ConfigTargetScopeEvaluator permits triage KQL queries against it.
   { name: 'SafeActions__AllowedLogAnalyticsWorkspaceIds__0',       value: law.outputs.customerId }
+  { name: 'AgentRuns__SessionStore__Provider',                     value: 'Sql' }
 ], aiLlmEnvVars, ragEnvVars)
 
 // API-facing apps (ApiHost, McpHost) additionally receive the Entra audience so

@@ -20,5 +20,11 @@
     }
   ],
 
-  "safeActions": []
+  "safeActions": [
+    {
+      "id": "restart-pod",
+      "requiresMode": "C",
+      "definitionFile": "actions/restart-pod.json"
+    }
+  ]
 }

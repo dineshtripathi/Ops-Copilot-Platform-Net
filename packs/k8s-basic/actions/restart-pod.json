@@ -1,0 +1,9 @@
+{
+  "id": "restart-pod",
+  "displayName": "Restart Kubernetes Deployment",
+  "actionType": "run-command",
+  "parameters": {
+    "commandId": "kubectl",
+    "script": "kubectl rollout restart deployment/{{deploymentName}} -n {{namespace}}"
+  }
+}

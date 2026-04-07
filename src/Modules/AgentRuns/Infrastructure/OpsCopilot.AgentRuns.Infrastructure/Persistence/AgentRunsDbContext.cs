@@ -19,6 +19,7 @@ public sealed class AgentRunsDbContext : DbContext
     public DbSet<ToolCall> ToolCalls => Set<ToolCall>();
     public DbSet<AgentRunPolicyEvent> PolicyEvents => Set<AgentRunPolicyEvent>();
     public DbSet<AgentRunFeedback> Feedbacks => Set<AgentRunFeedback>();
+    public DbSet<SessionEntry> Sessions => Set<SessionEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -71,6 +72,17 @@ public sealed class AgentRunsDbContext : DbContext
             e.Property(x => x.Message).HasColumnType("nvarchar(max)").IsRequired();
             e.HasIndex(x => x.RunId);
             e.HasIndex(x => x.OccurredAtUtc);
+        });
+
+        // Sessions — persisted TTL sessions for SQL-backed ISessionStore
+        modelBuilder.Entity<SessionEntry>(e =>
+        {
+            e.ToTable("Sessions", "agentRuns");
+            e.HasKey(x => x.SessionId);
+            e.Property(x => x.TenantId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.CreatedAtUtc).IsRequired();
+            e.Property(x => x.ExpiresAtUtc).IsRequired();
+            e.HasIndex(x => new { x.TenantId, x.ExpiresAtUtc });
         });
 
         // Slice 123 — operator feedback (INSERT-only, never updated)

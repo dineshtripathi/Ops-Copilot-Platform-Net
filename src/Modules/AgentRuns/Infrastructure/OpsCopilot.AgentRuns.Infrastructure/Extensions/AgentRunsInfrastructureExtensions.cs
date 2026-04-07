@@ -83,15 +83,20 @@ public static class AgentRunsInfrastructureExtensions
         services.AddScoped<ITokenUsageAccumulator, SqlTokenUsageAccumulator>();
         // IPromptVersionService is registered by AddPromptingModule (Prompting.Infrastructure)
 
-        // ── Session store (config-driven: InMemory or Redis) ──────────────
+        // ── Session store (config-driven: InMemory, Redis, or Sql) ───────────
         // Provider selection: AgentRuns:SessionStore:Provider
+        //   "Sql"      → SqlSessionStore backed by AgentRunsDbContext (durable, multi-instance)
         //   "Redis"    → StackExchange.Redis IConnectionMultiplexer + RedisSessionStore
         //   "InMemory" → default; process-local ConcurrentDictionary (dev/test)
         services.AddSingleton<TimeProvider>(TimeProvider.System);
 
         var sessionProvider = configuration["AgentRuns:SessionStore:Provider"];
 
-        if (string.Equals(sessionProvider, "Redis", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(sessionProvider, "Sql", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<ISessionStore, SqlSessionStore>();
+        }
+        else if (string.Equals(sessionProvider, "Redis", StringComparison.OrdinalIgnoreCase))
         {
             var redisConn = configuration["AgentRuns:SessionStore:ConnectionString"]
                          ?? throw new InvalidOperationException(
