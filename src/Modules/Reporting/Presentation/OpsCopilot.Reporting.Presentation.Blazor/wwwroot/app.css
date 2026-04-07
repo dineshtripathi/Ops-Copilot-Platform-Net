@@ -1211,6 +1211,12 @@ body {
     box-shadow: var(--oc-shadow-md);
 }
 
+/* Signal panel type accents — colored top border per signal category */
+.oc-service-bus-signals   { border-top: 3px solid #0b7fab; }
+.oc-azure-change-signals  { border-top: 3px solid #d97706; }
+.oc-connectivity-signals  { border-top: 3px solid #7c3aed; }
+.oc-auth-signals          { border-top: 3px solid #dc2626; }
+
 .oc-page-topbar {
     padding: 0.8rem 1rem;
     border-radius: 18px;

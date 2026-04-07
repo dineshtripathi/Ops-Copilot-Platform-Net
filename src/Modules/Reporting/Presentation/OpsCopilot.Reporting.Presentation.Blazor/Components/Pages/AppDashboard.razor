@@ -168,27 +168,27 @@ else
         </section>
 
         <section class="oc-summary-cards oc-summary-cards-primary" aria-label="Run summary">
-            <div class="oc-card"><span class="oc-card-label">📈 Total Runs</span><span class="oc-card-value">@s.TotalRuns</span></div>
-            <div class="oc-card"><span class="oc-card-label">✅ Completed</span><span class="oc-card-value">@s.Completed</span></div>
-            <div class="oc-card"><span class="oc-card-label">❌ Failed</span><span class="oc-card-value">@s.Failed</span></div>
-            <div class="oc-card"><span class="oc-card-label">⚠️ Degraded</span><span class="oc-card-value">@s.Degraded</span></div>
-            <div class="oc-card"><span class="oc-card-label">⏳ Pending</span><span class="oc-card-value">@s.Pending</span></div>
+            <div class="oc-card"><span class="oc-card-label">Total Runs</span><span class="oc-card-value">@s.TotalRuns</span></div>
+            <div class="oc-card"><span class="oc-card-label">Completed</span><span class="oc-card-value">@s.Completed</span></div>
+            <div class="oc-card"><span class="oc-card-label">Failed</span><span class="oc-card-value">@s.Failed</span></div>
+            <div class="oc-card"><span class="oc-card-label">Degraded</span><span class="oc-card-value">@s.Degraded</span></div>
+            <div class="oc-card"><span class="oc-card-label">Pending</span><span class="oc-card-value">@s.Pending</span></div>
         </section>
 
         <section class="oc-summary-cards" aria-label="Extended run summary">
-            <div class="oc-card"><span class="oc-card-label">🔄 Running</span><span class="oc-card-value">@s.Running</span></div>
-            <div class="oc-card"><span class="oc-card-label">📚 Citation Coverage</span><span class="oc-card-value">@($"{s.CitationCoverageRate * 100:F0}")%</span></div>
+            <div class="oc-card"><span class="oc-card-label">Running</span><span class="oc-card-value">@s.Running</span></div>
+            <div class="oc-card"><span class="oc-card-label">Citation Coverage</span><span class="oc-card-value">@($"{s.CitationCoverageRate * 100:F0}")%</span></div>
             @if (s.AvgDurationMs.HasValue)
             {
-                <div class="oc-card"><span class="oc-card-label">⏱️ Avg Duration</span><span class="oc-card-value">@((s.AvgDurationMs.Value / 1000.0).ToString("F1"))s</span></div>
+                <div class="oc-card"><span class="oc-card-label">Avg Duration</span><span class="oc-card-value">@((s.AvgDurationMs.Value / 1000.0).ToString("F1"))s</span></div>
             }
             @if (s.AvgTotalTokens.HasValue)
             {
-                <div class="oc-card"><span class="oc-card-label">🧠 Avg Tokens</span><span class="oc-card-value">@((int)s.AvgTotalTokens.Value)</span></div>
+                <div class="oc-card"><span class="oc-card-label">Avg Tokens</span><span class="oc-card-value">@((int)s.AvgTotalTokens.Value)</span></div>
             }
             @if (s.TotalEstimatedCost.HasValue)
             {
-                <div class="oc-card"><span class="oc-card-label">💰 Est. Cost</span><span class="oc-card-value">$@s.TotalEstimatedCost.Value.ToString("F2")</span></div>
+                <div class="oc-card"><span class="oc-card-label">Est. Cost</span><span class="oc-card-value">$@s.TotalEstimatedCost.Value.ToString("F2")</span></div>
             }
         </section>
 
