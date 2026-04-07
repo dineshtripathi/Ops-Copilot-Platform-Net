@@ -1974,3 +1974,68 @@ tbody tr:hover {
     color: #7ecfff;
     font-weight: 700;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Slice 108 — Text contrast fixes for dark theme
+   Fixes hardcoded dark text colors that became invisible on dark backgrounds
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Global headings — hardcoded dark colors invisible on dark page/panel bg */
+h1 { color: var(--oc-ink); }
+h2 { color: var(--oc-ink); border-bottom-color: rgba(74, 140, 210, 0.18); }
+h3 { color: var(--oc-ink-soft); }
+
+/* Table body text — dark on dark table background */
+tbody td,
+tbody th[scope="row"] { color: var(--oc-ink); }
+
+/* Recommendation list text inside dark panels */
+.oc-recommendation {
+    color: var(--oc-ink);
+    border-bottom-color: rgba(74, 140, 210, 0.12);
+}
+.oc-recommendation::before { color: var(--oc-accent-strong); }
+
+/* Decision pack inner text */
+.oc-pack-assessment { color: var(--oc-ink); }
+.oc-pack-finding,
+.oc-pack-action { color: var(--oc-ink); }
+.oc-pack-finding::before { color: #7ecfff; }
+.oc-pack-action::before  { color: #7ecfff; }
+.oc-pack-guidance { color: var(--oc-ink-soft); }
+.oc-pack-meta {
+    color: var(--oc-ink-soft);
+    border-top-color: rgba(74, 140, 210, 0.15);
+}
+
+/* Pack and evidence strength badges — update light-bg variants for dark theme */
+.oc-pack-strong,      .oc-eq-strong      { background: rgba(30, 126, 52, 0.22);  color: #4ade80; }
+.oc-pack-moderate,    .oc-eq-moderate    { background: rgba(26, 86, 200, 0.22);  color: #93c5fd; }
+.oc-pack-weak,        .oc-eq-weak        { background: rgba(230, 81, 0, 0.22);   color: #fdba74; }
+.oc-pack-insufficient,.oc-eq-insufficient{ background: rgba(183, 28, 28, 0.22); color: #fca5a5; }
+.oc-pack-severity                        { background: rgba(183, 28, 28, 0.22); color: #fca5a5; }
+
+/* Evidence quality text */
+.oc-eq-completeness { color: var(--oc-ink); }
+.oc-eq-coverage     { color: var(--oc-ink-soft); }
+.oc-eq-guidance     { color: var(--oc-ink-soft); }
+.oc-eq-missing-areas li { background: rgba(191, 54, 12, 0.20); color: #fdba74; }
+
+/* Active filter row and pills */
+.oc-filter-active {
+    color: var(--oc-ink-soft);
+    border-top-color: rgba(74, 140, 210, 0.10);
+}
+.oc-filter-pill  { background: rgba(26, 86, 200, 0.22); color: var(--oc-ink); }
+.oc-filter-reset { color: var(--oc-accent-strong); }
+
+/* Source / type badges inside dark panels */
+.oc-source-badge                              { background: rgba(57, 73, 171, 0.22);  color: #a5b4fc; }
+tr.oc-proposed-auth .oc-source-badge          { background: rgba(136, 14, 79, 0.22);  color: #f9a8d4; }
+tr.oc-proposed-connectivity .oc-source-badge  { background: rgba(0, 105, 92, 0.22);   color: #6ee7b7; }
+tr.oc-proposed-servicebus .oc-source-badge    { background: rgba(191, 54, 12, 0.22);  color: #fdba74; }
+tr.oc-proposed-azurechange .oc-source-badge   { background: rgba(40, 53, 147, 0.22);  color: #a5b4fc; }
+tr.oc-proposed-briefing .oc-source-badge      { background: rgba(106, 27, 154, 0.22); color: #e9d5ff; }
+
+/* Filter form labels inside dark toolbar panel */
+.oc-filter-form label { color: var(--oc-ink-soft); }
