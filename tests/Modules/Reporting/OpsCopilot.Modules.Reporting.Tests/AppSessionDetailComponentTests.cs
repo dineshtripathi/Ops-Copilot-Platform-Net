@@ -39,13 +39,26 @@ public sealed class AppSessionDetailComponentTests
         var dashStub = new Mock<IDashboardQueryService>(MockBehavior.Loose);
         builder.Services.AddSingleton(dashStub.Object);
 
+        // Slice 202: Routes.razor now uses AuthorizeRouteView which requires auth services.
+        // FakeAuthStateProvider always returns authenticated so tests render pages normally.
+        builder.Services.AddAuthentication("Test")
+            .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions,
+                       TestAuthHandler>("Test", _ => { });
+        builder.Services.AddAuthorization();
+        builder.Services.AddSingleton<Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider,
+            FakeAuthStateProvider>();
+        builder.Services.AddCascadingAuthenticationState();
+        builder.Services.AddHttpContextAccessor();
+
         var app = builder.Build();
+        app.UseAuthentication();
         app.UseAntiforgery();
         app.MapRazorComponents<App>();
 
         await app.StartAsync();
         return (app, app.GetTestClient(), svc);
     }
+
 
     private static readonly Guid Run1Id = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
     private static readonly Guid Run2Id = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002");

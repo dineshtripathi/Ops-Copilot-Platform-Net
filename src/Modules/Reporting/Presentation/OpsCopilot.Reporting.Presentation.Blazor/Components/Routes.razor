@@ -1,7 +1,20 @@
+@* Slice 202: AuthorizeRouteView replaces RouteView — it checks authentication before
+   rendering any page. Unauthenticated users are sent to RedirectToLogin which
+   navigates them to /account/login → Microsoft Entra login page → back here. *@
 <Router AppAssembly="typeof(App).Assembly">
     <Found Context="routeData">
-        <RouteView RouteData="routeData"
-                   DefaultLayout="typeof(OpsCopilot.Reporting.Presentation.Blazor.Components.Layout.MainLayout)" />
+        <AuthorizeRouteView RouteData="routeData"
+                            DefaultLayout="typeof(OpsCopilot.Reporting.Presentation.Blazor.Components.Layout.MainLayout)">
+            <NotAuthorized>
+                <RedirectToLogin />
+            </NotAuthorized>
+            <Authorizing>
+                <div class="oc-auth-loading">
+                    <span>Checking your session…</span>
+                </div>
+            </Authorizing>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
     <NotFound>
         <p role="alert">Page not found.</p>

@@ -1,0 +1,13 @@
+@* Slice 202: Shown by AuthorizeRouteView when the user is not authenticated.
+   Redirects immediately to /account/login, preserving the current URL as returnUrl
+   so the user lands back on the page they requested after signing in. *@
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Encode the current URL so the login handler can redirect back after auth
+        var returnUrl = Uri.EscapeDataString(Nav.Uri);
+        Nav.NavigateTo($"/account/login?returnUrl={returnUrl}", forceLoad: true);
+    }
+}

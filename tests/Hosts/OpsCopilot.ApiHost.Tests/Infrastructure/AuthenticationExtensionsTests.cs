@@ -7,9 +7,12 @@ using Xunit;
 namespace OpsCopilot.ApiHost.Tests.Infrastructure;
 
 /// <summary>
-/// Slice 149 — Unit tests for authentication DI registration.
+/// Slice 149 + 202 — Unit tests for authentication DI registration.
 /// Verifies service container shape without hitting real Entra endpoints.
 /// Full 401/200 HTTP-level tests belong in the integration test suite (Slice 156).
+///
+/// Slice 202 adds ClientId + ClientSecret requirements to non-DevBypass mode
+/// so the OIDC/Cookie flow has the credentials it needs for the token exchange.
 /// </summary>
 public sealed class AuthenticationExtensionsTests
 {
@@ -41,7 +44,7 @@ public sealed class AuthenticationExtensionsTests
     [Fact]
     public void AddOpsCopilotAuthentication_DevBypass_DoesNotThrow()
     {
-        // Arrange — DevBypass=true; TenantId and Audience absent — should not throw
+        // Arrange — DevBypass=true; Entra config absent — should not throw
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -57,7 +60,7 @@ public sealed class AuthenticationExtensionsTests
         Assert.Null(ex);
     }
 
-    // ── Production (Entra JWT Bearer) ─────────────────────────────────────────
+    // ── Production (Entra OIDC + Cookie + JWT Bearer) ────────────────────────
 
     [Fact]
     public void AddOpsCopilotAuthentication_NoDevBypass_MissingTenantId_Throws()
@@ -66,8 +69,10 @@ public sealed class AuthenticationExtensionsTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Authentication:DevBypass"] = "false",
-                ["Authentication:Entra:Audience"] = "api://opscopilot"
+                ["Authentication:DevBypass"]          = "false",
+                ["Authentication:Entra:Audience"]     = "api://opscopilot",
+                ["Authentication:Entra:ClientId"]     = "client-id-placeholder",
+                ["Authentication:Entra:ClientSecret"] = "client-secret-placeholder"
             })
             .Build();
 
@@ -86,8 +91,10 @@ public sealed class AuthenticationExtensionsTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Authentication:DevBypass"] = "false",
-                ["Authentication:Entra:TenantId"] = "00000000-0000-0000-0000-000000000001"
+                ["Authentication:DevBypass"]          = "false",
+                ["Authentication:Entra:TenantId"]     = "00000000-0000-0000-0000-000000000001",
+                ["Authentication:Entra:ClientId"]     = "client-id-placeholder",
+                ["Authentication:Entra:ClientSecret"] = "client-secret-placeholder"
             })
             .Build();
 
@@ -100,15 +107,59 @@ public sealed class AuthenticationExtensionsTests
     }
 
     [Fact]
-    public void AddOpsCopilotAuthentication_NoDevBypass_ValidConfig_RegistersAuthorizationService()
+    public void AddOpsCopilotAuthentication_NoDevBypass_MissingClientId_Throws()
     {
-        // Arrange — both TenantId and Audience provided
+        // Arrange — DevBypass=false, ClientId absent (Slice 202)
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Authentication:DevBypass"] = "false",
+                ["Authentication:DevBypass"]          = "false",
+                ["Authentication:Entra:TenantId"]     = "00000000-0000-0000-0000-000000000001",
+                ["Authentication:Entra:Audience"]     = "api://opscopilot",
+                ["Authentication:Entra:ClientSecret"] = "client-secret-placeholder"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => services.AddOpsCopilotAuthentication(config));
+        Assert.Contains("ClientId", ex.Message);
+    }
+
+    [Fact]
+    public void AddOpsCopilotAuthentication_NoDevBypass_MissingClientSecret_Throws()
+    {
+        // Arrange — DevBypass=false, ClientSecret absent (Slice 202)
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Authentication:DevBypass"]      = "false",
                 ["Authentication:Entra:TenantId"] = "00000000-0000-0000-0000-000000000001",
-                ["Authentication:Entra:Audience"] = "api://opscopilot"
+                ["Authentication:Entra:Audience"] = "api://opscopilot",
+                ["Authentication:Entra:ClientId"] = "client-id-placeholder"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => services.AddOpsCopilotAuthentication(config));
+        Assert.Contains("ClientSecret", ex.Message);
+    }
+
+    [Fact]
+    public void AddOpsCopilotAuthentication_NoDevBypass_ValidConfig_RegistersAuthorizationService()
+    {
+        // Arrange — all four required Entra config values provided (Slice 202)
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Authentication:DevBypass"]          = "false",
+                ["Authentication:Entra:TenantId"]     = "00000000-0000-0000-0000-000000000001",
+                ["Authentication:Entra:Audience"]     = "api://opscopilot",
+                ["Authentication:Entra:ClientId"]     = "client-id-placeholder",
+                ["Authentication:Entra:ClientSecret"] = "client-secret-placeholder"
             })
             .Build();
 

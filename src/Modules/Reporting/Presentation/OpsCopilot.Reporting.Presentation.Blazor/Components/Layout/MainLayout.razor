@@ -24,7 +24,10 @@
                     <span class="oc-brand-subtitle">Operator Command Center</span>
                 </div>
             </div>
+            @* Slice 202: signed-in user name + sign-out link *@
+            <UserDisplay />
             <div class="oc-sidebar-section-label">Navigate</div>
+
             <ul class="oc-nav-list" role="list">
                 <li>
                     <a class="oc-nav-link @(_path.StartsWith("/app/dashboard") ? "oc-nav-link--active" : "")"

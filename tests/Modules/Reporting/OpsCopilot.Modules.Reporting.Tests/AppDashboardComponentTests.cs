@@ -33,13 +33,31 @@ public sealed class AppDashboardComponentTests
         builder.Services.AddRazorComponents();
         builder.Services.AddSingleton(svc.Object);
 
+        // Slice 202: Routes.razor now uses AuthorizeRouteView which requires auth services.
+        // FakeAuthStateProvider always returns authenticated so tests render pages normally.
+        builder.Services.AddAuthentication("Test")
+            .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions,
+                       TestAuthHandler>("Test", _ => { });
+        builder.Services.AddAuthorization();
+        builder.Services.AddSingleton<Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider,
+            FakeAuthStateProvider>();
+        builder.Services.AddCascadingAuthenticationState();
+        builder.Services.AddHttpContextAccessor();
+
+        // AppDashboard.razor injects IDashboardQueryService; AppRunDetail also resolves
+        // IAgentRunsReportingQueryService. Register a loose stub for the latter.
+        var runsSvcStub = new Mock<IAgentRunsReportingQueryService>(MockBehavior.Loose);
+        builder.Services.AddSingleton(runsSvcStub.Object);
+
         var app = builder.Build();
+        app.UseAuthentication();
         app.UseAntiforgery();
         app.MapRazorComponents<App>();
 
         await app.StartAsync();
         return (app, app.GetTestClient(), svc);
     }
+
 
     private static DashboardOverviewResponse EmptyOverview() =>
         new(

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -39,6 +39,12 @@
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.11.2" />
     <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.11.2" />
   </ItemGroup>
+
+  <!-- Slice 202: Entra ID OIDC browser login (cookie-based session for Blazor SSR) -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.0" />
+  </ItemGroup>
+
 
   <!-- Shared configuration helpers (Key Vault, User Secrets bootstrap) -->
   <ItemGroup>

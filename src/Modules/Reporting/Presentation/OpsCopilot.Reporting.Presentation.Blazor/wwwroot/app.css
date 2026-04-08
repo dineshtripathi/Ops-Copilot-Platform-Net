@@ -1,4 +1,4 @@
-﻿/* ═══════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════
    OpsCopilot — Operator Console Stylesheet  (Slice 100)
    ═══════════════════════════════════════════════════════ */
 
@@ -1056,6 +1056,77 @@ body {
     padding: 1rem 1.3rem 1.35rem;
     border-top: 1px solid rgba(120, 170, 219, 0.12);
 }
+
+/* ─── Slice 202: User Display (sidebar auth widget) ─────────────────── */
+.oc-user-display {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1.3rem;
+    border-bottom: 1px solid rgba(120, 170, 219, 0.10);
+    margin-bottom: 0.25rem;
+}
+
+.oc-user-display--guest {
+    padding: 0.6rem 1.3rem;
+}
+
+.oc-user-avatar {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #10b5d6 0%, #1672a9 100%);
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(14, 109, 152, 0.35);
+}
+
+.oc-user-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+.oc-user-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #d7e8f6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+}
+
+.oc-signout-link,
+.oc-signin-link {
+    font-size: 0.72rem;
+    color: #6baed6;
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.oc-signout-link:hover,
+.oc-signin-link:hover {
+    color: #3db5e0;
+    text-decoration: underline;
+}
+
+/* Auth-loading spinner shown by AuthorizeRouteView while checking state */
+.oc-auth-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    color: #7a9cbd;
+    font-size: 0.9rem;
+}
+
 
 .oc-tenant-badge,
 .oc-top-tenant {

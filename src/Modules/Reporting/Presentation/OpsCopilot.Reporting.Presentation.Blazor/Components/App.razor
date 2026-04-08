@@ -9,6 +9,11 @@
     <link rel="stylesheet" href="_content/OpsCopilot.Reporting.Presentation.Blazor/app.css" />
 </head>
 <body>
-    <Routes />
+    @* Slice 202: CascadingAuthenticationState makes the auth state (user claims,
+       IsAuthenticated) available to all child components including AuthorizeView
+       and AuthorizeRouteView without each component having to inject it manually. *@
+    <CascadingAuthenticationState>
+        <Routes />
+    </CascadingAuthenticationState>
 </body>
 </html>

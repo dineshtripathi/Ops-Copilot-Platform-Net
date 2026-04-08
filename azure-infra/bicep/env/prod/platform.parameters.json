@@ -17,7 +17,7 @@
     "bootstrapImage": { "value": "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest" },
     "acrName": { "value": "acropsctpltfprod" },
     "minReplicas": { "value": 1 },
-    "entraAudience": { "value": "" },
+    "entraAudience": { "value": "api://dfdb8f36-cf0b-41d0-bcd6-92a063dba954" },
     "budgetAmount": { "value": 100 },
     "budgetEmails": { "value": [] }
   }

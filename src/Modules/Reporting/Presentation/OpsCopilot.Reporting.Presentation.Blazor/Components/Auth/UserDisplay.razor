@@ -1,0 +1,30 @@
+@* Slice 202: Shown in the sidebar. Displays the signed-in user's display name
+   and a Sign out button. Falls back gracefully in DevBypass mode (shows "Dev User"). *@
+
+<AuthorizeView>
+    <Authorized>
+        <div class="oc-user-display">
+            <div class="oc-user-avatar" aria-hidden="true">
+                @(GetInitial(context.User.Identity?.Name ?? context.User.FindFirst("name")?.Value ?? "?"))
+            </div>
+            <div class="oc-user-info">
+                <span class="oc-user-name" title="@(context.User.FindFirst("email")?.Value ?? context.User.Identity?.Name)">
+                    @(context.User.FindFirst("name")?.Value
+                      ?? context.User.Identity?.Name
+                      ?? "Operator")
+                </span>
+                <a class="oc-signout-link" href="/account/logout">Sign out</a>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="oc-user-display oc-user-display--guest">
+            <a class="oc-signin-link" href="/account/login">Sign in</a>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private static char GetInitial(string name) =>
+        name.Trim().Length > 0 ? char.ToUpperInvariant(name.Trim()[0]) : '?';
+}

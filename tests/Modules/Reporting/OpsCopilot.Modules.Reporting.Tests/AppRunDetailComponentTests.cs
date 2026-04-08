@@ -39,13 +39,30 @@ public sealed class AppRunDetailComponentTests
         var dashStub = new Mock<IDashboardQueryService>(MockBehavior.Loose);
         builder.Services.AddSingleton(dashStub.Object);
 
+        // Slice 202: Routes.razor now uses AuthorizeRouteView which requires:
+        //   1. An AuthenticationStateProvider (FakeAuthStateProvider = always authenticated)
+        //   2. IAuthorizationService (from AddAuthorization)
+        //   3. IHttpContextAccessor (used by AppChat.razor for token forwarding)
+        // We register a named "Test" auth scheme backed by a no-op handler so
+        // UseAuthentication() middleware starts without throwing about a missing default scheme.
+        builder.Services.AddAuthentication("Test")
+            .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions,
+                       TestAuthHandler>("Test", _ => { });
+        builder.Services.AddAuthorization();
+        builder.Services.AddSingleton<Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider,
+            FakeAuthStateProvider>();
+        builder.Services.AddCascadingAuthenticationState();
+        builder.Services.AddHttpContextAccessor();
+
         var app = builder.Build();
+        app.UseAuthentication();
         app.UseAntiforgery();
         app.MapRazorComponents<App>();
 
         await app.StartAsync();
         return (app, app.GetTestClient(), svc);
     }
+
 
     private static RunDetailResponse SampleDetail(Guid runId, Guid? sessionId = null) =>
         new(
@@ -2238,4 +2255,49 @@ public sealed class AppRunDetailComponentTests
             Assert.DoesNotContain("method=\"post\"", body, StringComparison.OrdinalIgnoreCase);
         }
     }
+}
+
+/// <summary>
+/// Slice 202: Test-only AuthenticationStateProvider that always returns an
+/// authenticated "Test Operator" principal.  Used by CreateBlazorTestHost so
+/// AuthorizeRouteView passes through and the component under test renders normally
+/// (rather than redirecting to /account/login because the HttpClient is anonymous).
+/// </summary>
+internal sealed class FakeAuthStateProvider
+    : Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider
+{
+    private static readonly System.Security.Claims.ClaimsPrincipal _user = new(
+        new System.Security.Claims.ClaimsIdentity(
+            [
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, "Test Operator"),
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "test-user"),
+                new System.Security.Claims.Claim("name", "Test Operator")
+            ],
+            authenticationType: "Test"));
+
+    public override Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState>
+        GetAuthenticationStateAsync()
+        => Task.FromResult(
+            new Microsoft.AspNetCore.Components.Authorization.AuthenticationState(_user));
+}
+
+/// <summary>
+/// Slice 202: No-op authentication handler for the test host.
+/// Provides a concrete implementation for the "Test" scheme so
+/// UseAuthentication() middleware starts without errors.
+/// The actual authn/authz check in Blazor is bypassed by FakeAuthStateProvider.
+/// </summary>
+internal sealed class TestAuthHandler
+    : Microsoft.AspNetCore.Authentication.AuthenticationHandler<
+        Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions>
+{
+    public TestAuthHandler(
+        Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions> options,
+        Microsoft.Extensions.Logging.ILoggerFactory logger,
+        System.Text.Encodings.Web.UrlEncoder encoder)
+        : base(options, logger, encoder) { }
+
+    protected override Task<Microsoft.AspNetCore.Authentication.AuthenticateResult>
+        HandleAuthenticateAsync()
+        => Task.FromResult(Microsoft.AspNetCore.Authentication.AuthenticateResult.NoResult());
 }

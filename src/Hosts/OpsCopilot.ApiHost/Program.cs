@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Agents.Hosting.AspNetCore;
@@ -27,6 +27,10 @@ using OpsCopilot.Reporting.Presentation.Blazor.Components;
 using OpsCopilot.Evaluation.Infrastructure.Extensions;
 using OpsCopilot.Prompting.Infrastructure.Extensions;
 using OpsCopilot.ApiHost.Infrastructure;
+using Microsoft.AspNetCore.Authentication;     // Slice 202: SignOutAsync, AuthenticationProperties
+using Microsoft.AspNetCore.Authentication.Cookies;  // Slice 202: CookieAuthenticationDefaults
+using Microsoft.AspNetCore.Authentication.OpenIdConnect; // Slice 202: OpenIdConnectDefaults
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpsCopilot.ApiHost — public API surface
@@ -136,6 +140,10 @@ builder.Services.AddRazorComponents();
 
 // ── Health checks (Slice 140) ─────────────────────────────────────────────────
 builder.Services.AddOpsCopilotHealthChecks(builder.Configuration);
+
+// Slice 202: IHttpContextAccessor — lets Blazor SSR pages read OIDC tokens from
+// the cookie session and derive the base URL from the current request.
+builder.Services.AddHttpContextAccessor();
 
 // ── Authentication & authorisation (Slice 149) ───────────────────────────────
 // Registers Entra ID JWT bearer (or DevBypass handler in Development).
@@ -262,6 +270,38 @@ app.MapRagAdminEndpoints();             // POST /rag/runbooks/reindex
 app.UseStaticFiles();
 app.UseAntiforgery();
 app.MapRazorComponents<App>();          // /app/dashboard (Blazor SSR operator UI)
+
+// ── Slice 202: Login / Logout / AccessDenied routes ───────────────────────────
+// These are .AllowAnonymous() so the auth fallback policy doesn't intercept them.
+app.MapGet("/account/login", (HttpContext ctx, string? returnUrl) =>
+{
+    var props = new AuthenticationProperties
+    {
+        RedirectUri = string.IsNullOrWhiteSpace(returnUrl) ? "/app/dashboard" : returnUrl
+    };
+    return Results.Challenge(props, [OpenIdConnectDefaults.AuthenticationScheme]);
+}).AllowAnonymous();
+
+app.MapGet("/account/logout", async (HttpContext ctx) =>
+{
+    await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    var props = new AuthenticationProperties { RedirectUri = "/account/login" };
+    return Results.SignOut(props, [OpenIdConnectDefaults.AuthenticationScheme]);
+}).AllowAnonymous();
+
+app.MapGet("/account/accessdenied", () => Results.Content("""
+    <!DOCTYPE html><html><head><title>Access Denied — Ops Copilot</title>
+    <meta name='viewport' content='width=device-width,initial-scale=1'/>
+    <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;
+    height:100vh;margin:0;background:#0f172a;color:#e2e8f0}
+    .card{background:#1e293b;padding:2rem 3rem;border-radius:1rem;text-align:center}
+    a{color:#60a5fa;text-decoration:none}a:hover{text-decoration:underline}</style></head>
+    <body><div class='card'><h1>Access Denied</h1>
+    <p>You don&rsquo;t have permission to view this page.</p>
+    <p><a href='/account/login'>Sign in with a different account</a>&ensp;&bull;&ensp;
+    <a href='/app/dashboard'>Go to Dashboard</a></p></div></body></html>
+    """, "text/html"))
+    .AllowAnonymous();
 
 // Slice 147: MAF activity endpoint — POST /api/agent/messages
 // Slice 149: requireAuth flipped to true; Entra token required in production.
